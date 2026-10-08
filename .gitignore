@@ -66,3 +66,5 @@ Thumbs.db
 !/.github/
 !/.github/**
 /_bridge_test/
+
+entry/.preview

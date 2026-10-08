@@ -1,18 +1,22 @@
 import { webview } from '@kit.ArkWeb';
 import { BookSourceStageWebRuntime } from '../core/book/BookSourceStageWebRuntime';
+import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
 
 /** Keeps the shared full-JavaScript source runtime available on routed book pages. */
 @Component
 export struct BookSourceStageRuntimeHost {
   private controller: webview.WebviewController = new webview.WebviewController();
   @State mounted: boolean = true;
+  private readonly webRuntimeAvailable: boolean = WebRuntimeAvailability.isAvailable();
   private resetScheduled: boolean = false;
   private disappearing: boolean = false;
   private attachRetryId: number = -1;
 
   aboutToAppear(): void {
     this.disappearing = false;
-    this.scheduleAttachFallback(0);
+    if (this.webRuntimeAvailable) {
+      this.scheduleAttachFallback(0);
+    }
   }
 
   aboutToDisappear(): void {
@@ -61,14 +65,14 @@ export struct BookSourceStageRuntimeHost {
     // coalesced with the preceding state change, leaving the retired Web controller in place.
     setTimeout(() => {
       this.controller = new webview.WebviewController();
-      this.mounted = true;
+      this.mounted = WebRuntimeAvailability.isAvailable();
       this.resetScheduled = false;
       this.scheduleAttachFallback(0);
     }, 50);
   }
 
   build() {
-    if (this.mounted) {
+    if (this.mounted && this.webRuntimeAvailable) {
       Web({ src: 'about:blank', controller: this.controller })
         .width(1)
         .height(1)

@@ -1,17 +1,20 @@
 import { webview } from '@kit.ArkWeb';
 import { BookSourceAudioWebRuntime } from '../core/book/BookSourceAudioWebRuntime';
+import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
 
 /** Hidden page loader for legacy `{webView:true}` audiobook rules. */
 @Component
 export struct BookSourceAudioWebRuntimeHost {
   private controller: webview.WebviewController = new webview.WebviewController();
+  private readonly webRuntimeAvailable: boolean = WebRuntimeAvailability.isAvailable();
 
   aboutToDisappear(): void {
     BookSourceAudioWebRuntime.get().detach(this.controller);
   }
 
   build() {
-    Web({ src: 'about:blank', controller: this.controller })
+    if (this.webRuntimeAvailable) {
+      Web({ src: 'about:blank', controller: this.controller })
       .width(1)
       .height(1)
       .opacity(0.01)
@@ -40,5 +43,6 @@ export struct BookSourceAudioWebRuntimeHost {
         }
         return null;
       })
+    }
   }
 }

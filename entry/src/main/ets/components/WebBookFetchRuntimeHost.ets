@@ -1,16 +1,20 @@
 import { webview } from '@kit.ArkWeb';
 import { WebBookFetchRuntime } from '../core/book/WebBookFetchRuntime';
+import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
 
 /** Invisible ArkWeb transport for source rules that explicitly opt into `webView: true`. */
 @Component
 export struct WebBookFetchRuntimeHost {
   private controller: webview.WebviewController = new webview.WebviewController();
+  private readonly webRuntimeAvailable: boolean = WebRuntimeAvailability.isAvailable();
   private attachRetryId: number = -1;
   private disappearing: boolean = false;
 
   aboutToAppear(): void {
     this.disappearing = false;
-    this.scheduleAttachFallback(0);
+    if (this.webRuntimeAvailable) {
+      this.scheduleAttachFallback(0);
+    }
   }
 
   aboutToDisappear(): void {
@@ -43,16 +47,18 @@ export struct WebBookFetchRuntimeHost {
   }
 
   build() {
-    Web({ src: 'about:blank', controller: this.controller })
-      .width(1)
-      .height(1)
-      .opacity(0.01)
-      .javaScriptAccess(true)
-      .domStorageAccess(true)
-      .mixedMode(MixedMode.All)
-      .onlineImageAccess(true)
-      .onControllerAttached((): void => { this.attachRuntime(); })
-      .onPageBegin((): void => { WebBookFetchRuntime.get().onPageBegin(this.controller); })
-      .onPageEnd((): void => { WebBookFetchRuntime.get().onPageEnd(this.controller); })
+    if (this.webRuntimeAvailable) {
+      Web({ src: 'about:blank', controller: this.controller })
+        .width(1)
+        .height(1)
+        .opacity(0.01)
+        .javaScriptAccess(true)
+        .domStorageAccess(true)
+        .mixedMode(MixedMode.All)
+        .onlineImageAccess(true)
+        .onControllerAttached((): void => { this.attachRuntime(); })
+        .onPageBegin((): void => { WebBookFetchRuntime.get().onPageBegin(this.controller); })
+        .onPageEnd((): void => { WebBookFetchRuntime.get().onPageEnd(this.controller); })
+    }
   }
 }

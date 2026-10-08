@@ -39,6 +39,7 @@ import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { CloudSyncService } from '../utils/CloudSyncService';
+import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import { ReaderTtsPlayerPanel } from '../components/ReaderTtsPlayerPanel';
 import { TtsCatalogSheet, CatalogTitleDataSource } from '../components/TtsCatalogSheet';
@@ -87,7 +88,7 @@ interface ShelfFullTextCacheTask {
 @Component
 struct Index {
   private stageRuntimeController: webview.WebviewController = new webview.WebviewController();
-  @State stageRuntimeMounted: boolean = true;
+  @State stageRuntimeMounted: boolean = WebRuntimeAvailability.isAvailable();
   private stageRuntimeResetScheduled: boolean = false;
   private stageRuntimeDisappearing: boolean = false;
   private stageRuntimeAttachRetryId: number = -1;
@@ -130,9 +131,11 @@ struct Index {
   aboutToAppear() {
     this.shortcutRoutingActive = true;
     this.stageRuntimeDisappearing = false;
-    this.scheduleStageRuntimeAttachFallback(0);
-    BookSourceStageWebRuntime.get().setResetHandler((): void => this.resetStageRuntimeHost(),
-      this.stageRuntimeController);
+    if (this.stageRuntimeMounted) {
+      this.scheduleStageRuntimeAttachFallback(0);
+      BookSourceStageWebRuntime.get().setResetHandler((): void => this.resetStageRuntimeHost(),
+        this.stageRuntimeController);
+    }
     hilog.info(0x0000, 'testTag', 'StartupTrace Index aboutToAppear %{public}d', Date.now());
     this.syncHomeSystemBars();
     this.openPendingShortcut();
@@ -212,7 +215,7 @@ struct Index {
     // Let ArkUI commit the unmounted branch before constructing the replacement controller.
     setTimeout(() => {
       this.stageRuntimeController = new webview.WebviewController();
-      this.stageRuntimeMounted = true;
+      this.stageRuntimeMounted = WebRuntimeAvailability.isAvailable();
       this.stageRuntimeResetScheduled = false;
       this.scheduleStageRuntimeAttachFallback(0);
     }, 50);
