@@ -7,8 +7,13 @@ class BookSourceRateState {
 export class BookSourceRateLimiter {
   private static states: Record<string, BookSourceRateState> = {};
 
-  static async acquire(source: BookSource | null): Promise<void> {
+  /** Acquire a rate limiter slot before executing a source request.
+   *  @param isCancelled optional callback; when it returns true the wait exits immediately
+   *  without consuming a slot. Used by SearchCoordinator to release orphaned workers early
+   *  after cancel() instead of letting them wait the full rate window (up to 60 min config). */
+  static async acquire(source: BookSource | null, isCancelled?: () => boolean): Promise<void> {
     if (!source || !source.concurrentRate) return;
+    if (isCancelled && isCancelled()) return;
     const config = this.parse(source.concurrentRate);
     if (!config) return;
     const key = source.bookSourceUrl || source.bookSourceName;
@@ -19,6 +24,7 @@ export class BookSourceRateLimiter {
       this.states[key] = state;
     }
     while (true) {
+      if (isCancelled && isCancelled()) return;
       const now = Date.now();
       state.timestamps = state.timestamps.filter(timestamp => now - timestamp < config.windowMs);
       if (state.timestamps.length < config.limit) {

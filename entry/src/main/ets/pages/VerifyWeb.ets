@@ -324,10 +324,13 @@ struct VerifyWebPage {
 
   async finishVerify(): Promise<void> {
     if (this.readerCommentMode) {
+      // 阅读器评论模式不涉及 pendingVerificationUrl，直接返回。
+      VerificationSupport.clearVerification();
       this.backSafely();
       return;
     }
     if (this.browserAwaitToken) {
+      VerificationSupport.clearVerification();
       await this.finishBrowserAwait();
       return;
     }
@@ -336,6 +339,7 @@ struct VerifyWebPage {
       CookieStore.saveSync();
       const variableSaved = this.browserVariableDirty;
       await this.persistBrowserSourceVariable();
+      VerificationSupport.clearVerification();
       if (variableSaved) {
         this.showToastSafely('登录信息已保存到书源');
       } else if (this.requireLoginCookie && !this.hasEffectiveBookSourceLoginCookie()) {
@@ -353,19 +357,18 @@ struct VerifyWebPage {
     }
     this.syncBookSourceLoginCookies();
     CookieStore.saveSync();
+    // 无论验证成功与否，关闭时都清掉 pendingVerificationUrl，
+    // 避免用户返回后"去验证"按钮残留或重复显示同一个 URL。
+    VerificationSupport.clearVerification();
     const verified = this.requireLoginCookie ? this.hasEffectiveBookSourceLoginCookie() :
       true;
     if (verified) {
-      AppStorage.setOrCreate('pendingVerificationUrl', '');
-      AppStorage.setOrCreate('pendingVerificationTitle', '');
-      AppStorage.setOrCreate('pendingVerificationSourceUrl', '');
-      AppStorage.setOrCreate('pendingVerificationLoginUrl', '');
       AppStorage.setOrCreate('verificationCompletedAt', Date.now());
       this.showToastSafely('验证信息已保存，请重试搜索或刷新目录');
-      this.backSafely();
     } else {
       this.showToastSafely('未检测到有效登录 Cookie，请正常登录后再点完成');
     }
+    this.backSafely();
   }
 
   browserUserAgent(): string {

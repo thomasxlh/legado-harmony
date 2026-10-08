@@ -110,7 +110,9 @@ export class HttpClient {
       return await this.executeWithProtocol(req, true);
     }
     if (!response.success && !req.noTimeoutRetry && this.shouldRetryTimeout(req, response.error || '')) {
-      const retryTimeout = Math.min(30000, Math.max(this.timeout * 2, 15000));
+      // 幂等重试天花板缩到 15s：配合 SearchCoordinator 的 per-source 20s 超时，
+      // 避免单个搜索 worker 在死源上被阻塞超过 35s。
+      const retryTimeout = Math.min(15000, Math.max(this.timeout * 2, 10000));
       console.info('[HttpClient] idempotent request timed out; retrying once:', this.hostForLog(req.url));
       return await this.executeWithProtocol({
         ...req,

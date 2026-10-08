@@ -180,7 +180,7 @@ legado-harmony/
 | --- | --- |
 | 主模块 | `entry` |
 | 入口 Ability | `EntryAbility` |
-| `versionName` | `4.0.0` |
+| `versionName` | `4.0.1` |
 | `versionCode` / `buildVersion` | `4000000` |
 | `minAPIVersion` | `12` |
 | `targetAPIVersion` | `26` |

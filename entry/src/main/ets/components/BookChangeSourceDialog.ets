@@ -56,6 +56,8 @@ export struct BookChangeSourceDialog {
   @State failedBookUrls: string[] = [];
   @State loadWordCount: boolean = false;
   @State measuring: boolean = false;
+  /** 置顶书源 URL 集合（换源时优先搜索）。 */
+  @State pinnedSourceUrls: Set<string> = new Set<string>();
   /** 待验证网页地址：与 AppStorage 双向同步，VerifyWeb 验证完成后被清空，按钮自动消失。 */
   @StorageLink('pendingVerificationUrl') verificationUrl: string = '';
   @StorageProp('pendingVerificationTitle') verificationTitle: string = '网页验证';
@@ -73,6 +75,11 @@ export struct BookChangeSourceDialog {
       this.onClosed();
       return;
     }
+    // 加载置顶书源列表到 AppStorage + 本地状态，下次搜索会优先搜。
+    ChangeSourceOptionsStore.getPinnedSourceUrls(getContext(this)).then((urls: string[]) => {
+      ChangeSourceOptionsStore.syncPinnedToStorage(urls);
+      this.pinnedSourceUrls = new Set(urls);
+    }).catch(() => {});
     ChangeSourceOptionsStore.getLoadWordCount(getContext(this))
       .then((value: boolean): void => {
         this.loadWordCount = value;
@@ -83,11 +90,17 @@ export struct BookChangeSourceDialog {
       });
   }
 
+  /** 关闭前先触发持久化再作废会话：节流窗口内未保存的 delta 会在关闭时丢失。 */
   aboutToDisappear(): void {
     this.sessionId++;
     this.switchToken++;
     this.measureSessionId++;
+    this.measuring = false;
+    this.searching = false;
     this.clearPersistTimer();
+    // 先持久化再取消：cancelActiveSearch 内部的 persistResultsNow 已经是 fire-and-forget，
+    // 这里显式先调一次，确保 aboutToDisappear 的 grace period 内文件 IO 能完成。
+    this.persistResultsNow();
     this.cancelActiveSearch();
   }
 
@@ -178,9 +191,12 @@ export struct BookChangeSourceDialog {
     this.search(sessionId, false);
   }
 
+  /** 手动停止前强制持久化，避免节流窗口内已到的 delta 丢失。 */
   stopSearch(): void {
     if (!this.searching) return;
     this.sessionId++;
+    this.clearPersistTimer();
+    this.persistResultsNow();
     this.cancelActiveSearch();
     this.searching = false;
     this.canResumeSearch = true;
@@ -205,6 +221,7 @@ export struct BookChangeSourceDialog {
     this.measureSessionId++;
     this.measuring = false;
     this.clearPersistTimer();
+    this.persistResultsNow();
     this.cancelActiveSearch();
     this.onClosed();
   }
@@ -281,7 +298,7 @@ export struct BookChangeSourceDialog {
       }
       try {
         await ChangeSourceResultCache.save(getContext(this), cacheBookName, this.results, target.author,
-          this.snapshotSearchedUrls(), false);
+          this.snapshotSearchedUrls(), this.canResumeSearch);
       } catch (e) {
         console.warn('保存换源结果失败:', e);
       }
@@ -430,6 +447,17 @@ export struct BookChangeSourceDialog {
       this.measureSessionId++;
       this.measuring = false;
     }
+  }
+
+  /** 切换书源置顶：置顶后下次换源优先搜索。 */
+  togglePinnedSource(sourceUrl: string): void {
+    ChangeSourceOptionsStore.togglePinnedSource(getContext(this), sourceUrl).then((pinned: string[]) => {
+      this.pinnedSourceUrls = new Set(pinned);
+    }).catch(() => {});
+  }
+
+  isSourcePinned(sourceUrl: string): boolean {
+    return this.pinnedSourceUrls.has(sourceUrl || '');
   }
 
   startMeasureChapterWordCounts(): void {
@@ -818,12 +846,22 @@ export struct BookChangeSourceDialog {
               ListItem() {
                 Row() {
                   Column({ space: 4 }) {
-                    Text(book.originName || book.origin)
-                      .fontSize(15)
-                      .fontWeight(FontWeight.Bold)
-                      .fontColor(this.primaryTextColor())
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Row({ space: 4 }) {
+                      Text(book.originName || book.origin)
+                        .fontSize(15)
+                        .fontWeight(FontWeight.Bold)
+                        .fontColor(this.primaryTextColor())
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      if (this.isSourcePinned(book.origin || '')) {
+                        Text('置顶')
+                          .fontSize(10)
+                          .fontColor('#FFFFFF')
+                          .padding({ left: 5, right: 5, top: 1, bottom: 1 })
+                          .borderRadius(6)
+                          .backgroundColor('#FF9800')
+                      }
+                    }
                     Text(`作者：${book.author || '未知'}`)
                       .fontSize(12)
                       .fontColor(this.subTextColor())
@@ -856,6 +894,14 @@ export struct BookChangeSourceDialog {
                   .layoutWeight(1)
                   .alignItems(HorizontalAlign.Start)
 
+                  SymbolGlyph(this.isSourcePinned(book.origin || '') ?
+                    $r('sys.symbol.pin_fill') : $r('sys.symbol.pin'))
+                    .fontSize(18)
+                    .fontColor([this.isSourcePinned(book.origin || '') ? '#FF9800' : this.subTextColor()])
+                    .width(32)
+                    .height(32)
+                    .onClick(() => this.togglePinnedSource(book.origin || ''))
+
                   Button(this.switching && this.switchingBook === book ? '切换中' : '切换')
                     .width(68)
                     .height(32)
@@ -871,7 +917,7 @@ export struct BookChangeSourceDialog {
                 .backgroundColor(this.inputColor())
                 .borderRadius(10)
               }
-            }, (book: SearchBook) => `${book.origin}|${book.bookUrl}|${book.chapterWordCount}|${book.latestChapterTitle}`)
+            }, (book: SearchBook) => `${book.origin}|${book.bookUrl}|${book.chapterWordCount}|${book.latestChapterTitle}|${this.isSourcePinned(book.origin || '') ? 'p' : 'np'}`)
 
             if (this.searching) {
               ListItem() {

@@ -48,6 +48,8 @@ export interface SearchSourceResult {
 const MAX_VALIDATION_CONCURRENCY = 1;
 // Batch source results so background searching does not continuously interrupt list gestures.
 const SEARCH_PROGRESS_EMIT_INTERVAL_MS = 500;
+/** 单书源整体超时：防止死/慢书源永久占据 worker 导致并发数衰减到 0。 */
+const PER_SOURCE_TIMEOUT_MS = 20000;
 const MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_VALIDATION_RESPONSE_BYTES = 512 * 1024;
 const MAX_VALIDATION_STAGE_RESPONSE_BYTES = 512 * 1024;
@@ -148,6 +150,18 @@ export class SearchCoordinator {
       safeCallback({ done: 0, total: 0, results: [], finished: true, status: '没有符合设置的启用书源' });
       return [];
     }
+    // 置顶书源优先：把用户置顶的书源排到最前面先搜索（配合 stopAfterResults，
+    // 常见的换源场景会在前几个 pinned 源内就找到目标结果）。
+    const pinnedRaw = AppStorage.get<string>('changeSourcePinnedSourceUrls') || '';
+    const pinnedUrls = new Set<string>(pinnedRaw.split('\n').map((u: string) => u.trim()).filter((u: string) => !!u));
+    if (pinnedUrls.size > 0) {
+      sources.sort((left: BookSource, right: BookSource): number => {
+        const leftPinned = pinnedUrls.has(left.bookSourceUrl || '') ? 0 : 1;
+        const rightPinned = pinnedUrls.has(right.bookSourceUrl || '') ? 0 : 1;
+        if (leftPinned !== rightPinned) return leftPinned - rightPinned;
+        return 0;
+      });
+    }
     const runtimeOwnerId = `search_${Date.now()}_${++SearchCoordinator.stageRuntimeOwnerSerial}`;
     this.stageRuntimeOwnerId = runtimeOwnerId;
 
@@ -203,7 +217,7 @@ export class SearchCoordinator {
         currentSourceLabel = sources[sourceIndex].bookSourceName || `书源 ${sourceIndex + 1}`;
         AppStorage.setOrCreate('searchLastSource', currentSourceLabel);
         AppStorage.setOrCreate('searchLastSourceIndex', sourceIndex + 1);
-        const sourceResult = await this.searchOne(sources[sourceIndex], keyword, options);
+        const sourceResult = await this.searchOneWithTimeout(sources[sourceIndex], keyword, options);
         if (sourceResult.books.length === 0 && sourceResult.reason && sourceResult.reason !== '未搜索到结果') {
           this.lastFailureReason = `${sources[sourceIndex].bookSourceName || '书源'}：${sourceResult.reason}`;
         }
@@ -238,6 +252,9 @@ export class SearchCoordinator {
       emitProgress(true);
       return validationOnly ? [] : this.filterAndSortSearchResults(all, keyword, options);
     } finally {
+      // 搜索结束（完成或取消）后清空验证状态，避免残留 pendingVerificationUrl 导致
+      // 用户返回后"去验证"按钮反复出现同一个 URL。
+      VerificationSupport.clearVerification();
       RuleExecutionService.get().clearOwner(runtimeOwnerId);
       if (this.stageRuntimeOwnerId === runtimeOwnerId) this.stageRuntimeOwnerId = '';
     }
@@ -287,7 +304,7 @@ export class SearchCoordinator {
       js.setVar('searchKeyRaw', keyword);
       js.setVar('page', '1');
 
-      const au = new AnalyzeUrl(source, this.http);
+      const au = new AnalyzeUrl(source, this.http).setCancelCheck(() => this.cancelled);
       let urlTemplate = await this.evalAndBuild(js, source, keyword, responseLimit,
         options.validationOnly === true, debugContext || null);
       if (!urlTemplate) {
@@ -550,6 +567,28 @@ export class SearchCoordinator {
       validationStatus: validationStatus,
       reason: reason
     };
+  }
+
+  /** 给 searchOne 包一层整体超时，防止死/慢书源永久占据 worker 导致并发数衰减到 0。 */
+  private async searchOneWithTimeout(source: BookSource, keyword: string,
+    options: SearchOptions): Promise<SearchSourceResult> {
+    let timerId = -1;
+    let timedOut = false;
+    const timeout = new Promise<SearchSourceResult>((resolve) => {
+      timerId = setTimeout(() => {
+        timedOut = true;
+        resolve(this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '搜索超时'));
+      }, PER_SOURCE_TIMEOUT_MS);
+    });
+    try {
+      const result = await Promise.race([this.searchOne(source, keyword, options), timeout]);
+      if (timedOut) {
+        console.warn('[SC] source timed out, releasing worker:', source.bookSourceName);
+      }
+      return result;
+    } finally {
+      if (timerId >= 0) clearTimeout(timerId);
+    }
   }
 
   private validationHttpFailure(response: HttpResponse): SearchSourceResult {

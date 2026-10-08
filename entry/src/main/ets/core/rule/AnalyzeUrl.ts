@@ -29,13 +29,22 @@ export class AnalyzeUrl {
   private client: HttpClient;
   private runtimeSourceHeaders: Record<string, string>;
   private noTimeoutRetry: boolean = false;
+  /** Optional cancellation callback; when set, stuck rate-limiter waits abort immediately. */
+  private cancelCheck?: () => boolean;
 
   constructor(source: BookSource | null, client: HttpClient,
-    runtimeSourceHeaders: Record<string, string> = {}) {
+    runtimeSourceHeaders: Record<string, string> = {},
+    cancelCheck?: () => boolean) {
     this.source = source;
     this.client = client;
     this.runtimeSourceHeaders = runtimeSourceHeaders;
+    this.cancelCheck = cancelCheck;
     this.config = this.emptyConfig('');
+  }
+
+  setCancelCheck(check: () => boolean): AnalyzeUrl {
+    this.cancelCheck = check;
+    return this;
   }
 
   /** Marks bridge-issued requests to skip the doubled-timeout idempotent retry. */
@@ -565,7 +574,7 @@ export class AnalyzeUrl {
 
   private async fetchFollowingRedirects(req: HttpRequest): Promise<HttpResponse> {
     let currentReq = req;
-    await BookSourceRateLimiter.acquire(this.source);
+    await BookSourceRateLimiter.acquire(this.source, this.cancelCheck);
     let lastResp = await this.client.execute(currentReq);
     for (let i = 0; i < 3; i++) {
       if (lastResp.statusCode < 300 || lastResp.statusCode >= 400) return lastResp;
@@ -579,7 +588,7 @@ export class AnalyzeUrl {
       currentReq = switchToGet ?
         { ...currentReq, url: nextUrl, method: 'GET', body: '', headers: redirectHeaders } :
         { ...currentReq, url: nextUrl, headers: redirectHeaders };
-      await BookSourceRateLimiter.acquire(this.source);
+      await BookSourceRateLimiter.acquire(this.source, this.cancelCheck);
       lastResp = await this.client.execute(currentReq);
     }
     return lastResp;

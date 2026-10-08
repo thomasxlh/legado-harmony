@@ -32,9 +32,26 @@ export class ChangeSourceResultCache {
   private static readonly MAX_RESULTS_PER_BOOK: number = 50;
   private static readonly MAX_SEARCHED_SOURCES: number = 2000;
   private static readonly MAX_AGE_MS: number = 24 * 60 * 60 * 1000;
+  /** 缓存 preferences store 实例，避免每次 save/load 都触发 getPreferences 的文件打开开销；
+   *  aboutToDisappear 里的 persistResultsNow 需要尽快完成 put() 同步写入，减少组件销毁时的 race window。 */
+  private static cachedStore: preferences.Preferences | null = null;
+  private static cachedStoreContext: Context | null = null;
+
+  private static async ensureStore(context: Context): Promise<preferences.Preferences> {
+    if (ChangeSourceResultCache.cachedStore) return ChangeSourceResultCache.cachedStore;
+    const store = await preferences.getPreferences(context, ChangeSourceResultCache.STORE_NAME);
+    ChangeSourceResultCache.cachedStore = store;
+    ChangeSourceResultCache.cachedStoreContext = context;
+    return store;
+  }
+
+  static invalidateStore(): void {
+    ChangeSourceResultCache.cachedStore = null;
+    ChangeSourceResultCache.cachedStoreContext = null;
+  }
 
   static async load(context: Context, bookName: string, bookAuthor: string = ''): Promise<ChangeSourceCacheData | null> {
-    const store = await preferences.getPreferences(context, ChangeSourceResultCache.STORE_NAME);
+    const store = await ChangeSourceResultCache.ensureStore(context);
     const key = ChangeSourceResultCache.buildBookKey(bookName, bookAuthor);
     const raw = await store.get(ChangeSourceResultCache.entryPreferenceKey(key), '');
     const entry = ChangeSourceResultCache.parseEntry(typeof raw === 'string' ? raw : '');
@@ -66,7 +83,7 @@ export class ChangeSourceResultCache {
       .filter((value: string): boolean => !!value);
     entry.partial = partial;
 
-    const store = await preferences.getPreferences(context, ChangeSourceResultCache.STORE_NAME);
+    const store = await ChangeSourceResultCache.ensureStore(context);
     await store.put(ChangeSourceResultCache.entryPreferenceKey(key), JSON.stringify(entry));
     const index = await ChangeSourceResultCache.loadIndex(context);
     const next = new ChangeSourceCacheIndexEntry();
@@ -85,7 +102,7 @@ export class ChangeSourceResultCache {
   static async clear(context: Context, bookName: string, bookAuthor: string = ''): Promise<void> {
     const key = ChangeSourceResultCache.buildBookKey(bookName, bookAuthor);
     if (!key) return;
-    const store = await preferences.getPreferences(context, ChangeSourceResultCache.STORE_NAME);
+    const store = await ChangeSourceResultCache.ensureStore(context);
     await store.delete(ChangeSourceResultCache.entryPreferenceKey(key));
     const index = await ChangeSourceResultCache.loadIndex(context);
     if (index.some((item: ChangeSourceCacheIndexEntry): boolean => item.key === key)) {
@@ -96,7 +113,7 @@ export class ChangeSourceResultCache {
   }
 
   private static async loadIndex(context: Context): Promise<ChangeSourceCacheIndexEntry[]> {
-    const store = await preferences.getPreferences(context, ChangeSourceResultCache.STORE_NAME);
+    const store = await ChangeSourceResultCache.ensureStore(context);
     const raw = await store.get(ChangeSourceResultCache.INDEX_KEY, '');
     if (typeof raw !== 'string' || !raw) return [];
     try {
@@ -166,7 +183,7 @@ export class ChangeSourceResultCache {
     target.author = source.author || '';
     target.kind = '';
     target.status = source.status || '';
-    target.coverUrl = '';
+    target.coverUrl = source.coverUrl || '';
     target.intro = '';
     target.latestChapterTitle = source.latestChapterTitle || '';
     target.wordCount = source.wordCount || '';
