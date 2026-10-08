@@ -1,0 +1,11 @@
+{
+  "name": "entry",
+  "version": "4.0.0",
+  "description": "开源读书主模块",
+  "main": "Index.ets",
+  "author": "legado-harmony contributors",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "@devzeng/quickjs": "file:../quickjs"
+  }
+}

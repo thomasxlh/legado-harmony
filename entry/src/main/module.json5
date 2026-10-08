@@ -1,0 +1,140 @@
+{
+  "module": {
+    "name": "entry",
+    "type": "entry",
+    "description": "$string:module_desc",
+    "mainElement": "EntryAbility",
+    "deviceTypes": [
+      "phone",
+      "tablet",
+      "2in1"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "pages": "$profile:main_pages",
+    "metadata": [
+      {
+        "name": "ohos.arkui.UIMaterial.state",
+        "value": "enable"
+      }
+    ],
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.INTERNET"
+      },
+      {
+        "name": "ohos.permission.GET_NETWORK_INFO"
+      },
+      {
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING"
+      },
+      {
+        "name": "ohos.permission.CAMERA",
+        "reason": "$string:reader_eye_turn_camera_permission",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
+      },
+    ],
+    "abilities": [
+      {
+        "name": "EntryAbility",
+        "srcEntry": "./ets/entryability/EntryAbility.ets",
+        "description": "$string:EntryAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:EntryAbility_label",
+        "startWindowIcon": "$media:layered_image",
+        "startWindowBackground": "$color:start_window_background",
+        "orientation": "auto_rotation_restricted",
+        "launchType": "singleton",
+        "backgroundModes": [
+          "audioPlayback",
+          "dataTransfer"
+        ],
+        "exported": true,
+        "metadata": [
+          {
+            "name": "ohos.ability.shortcuts",
+            "resource": "$profile:shortcuts_config"
+          }
+        ],
+        "skills": [
+          {
+            "entities": [
+              "entity.system.home"
+            ],
+            "actions": [
+              "action.system.home"
+            ]
+          },
+          {
+            "actions": [
+              "ohos.want.action.viewData"
+            ],
+            "uris": [
+              {
+                "scheme": "file",
+                "type": "application/json",
+                "linkFeature": "FileOpen"
+              },
+              {
+                "scheme": "file",
+                "type": "text/json",
+                "linkFeature": "FileOpen"
+              },
+              {
+                "scheme": "file",
+                "type": "application/x-json",
+                "linkFeature": "FileOpen"
+              },
+              {
+                "scheme": "file",
+                "type": "general.plain-text",
+                "linkFeature": "FileOpen"
+              },
+              {
+                "scheme": "file",
+                "type": "text/plain",
+                "linkFeature": "FileOpen"
+              },
+              {
+                "scheme": "file",
+                "type": "general.epub",
+                "linkFeature": "FileOpen"
+              },
+              {
+                "scheme": "file",
+                "type": "application/epub+zip",
+                "linkFeature": "FileOpen"
+              },
+              {
+                "scheme": "file",
+                "type": "application/x-epub+zip",
+                "linkFeature": "FileOpen"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "extensionAbilities": [
+      {
+        "name": "RecentReadFormAbility",
+        "srcEntry": "./ets/entryformability/RecentReadFormAbility.ets",
+        "label": "$string:recent_read_form_name",
+        "description": "$string:recent_read_form_desc",
+        "type": "form",
+        "exported": true,
+        "metadata": [
+          {
+            "name": "ohos.extension.form",
+            "resource": "$profile:form_config"
+          }
+        ]
+      }
+    ]
+  }
+}

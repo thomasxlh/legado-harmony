@@ -1,0 +1,1787 @@
+import { router } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
+import { AppThemeSettings, AppThemeSettingsStore } from '../utils/AppThemeSettingsStore';
+import { ReaderSettings, ReaderSettingsStore } from '../utils/ReaderSettingsStore';
+import { ReaderThemeHelper } from '../utils/ReaderThemeHelper';
+import { syncSystemBars } from '../utils/SystemBars';
+import { RecentReadCardUpdater } from '../utils/RecentReadCardUpdater';
+import { CustomThemeScheme, CustomThemeSchemeStore } from '../utils/CustomThemeSchemeStore';
+import { BuiltinThemeRegistry } from '../theme/BuiltinThemeRegistry';
+import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { ThemeStartupCover } from '../components/ThemeStartupCover';
+import { ReaderThemeBackground } from '../components/ReaderThemeBackground';
+import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
+import { ThemeIds, ThemePack, ThemeVariant } from '../theme/ThemeModels';
+import { ThemeRuntime } from '../theme/ThemeRuntime';
+import {
+  ReaderRegexBubbleStyleResolver,
+  ReaderRegexEmphasisContext,
+  ReaderResolvedRegexEmphasis
+} from '../model/reader/ReaderRegexFontRule';
+import fs from '@ohos.file.fs';
+import { StartupCoverTextStore } from '../utils/StartupCoverTextStore';
+import deviceInfo from '@ohos.deviceInfo';
+import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
+import { SymbolGlyphModifier } from '@kit.ArkUI';
+import { HdsFeedback } from '../utils/HdsFeedback';
+
+const STORE_COVER_MIN_HEIGHT = 170;
+const STORE_COVER_MAX_HEIGHT = 340;
+const STORE_PAGE_FIXED_HEIGHT = 286;
+
+/** User choice from the "apply theme" prompt. */
+class ThemeApplyChoice {
+  applyLayout: boolean = false;
+  applyCover: boolean = false;
+
+  static preserve(): ThemeApplyChoice {
+    return new ThemeApplyChoice();
+  }
+}
+
+@Entry
+@Component
+struct ThemeSettingsPage {
+  @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('appThemeId') appThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
+  @StorageLink('appThemeBookCoverEnabled') themeBookCoverEnabled: boolean = false;
+  @StorageLink('themeRevision') themeRevision: number = 0;
+  @StorageLink('appCustomBaseThemeId') customBaseThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
+  @StorageLink('appCustomLightAccentColor') customLightAccentColor: string = '#007DFF';
+  @StorageLink('appCustomDarkAccentColor') customDarkAccentColor: string = '#4E9BFF';
+  @StorageLink('appCustomLightButtonColor') customLightButtonColor: string = '#007DFF';
+  @StorageLink('appCustomDarkButtonColor') customDarkButtonColor: string = '#3F8CFF';
+  @StorageLink('appCustomLightReaderBackgroundColor') customLightReaderBackgroundColor: string = '#F7F1E3';
+  @StorageLink('appCustomLightReaderTextColor') customLightReaderTextColor: string = '#2F261D';
+  @StorageLink('appCustomLightReaderSubTextColor') customLightReaderSubTextColor: string = '#7A6F63';
+  @StorageLink('appCustomLightReaderBackgroundAssetId') customLightReaderBackgroundAssetId: string = '';
+  @StorageLink('appCustomLightReaderBackgroundImageFit') customLightReaderBackgroundImageFit: string = 'cover';
+  @StorageLink('appCustomLightReaderContentTone') customLightReaderContentTone: string = 'light';
+  @StorageLink('appCustomDarkReaderBackgroundColor') customDarkReaderBackgroundColor: string = '#1F2329';
+  @StorageLink('appCustomDarkReaderTextColor') customDarkReaderTextColor: string = '#D8D8D8';
+  @StorageLink('appCustomDarkReaderSubTextColor') customDarkReaderSubTextColor: string = '#9AA0A6';
+  @StorageLink('appCustomDarkReaderBackgroundAssetId') customDarkReaderBackgroundAssetId: string = '';
+  @StorageLink('appCustomDarkReaderBackgroundImageFit') customDarkReaderBackgroundImageFit: string = 'cover';
+  @StorageLink('appCustomDarkReaderContentTone') customDarkReaderContentTone: string = 'dark';
+  @StorageLink('readerLightThemeIndex') readerLightThemeIndex: number = 0;
+  @StorageLink('readerDarkThemeIndex') readerDarkThemeIndex: number = 0;
+  @StorageLink('activeCustomThemeSchemeId') activeCustomSchemeId: string = '';
+  @StorageLink('activeCustomThemeSchemeRevision') activeCustomSchemeRevision: number = 0;
+  @StorageLink('customThemeSchemesRevision') @Watch('onCustomThemeSchemesRevisionChanged')
+  customThemeSchemesRevision: number = 0;
+  @StorageLink('startupCoverTextsRevision') startupCoverTextsRevision: number = 0;
+  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
+  @StorageProp('navBarHeight') navBarHeight: number = 0;
+  @State applyingThemeId: string = '';
+  @State customSchemes: CustomThemeScheme[] = [];
+  @State showCustomThemeActionMenu: boolean = false;
+  @State showRenameCustomThemeDialog: boolean = false;
+  @State showDeleteCustomThemeDialog: boolean = false;
+  @State actionCustomSchemeId: string = '';
+  @State renameCustomThemeName: string = '';
+  @State contextMenuX: number = 24;
+  @State contextMenuY: number = 120;
+  @State contextViewportWidth: number = 360;
+  @State contextViewportHeight: number = 720;
+  @State showStartupTextDialog: boolean = false;
+  @State startupTextThemeId: string = '';
+  @State startupTextTitle: string = '';
+  @State startupTextSubtitle: string = '';
+  @State showThemeApplyDialog: boolean = false;
+  @State applyDialogThemeName: string = '';
+  @State applyDialogLayoutHint: string = '';
+  @State applyDialogHasCover: boolean = false;
+  @State applyDialogApplyLayout: boolean = false;
+  @State applyDialogApplyCover: boolean = false;
+  private pendingApplyChoice: ((choice: ThemeApplyChoice | null) => void) | null = null;
+  @State showThemeStore: boolean = false;
+  @State storePageIndex: number = 0;
+  @State storeSwiperHeight: number = 0;
+  private customSchemeRefreshSerial: number = 0;
+  private themeListScroller: ListScroller = new ListScroller();
+
+  aboutToAppear(): void {
+    this.loadThemeSettings();
+    this.refreshCustomSchemes();
+    this.syncBars();
+  }
+
+  onPageShow(): void {
+    this.refreshCustomSchemes();
+    this.syncBars();
+  }
+
+  onCustomThemeSchemesRevisionChanged(): void {
+    this.refreshCustomSchemes();
+  }
+
+  onBackPress(): boolean {
+    if (this.showThemeStore) {
+      this.closeThemeStore();
+      return true;
+    }
+    return false;
+  }
+
+  build() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      List({ space: 12, scroller: this.themeListScroller }) {
+        // List padding is fixed to the viewport in ArkUI. Use real list items
+        // for the safe-area gaps so they scroll away with the content.
+        ListItem() {
+          Row() {
+          }
+            .width('100%')
+            .height(this.statusBarHeight + 58)
+        }
+        ListItem() {
+          this.sectionTitle('默认主题')
+        }
+        ListItem() {
+          this.themeCard(BuiltinThemeRegistry.findById(ThemeIds.PLAIN_DEFAULT))
+        }
+        ListItem() {
+          this.customThemeSectionTitle()
+        }
+        ForEach(this.customSchemes, (scheme: CustomThemeScheme) => {
+          if (deviceInfo.sdkApiVersion >= 26) {
+            HdsListItem({
+              customItemBuilder: () => {
+                this.themeCard(this.customTheme(scheme), scheme.id)
+              },
+              swipeActionOptions: this.themeSwipeActions(scheme)
+            })
+          } else {
+            ListItem() {
+              this.themeCard(this.customTheme(scheme), scheme.id)
+            }
+            .swipeAction({
+              end: {
+                builder: () => {
+                  this.customThemeDeleteSwipeAction(scheme)
+                },
+                actionAreaDistance: 64,
+                onAction: () => this.deleteCustomThemeFromSwipe(scheme)
+              },
+              edgeEffect: SwipeEdgeEffect.Spring
+            })
+          }
+        }, (scheme: CustomThemeScheme) => `${scheme.id}_${scheme.revision}`)
+        ListItem() {
+          this.sectionTitle('全部主题')
+        }
+        ForEach(this.allThemes(), (theme: ThemePack) => {
+          ListItem() {
+            this.themeCard(theme)
+          }
+        }, (theme: ThemePack) => `${theme.id}`)
+        ListItem() {
+          Row() {
+          }
+            .width('100%')
+            .height(Math.max(20, this.navBarHeight + 8))
+        }
+      }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .width('100%')
+      .height('100%')
+      // The list itself must own the system-safe-area expansion. Expanding
+      // only its parent leaves the List viewport clipped to the safe area.
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+      .padding({
+        left: 14,
+        right: 14
+      })
+      .scrollBar(BarState.Off)
+      .backgroundColor(this.pageColor())
+
+      // Pinned over the edge-to-edge list so scrolled content remains visible
+      // beneath the status/title area instead of being clipped by it.
+      this.titleBar()
+
+      if (this.showThemeStore) {
+        this.themeStoreOverlay()
+      }
+
+      if (this.showCustomThemeActionMenu) {
+        this.customThemeActionMenu()
+      }
+      if (this.showRenameCustomThemeDialog) {
+        this.renameCustomThemeDialog()
+      }
+      if (this.showDeleteCustomThemeDialog) {
+        this.deleteCustomThemeDialog()
+      }
+      if (this.showStartupTextDialog) {
+        this.startupTextDialog()
+      }
+      if (this.showThemeApplyDialog) {
+        this.themeApplyDialog()
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.pageColor())
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .onAreaChange((_oldValue: Area, newValue: Area) => {
+      this.updateContextViewport(newValue);
+    })
+  }
+
+  private themeSwipeActions(scheme: CustomThemeScheme): HdsSwipeActionOptions {
+    return { icons: [{
+      icon: new SymbolGlyphModifier($r('sys.symbol.trash')),
+      backgroundColor: ThemeRuntime.dangerColor(this.appDarkMode),
+      iconOptions: { accessibilityText: '删除主题' },
+      onAction: () => this.deleteCustomThemeFromSwipe(scheme)
+    }] };
+  }
+
+  async loadThemeSettings(): Promise<void> {
+    try {
+      const settings = await AppThemeSettingsStore.load(getContext(this));
+      const theme = settings.themeId === ThemeIds.CUSTOM ?
+        AppThemeSettingsStore.customTheme(settings, this.appDarkMode) :
+        BuiltinThemeRegistry.findById(settings.themeId);
+      if (settings.themeBookCoverEnabled && !this.themeHasBookCover(theme)) {
+        settings.themeBookCoverEnabled = false;
+        await AppThemeSettingsStore.save(getContext(this), settings);
+      }
+      AppThemeSettingsStore.applyToStorage(settings);
+      this.appThemeId = settings.themeId;
+      this.themeBookCoverEnabled = settings.themeBookCoverEnabled;
+      const readerSettings = await ReaderSettingsStore.load(getContext(this));
+      ReaderSettingsStore.applyToStorage(readerSettings);
+    } catch (e) {
+      console.warn('加载主题设置失败:', e);
+    }
+  }
+
+  async refreshCustomSchemes(): Promise<void> {
+    const serial = ++this.customSchemeRefreshSerial;
+    try {
+      const settings = await AppThemeSettingsStore.load(getContext(this));
+      const schemes = await CustomThemeSchemeStore.load(getContext(this), settings);
+      if (serial === this.customSchemeRefreshSerial) {
+        this.customSchemes = schemes;
+      }
+    } catch (e) {
+      console.warn('加载自定义主题方案失败:', e);
+    }
+  }
+
+  async selectTheme(themeId: string, customSchemeId: string = '',
+    askApplyOptions: boolean = true): Promise<void> {
+    if (this.applyingThemeId) {
+      return;
+    }
+    const customScheme = themeId === ThemeIds.CUSTOM ?
+      CustomThemeSchemeStore.find(this.customSchemes, customSchemeId) : null;
+    if (themeId === ThemeIds.CUSTOM && !customScheme) {
+      return;
+    }
+    if (themeId === this.appThemeId && themeId !== ThemeIds.CUSTOM) {
+      return;
+    }
+    this.applyingThemeId = customSchemeId || themeId;
+    try {
+      const theme = customScheme ? this.customTheme(customScheme) : BuiltinThemeRegistry.findById(themeId);
+      const previous: AppThemeSettings = await AppThemeSettingsStore.load(getContext(this));
+      // Applying a theme used to always overwrite the reader layout. Ask first so the
+      // user decides whether the theme's typography and cover come along.
+      const choice: ThemeApplyChoice | null = askApplyOptions ?
+        await this.promptThemeApplyOptions(theme, previous) : ThemeApplyChoice.preserve();
+      if (!choice) {
+        return;
+      }
+      let settings: AppThemeSettings = AppThemeSettingsStore.activateTheme(themeId, previous);
+      if (customScheme) {
+        settings = AppThemeSettingsStore.applyCustomSnapshot(settings, customScheme.settings);
+      }
+      settings.themeBookCoverEnabled = choice.applyCover;
+      settings.themeApplyLayoutEnabled = choice.applyLayout;
+      AppThemeSettingsStore.applyToStorage(settings);
+      await AppThemeSettingsStore.save(getContext(this), settings);
+      if (customScheme) {
+        await CustomThemeSchemeStore.setActiveScheme(getContext(this), customScheme);
+        this.activeCustomSchemeId = customScheme.id;
+        this.activeCustomSchemeRevision = customScheme.revision;
+      }
+      this.appThemeId = settings.themeId;
+      this.themeBookCoverEnabled = settings.themeBookCoverEnabled;
+      const readerSettings = await ReaderSettingsStore.switchThemeProfile(
+        getContext(this), previous.themeId, settings.themeId);
+      if (choice.applyLayout) {
+        const layout = theme.readerLayout;
+        await ReaderSettingsStore.saveLayoutSettings(getContext(this), layout.fontSize, layout.lineHeight,
+          layout.paragraphSpacing, layout.marginLeft, layout.marginRight, layout.marginTop, layout.marginBottom,
+          layout.letterSpacing, readerSettings.textAlign);
+      }
+      await ReaderSettingsStore.saveThemeSettings(getContext(this), ReaderThemeHelper.APP_THEME_INDEX,
+        ReaderThemeHelper.APP_THEME_INDEX, readerSettings.lightCustomThemeBackgroundColor,
+        readerSettings.lightCustomThemeTextColor, readerSettings.darkCustomThemeBackgroundColor,
+        readerSettings.darkCustomThemeTextColor, this.appDarkMode, readerSettings.customThemesRaw);
+      this.readerLightThemeIndex = ReaderThemeHelper.APP_THEME_INDEX;
+      this.readerDarkThemeIndex = ReaderThemeHelper.APP_THEME_INDEX;
+      await this.applyThemeFontWhenAvailable();
+      this.refreshRecentReadCard();
+      this.syncBars();
+      HdsFeedback.showToast(choice.applyLayout ? `已应用「${theme.name}」主题` : `已应用「${theme.name}」主题，排版保持不变`);
+    } catch (e) {
+      console.error('应用主题失败:', e);
+      HdsFeedback.showToast('应用主题失败，请稍后重试');
+    } finally {
+      this.applyingThemeId = '';
+    }
+  }
+
+  promptThemeApplyOptions(theme: ThemePack, previous: AppThemeSettings): Promise<ThemeApplyChoice | null> {
+    this.applyDialogThemeName = theme.name;
+    this.applyDialogLayoutHint = `字号 ${theme.readerLayout.fontSize} · 行距 ${theme.readerLayout.lineHeight} · ` +
+      `段距 ${theme.readerLayout.paragraphSpacing} · 边距 ${theme.readerLayout.marginLeft}/${theme.readerLayout.marginRight}`;
+    this.applyDialogHasCover = this.themeHasBookCover(theme);
+    this.applyDialogApplyLayout = previous.themeApplyLayoutEnabled;
+    this.applyDialogApplyCover = this.applyDialogHasCover && previous.themeBookCoverEnabled;
+    this.showThemeApplyDialog = true;
+    return new Promise<ThemeApplyChoice | null>(
+      (resolve: (choice: ThemeApplyChoice | null) => void) => {
+        this.pendingApplyChoice = resolve;
+      });
+  }
+
+  confirmThemeApply(): void {
+    const choice = new ThemeApplyChoice();
+    choice.applyLayout = this.applyDialogApplyLayout;
+    choice.applyCover = this.applyDialogHasCover && this.applyDialogApplyCover;
+    const resolve = this.pendingApplyChoice;
+    this.closeThemeApplyDialog();
+    if (resolve) {
+      resolve(choice);
+    }
+  }
+
+  cancelThemeApply(): void {
+    const resolve = this.pendingApplyChoice;
+    this.closeThemeApplyDialog();
+    if (resolve) {
+      resolve(null);
+    }
+  }
+
+  closeThemeApplyDialog(): void {
+    this.showThemeApplyDialog = false;
+    this.pendingApplyChoice = null;
+    this.applyDialogThemeName = '';
+    this.applyDialogLayoutHint = '';
+    this.applyDialogHasCover = false;
+  }
+
+  async setThemeBookCoverEnabled(enabled: boolean): Promise<void> {
+    try {
+      const settings = await AppThemeSettingsStore.load(getContext(this));
+      settings.themeBookCoverEnabled = enabled;
+      AppThemeSettingsStore.applyToStorage(settings);
+      await AppThemeSettingsStore.save(getContext(this), settings);
+      this.themeBookCoverEnabled = enabled;
+      HdsFeedback.showToast(enabled ? '已启用主题封面与书籍边框' : '已恢复图书原封面');
+    } catch (e) {
+      console.error('保存主题封面设置失败:', e);
+      HdsFeedback.showToast('保存主题封面设置失败');
+    }
+  }
+
+  async applyThemeFontWhenAvailable(): Promise<void> {
+    const settings: ReaderSettings = await ReaderSettingsStore.load(getContext(this));
+    if (settings.fontFilePath && this.fontFileExists(settings.fontFilePath)) {
+      return;
+    }
+    try {
+      getContext(this).getApplicationContext().setFont(ThemeRuntime.fontFamily());
+    } catch (e) {
+      console.warn('应用主题默认字体失败:', e);
+    }
+  }
+
+  fontFileExists(filePath: string): boolean {
+    if (!filePath) {
+      return false;
+    }
+    try {
+      return fs.accessSync(filePath);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  refreshRecentReadCard(): void {
+    const context = getContext(this) as common.UIAbilityContext;
+    RecentReadCardUpdater.reload(context).catch((e: Error) => {
+      console.warn('主题切换后刷新最近阅读卡片失败:', e);
+    });
+  }
+
+  customTheme(scheme: CustomThemeScheme): ThemePack {
+    const theme = AppThemeSettingsStore.customTheme(scheme.settings, this.appDarkMode);
+    theme.name = scheme.name;
+    theme.description = '自由组合浅色与深色模式下的主题部件';
+    return theme;
+  }
+
+  activeVariant(theme: ThemePack): ThemeVariant {
+    return this.appDarkMode ? theme.dark : theme.light;
+  }
+
+  isSelected(theme: ThemePack, customSchemeId: string = ''): boolean {
+    if (theme.id === ThemeIds.CUSTOM) {
+      const scheme = CustomThemeSchemeStore.find(this.customSchemes, customSchemeId);
+      return this.appThemeId === ThemeIds.CUSTOM && this.activeCustomSchemeId === customSchemeId &&
+        !!scheme && scheme.revision === this.activeCustomSchemeRevision;
+    }
+    return theme.id === this.appThemeId;
+  }
+
+  pageColor(): string {
+    return ThemeRuntime.pageColor(this.appDarkMode);
+  }
+
+  cardColor(): string {
+    return ThemeRuntime.cardColor(this.appDarkMode);
+  }
+
+  titleBarSurfaceColor(): string {
+    return ThemeRuntime.topBarColor(this.appDarkMode);
+  }
+
+  primaryTextColor(): string {
+    return ThemeRuntime.primaryTextColor(this.appDarkMode);
+  }
+
+  subTextColor(): string {
+    return ThemeRuntime.subTextColor(this.appDarkMode);
+  }
+
+  accentColor(): string {
+    return ThemeRuntime.accentColor(this.appDarkMode);
+  }
+
+  syncBars(): void {
+    syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
+  }
+
+  @Builder
+  titleBar() {
+    Row() {
+      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
+        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
+        onBack: () => router.back() })
+      Text('主题')
+        .fontSize(20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryTextColor())
+        .layoutWeight(1)
+      this.themeStoreEntryButton()
+    }
+    .width('100%')
+    // The status-bar inset belongs to the pinned title itself, avoiding an
+    // additional opaque strip above it while keeping controls out of the
+    // system status area.
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight, right: 12 })
+    .backgroundColor(this.titleBarSurfaceColor())
+    .backdropBlur(ThemeRuntime.topBarBlur())
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  sectionTitle(title: string) {
+    Text(title)
+      .fontSize(13)
+      .fontColor(this.subTextColor())
+      .width('100%')
+      .padding({ left: 2, top: 6, bottom: 0 })
+  }
+
+  @Builder
+  themeStoreEntryButton() {
+    Row({ space: 5 }) {
+      SymbolGlyph($r('sys.symbol.bag'))
+        .fontSize(14)
+        .fontColor([this.accentColor()])
+      Text('主题商店')
+        .fontSize(12)
+        .fontColor(this.accentColor())
+    }
+    .height(30)
+    .padding({ left: 10, right: 10 })
+    .borderRadius(15)
+    .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
+    .alignItems(VerticalAlign.Center)
+    .accessibilityText('打开主题商店')
+    .onClick(() => this.openThemeStore())
+  }
+
+  /** Full-screen store: one themed showcase page per swipe. */
+  @Builder
+  themeStoreOverlay() {
+    Column() {
+      this.themeStoreHeader()
+      Text('左右滑动浏览全部主题')
+        .fontSize(12)
+        .fontColor(this.subTextColor())
+        .width('100%')
+        .padding({ left: 20, top: 10, bottom: 2 })
+      this.themeStoreSwiper()
+      this.storePageDots()
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ bottom: Math.max(12, this.navBarHeight) })
+    .backgroundColor(this.pageColor())
+    .transition(TransitionEffect.translate({ y: 64 })
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 260, curve: Curve.Friction }))
+  }
+
+  @Builder
+  themeStoreHeader() {
+    Row() {
+      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
+        buttonSize: 40, containerWidth: 40, containerHeight: 40,
+        startInset: 0, materialScale: 0.83, compactLayout: true,
+        accessibilityLabel: '返回主题设置', onBack: () => this.closeThemeStore() })
+      Text('主题商店')
+        .fontSize(20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryTextColor())
+        .layoutWeight(1)
+        .margin({ left: 2 })
+    }
+    .width('100%')
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight, left: 12, right: 14 })
+    .backgroundColor(this.titleBarSurfaceColor())
+    .backdropBlur(ThemeRuntime.topBarBlur())
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  themeStoreSwiper() {
+    Swiper() {
+      ForEach(this.storeThemes(), (theme: ThemePack) => {
+        // A vertical scroll is the safety net for viewports too short for the
+        // fixed detail rows; the cover height normally keeps the page fitting.
+        Scroll() {
+          this.storeThemePage(theme)
+        }
+        .width('100%')
+        .height('100%')
+        .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring)
+      }, (theme: ThemePack) => `store_${theme.id}`)
+    }
+    .indicator(false)
+    .loop(false)
+    .duration(300)
+    .onChange((index: number) => {
+      this.storePageIndex = index;
+    })
+    .onAreaChange((_oldValue: Area, newValue: Area) => {
+      const height = Number(newValue.height);
+      if (Number.isFinite(height) && height > 0) {
+        this.storeSwiperHeight = height;
+      }
+    })
+    .width('100%')
+    .layoutWeight(1)
+    .padding({ left: 18, right: 18, top: 8, bottom: 6 })
+  }
+
+  @Builder
+  storePageDots() {
+    Row({ space: 6 }) {
+      ForEach(this.storeThemes(), (theme: ThemePack, index: number) => {
+        Row()
+          .width(index === this.storePageIndex ? 16 : 6)
+          .height(6)
+          .borderRadius(3)
+          .backgroundColor(index === this.storePageIndex ? this.accentColor() :
+            (this.appDarkMode ? '#4DFFFFFF' : '#26000000'))
+      }, (theme: ThemePack) => `store_dot_${theme.id}`)
+    }
+    .justifyContent(FlexAlign.Center)
+    .width('100%')
+    .height(18)
+  }
+
+  /** One full detail page per theme: cover art, reader sample, pricing and actions. */
+  @Builder
+  storeThemePage(theme: ThemePack) {
+    Column({ space: 10 }) {
+      Stack() {
+        ThemeStartupCover({
+          themeId: theme.startup.styleId,
+          darkMode: this.appDarkMode,
+          animated: false
+        })
+      }
+      .width('100%')
+      .height(this.storeCoverHeight())
+      .borderRadius(theme.radius.large)
+      .clip(true)
+
+      Row({ space: 8 }) {
+        Text(theme.name)
+          .fontSize(17)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(theme.typography.appFontFamily)
+          .fontColor(this.activeVariant(theme).colors.primaryTextColor)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        this.storeThemeStatusPill(theme)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Row({ space: 10 }) {
+        Text(theme.description)
+          .fontSize(11)
+          .fontColor(this.activeVariant(theme).colors.subTextColor)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      this.storeReaderPreview(theme)
+      this.storeNavInfoRow(theme)
+      this.storeThemeActions(theme)
+    }
+    .width('100%')
+    .padding(12)
+    .alignItems(HorizontalAlign.Start)
+    .borderRadius(theme.radius.card)
+    .backgroundColor(this.activeVariant(theme).colors.cardColor)
+    .border({
+      width: this.isSelected(theme) ? 2 : 1,
+      color: this.isSelected(theme) ? this.activeVariant(theme).colors.accentColor :
+        this.activeVariant(theme).colors.dividerColor
+    })
+  }
+
+  /** Reader body sample: the theme's paper, text colour and emphasis bubble. */
+  @Builder
+  storeReaderPreview(theme: ThemePack) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      ReaderThemeBackground({
+        surfaceColor: this.activeVariant(theme).reader.backgroundColor,
+        backgroundAssetId: this.activeVariant(theme).reader.backgroundAssetId,
+        compact: true
+      })
+      Column({ space: 7 }) {
+        Text('正文预览 · 护眼底色与字色')
+          .fontSize(10)
+          .fontColor(this.activeVariant(theme).reader.subTextColor)
+        Text() {
+          ContainerSpan() {
+            ImageSpan(ThemeAssetRegistry.regexBubbleCap(this.activeVariant(theme).regexEmphasis.bubbleStyle))
+              .width(14)
+              .height(14)
+              .objectFit(ImageFit.Contain)
+              .verticalAlign(ImageSpanAlignment.CENTER)
+            Span('重点标注')
+              .fontSize(12)
+              .fontColor(this.themeRegexPreview(theme).textColor)
+              .textShadow(this.themeRegexPreviewShadow(theme))
+            ImageSpan(ThemeAssetRegistry.regexBubbleCap(this.activeVariant(theme).regexEmphasis.bubbleStyle))
+              .width(14)
+              .height(14)
+              .objectFit(ImageFit.Contain)
+              .verticalAlign(ImageSpanAlignment.CENTER)
+              .rotate({ angle: 180 })
+          }
+          .textBackgroundStyle(this.themeRegexPreviewBackground(theme))
+        }
+        Text('一行正文示例，用于预览阅读页的排版与配色。')
+          .fontSize(12)
+          .fontFamily(theme.typography.appFontFamily)
+          .fontColor(this.activeVariant(theme).reader.textColor)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .width('100%')
+      .padding(12)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .height(96)
+    .borderRadius(theme.radius.medium)
+    .clip(true)
+  }
+
+  @Builder
+  storeNavInfoRow(theme: ThemePack) {
+    Row({ space: 8 }) {
+      ForEach(['bookshelf', 'explore', 'search', 'mine'], (tabId: string) => {
+        Image(ThemeAssetRegistry.navigationIcon(theme.navigation.iconPackId, tabId))
+          .width(16)
+          .height(16)
+          .fillColor(this.activeVariant(theme).colors.accentColor)
+          .draggable(false)
+      }, (tabId: string) => `store_${theme.id}_${tabId}`)
+      Blank()
+      Text(`字号 ${theme.readerLayout.fontSize} · 行距 ${theme.readerLayout.lineHeight} · ` +
+        `边距 ${theme.readerLayout.marginLeft}/${theme.readerLayout.marginRight}`)
+        .fontSize(10)
+        .fontColor(this.activeVariant(theme).colors.subTextColor)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  storeThemeActions(theme: ThemePack) {
+    if (this.isSelected(theme)) {
+      Row() {
+        Text('正在使用该主题')
+          .fontSize(12)
+          .fontColor(this.activeVariant(theme).colors.accentColor)
+      }
+      .width('100%')
+      .height(40)
+      .justifyContent(FlexAlign.Center)
+      .borderRadius(theme.radius.button)
+      .backgroundColor(this.activeVariant(theme).colors.inputColor)
+    } else {
+      Button('应用主题', { type: ButtonType.Normal })
+        .width('100%')
+        .height(40)
+        .fontSize(13)
+        .fontColor('#FFFFFF')
+        .backgroundColor(this.activeVariant(theme).colors.buttonColor)
+        .onClick(() => {
+          this.selectTheme(theme.id);
+        })
+    }
+  }
+
+  @Builder
+  storeThemeStatusPill(theme: ThemePack) {
+    if (this.applyingThemeId === theme.id && !this.isSelected(theme)) {
+      Text('应用中')
+        .fontSize(10)
+        .fontColor(this.activeVariant(theme).colors.accentColor)
+    } else if (this.isSelected(theme)) {
+      Text('使用中')
+        .fontSize(10)
+        .fontColor('#FFFFFF')
+        .padding({ left: 7, right: 7, top: 3, bottom: 3 })
+        .borderRadius(10)
+        .backgroundColor(this.activeVariant(theme).colors.accentColor)
+    }
+  }
+
+  @Builder
+  customThemeSectionTitle() {
+    Row({ space: 10 }) {
+      Text(`自定义主题 · ${this.customSchemes.length}/${CustomThemeSchemeStore.MAX_SCHEMES}`)
+        .fontSize(13)
+        .fontColor(this.subTextColor())
+        .layoutWeight(1)
+      Button('添加方案')
+        .height(30)
+        .fontSize(12)
+        .fontColor(this.customSchemes.length < CustomThemeSchemeStore.MAX_SCHEMES ?
+          '#FFFFFF' : this.subTextColor())
+        .backgroundColor(this.customSchemes.length < CustomThemeSchemeStore.MAX_SCHEMES ?
+          this.accentColor() : this.cardColor())
+        .enabled(this.customSchemes.length < CustomThemeSchemeStore.MAX_SCHEMES)
+        .onClick(() => {
+          this.addCustomScheme();
+        })
+    }
+    .width('100%')
+    .padding({ left: 2, top: 6, bottom: 0 })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  async addCustomScheme(): Promise<void> {
+    try {
+      const settings = await AppThemeSettingsStore.load(getContext(this));
+      const added = await CustomThemeSchemeStore.add(getContext(this), settings);
+      if (!added) {
+        HdsFeedback.showToast('最多只能创建 5 套自定义主题');
+        return;
+      }
+      await this.refreshCustomSchemes();
+      HdsFeedback.showToast(`已添加「${added.name}」`);
+    } catch (e) {
+      console.error('添加自定义主题方案失败:', e);
+      HdsFeedback.showToast('添加方案失败，请稍后重试');
+    }
+  }
+
+  @Builder
+  customThemeDeleteSwipeAction(scheme: CustomThemeScheme) {
+    Column({ space: 4 }) {
+      SymbolGlyph($r('sys.symbol.trash'))
+        .fontSize(22)
+        .fontColor(['#FFFFFF'])
+      Text('删除')
+        .fontSize(11)
+        .fontColor('#FFFFFF')
+    }
+    .width(64)
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode))
+    .onClick(() => {
+      this.deleteCustomThemeFromSwipe(scheme);
+    })
+  }
+
+  @Builder
+  customThemeActionMenu() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.appDarkMode ? '#52000000' : '#26FFFFFF')
+        .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
+        .onClick(() => this.closeCustomThemeActions())
+      Column() {
+        this.contextActionItem($r('sys.symbol.square_and_pencil'), '重命名', this.primaryTextColor(), () => {
+          const scheme = this.actionCustomScheme();
+          if (!scheme) return;
+          this.renameCustomThemeName = scheme.name;
+          this.showCustomThemeActionMenu = false;
+          this.showRenameCustomThemeDialog = true;
+        })
+        this.contextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+          this.showCustomThemeActionMenu = false;
+          this.requestDeleteCustomTheme(this.actionCustomSchemeId);
+        })
+      }
+      .width(148)
+      .padding({ top: 6, bottom: 6 })
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({
+        width: ThemeRuntime.glassBorderWidth('panel'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel')
+      })
+      .shadow({
+        radius: ThemeRuntime.glassShadowRadius('panel'),
+        color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'),
+        offsetY: ThemeRuntime.glassShadowOffsetY('panel')
+      })
+      .position({
+        x: this.contextMenuLeft(148),
+        y: this.contextMenuTop(104)
+      })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  contextActionItem(icon: Resource, label: string, color: string, action: () => void) {
+    Row({ space: 10 }) {
+      SymbolGlyph(icon)
+        .fontSize(18)
+        .fontColor([color])
+        .width(24)
+      Text(label)
+        .fontSize(15)
+        .fontColor(color)
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .height(46)
+    .padding({ left: 12, right: 12 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(action)
+  }
+
+  @Builder
+  renameCustomThemeDialog() {
+    Column() {
+      Column({ space: 16 }) {
+        Text('重命名自定义主题')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+        TextInput({ placeholder: '输入方案名称', text: this.renameCustomThemeName })
+          .width('100%')
+          .height(42)
+          .fontColor(this.primaryTextColor())
+          .placeholderColor(this.subTextColor())
+          .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
+          .borderRadius(10)
+          .onChange((value: string) => {
+            this.renameCustomThemeName = value;
+          })
+        Row({ space: 12 }) {
+          Button('取消', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor(this.cardColor())
+            .fontColor(this.primaryTextColor())
+            .onClick(() => this.closeRenameCustomThemeDialog())
+          Button('保存', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor(this.accentColor())
+            .fontColor('#FFFFFF')
+            .enabled(!!this.renameCustomThemeName.trim())
+            .onClick(() => this.renameCustomTheme())
+        }
+        .width('100%')
+      }
+      .width('calc(100% - 48vp)')
+      .constraintSize({ maxWidth: 360 })
+      .padding(20)
+      .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({
+        width: ThemeRuntime.glassBorderWidth('panel'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel')
+      })
+      .shadow({
+        radius: ThemeRuntime.glassShadowRadius('panel'),
+        color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'),
+        offsetY: ThemeRuntime.glassShadowOffsetY('panel')
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.appDarkMode ? '#76000000' : '#52000000')
+    .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
+  }
+
+  @Builder
+  deleteCustomThemeDialog() {
+    Column() {
+      Column({ space: 14 }) {
+        Text('删除自定义主题')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+        Text(`确定删除「${this.actionCustomScheme()?.name || '该方案'}」吗？此操作无法撤销。`)
+          .fontSize(14)
+          .fontColor(this.subTextColor())
+          .width('100%')
+        Row({ space: 12 }) {
+          Button('取消', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor(this.cardColor())
+            .fontColor(this.primaryTextColor())
+            .onClick(() => this.closeDeleteCustomThemeDialog())
+          Button('删除', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor('#E53935')
+            .fontColor('#FFFFFF')
+            .onClick(() => this.confirmDeleteCustomTheme())
+        }
+        .width('100%')
+      }
+      .width('calc(100% - 48vp)')
+      .constraintSize({ maxWidth: 360 })
+      .padding(20)
+      .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({
+        width: ThemeRuntime.glassBorderWidth('panel'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel')
+      })
+      .shadow({
+        radius: ThemeRuntime.glassShadowRadius('panel'),
+        color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'),
+        offsetY: ThemeRuntime.glassShadowOffsetY('panel')
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.appDarkMode ? '#76000000' : '#52000000')
+    .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
+  }
+
+  @Builder
+  startupTextDialog() {
+    Column() {
+      Column({ space: 14 }) {
+        Text(`编辑「${BuiltinThemeRegistry.findById(this.startupTextThemeId).name}」启动文案`)
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+        Column({ space: 6 }) {
+          Text('主标题')
+            .fontSize(12)
+            .fontColor(this.subTextColor())
+            .width('100%')
+          TextInput({ placeholder: '可留空', text: this.startupTextTitle })
+            .width('100%')
+            .height(42)
+            .maxLength(24)
+            .fontColor(this.primaryTextColor())
+            .placeholderColor(this.subTextColor())
+            .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
+            .borderRadius(10)
+            .onChange((value: string) => {
+              this.startupTextTitle = value;
+            })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        Column({ space: 6 }) {
+          Text('副标题')
+            .fontSize(12)
+            .fontColor(this.subTextColor())
+            .width('100%')
+          TextInput({ placeholder: '可留空', text: this.startupTextSubtitle })
+            .width('100%')
+            .height(42)
+            .maxLength(48)
+            .fontColor(this.primaryTextColor())
+            .placeholderColor(this.subTextColor())
+            .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
+            .borderRadius(10)
+            .onChange((value: string) => {
+              this.startupTextSubtitle = value;
+            })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        Button('恢复默认文案', { type: ButtonType.Normal })
+          .height(34)
+          .fontSize(12)
+          .fontColor(this.accentColor())
+          .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
+          .onClick(() => {
+            this.startupTextTitle = '开源读书';
+            this.startupTextSubtitle = StartupCoverTextStore.defaultSubtitle(this.startupTextThemeId);
+          })
+        Row({ space: 12 }) {
+          Button('取消', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor(this.cardColor())
+            .fontColor(this.primaryTextColor())
+            .onClick(() => this.closeStartupTextDialog())
+          Button('保存', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor(this.accentColor())
+            .fontColor('#FFFFFF')
+            .onClick(() => this.saveStartupText())
+        }
+        .width('100%')
+      }
+      .width('calc(100% - 48vp)')
+      .constraintSize({ maxWidth: 360 })
+      .padding(20)
+      .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({
+        width: ThemeRuntime.glassBorderWidth('panel'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel')
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.appDarkMode ? '#76000000' : '#52000000')
+    .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
+  }
+
+  @Builder
+  themeApplyDialog() {
+    Column() {
+      Column({ space: 14 }) {
+        Text(`应用「${this.applyDialogThemeName}」`)
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+        Text('选择要随主题一起应用的内容，关闭的选项会保留当前设置。')
+          .fontSize(13)
+          .fontColor(this.subTextColor())
+          .width('100%')
+        this.themeApplyToggleRow('layout')
+        if (this.applyDialogHasCover) {
+          this.themeApplyToggleRow('cover')
+        }
+        Row({ space: 12 }) {
+          Button('取消', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor(this.cardColor())
+            .fontColor(this.primaryTextColor())
+            .onClick(() => this.cancelThemeApply())
+          Button('应用', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor(this.accentColor())
+            .fontColor('#FFFFFF')
+            .onClick(() => this.confirmThemeApply())
+        }
+        .width('100%')
+      }
+      .width('calc(100% - 48vp)')
+      .constraintSize({ maxWidth: 360 })
+      .padding(20)
+      .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({
+        width: ThemeRuntime.glassBorderWidth('panel'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel')
+      })
+      .shadow({
+        radius: ThemeRuntime.glassShadowRadius('panel'),
+        color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'),
+        offsetY: ThemeRuntime.glassShadowOffsetY('panel')
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.appDarkMode ? '#76000000' : '#52000000')
+    .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
+  }
+
+  @Builder
+  themeApplyToggleRow(category: string) {
+    Row({ space: 12 }) {
+      Column({ space: 3 }) {
+        Text(category === 'layout' ? '应用主题排版' : '应用主题封面')
+          .fontSize(15)
+          .fontColor(this.primaryTextColor())
+        Text(category === 'layout' ? this.applyDialogLayoutHint : '书架使用主题封面与配套书籍边框')
+          .fontSize(11)
+          .fontColor(this.subTextColor())
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Toggle({ type: ToggleType.Switch,
+        isOn: category === 'layout' ? this.applyDialogApplyLayout : this.applyDialogApplyCover })
+        .selectedColor(this.accentColor())
+        .onChange((enabled: boolean) => {
+          if (category === 'layout') {
+            this.applyDialogApplyLayout = enabled;
+          } else {
+            this.applyDialogApplyCover = enabled;
+          }
+        })
+    }
+    .width('100%')
+    .padding({ top: 2, bottom: 2 })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  openStartupTextDialog(themeId: string): void {
+    if (themeId === ThemeIds.PLAIN_DEFAULT || themeId === ThemeIds.CUSTOM) return;
+    this.startupTextThemeId = themeId;
+    this.startupTextTitle = StartupCoverTextStore.title(themeId, '开源读书');
+    this.startupTextSubtitle = StartupCoverTextStore.subtitle(
+      themeId, StartupCoverTextStore.defaultSubtitle(themeId));
+    this.showStartupTextDialog = true;
+  }
+
+  closeStartupTextDialog(): void {
+    this.showStartupTextDialog = false;
+    this.startupTextThemeId = '';
+    this.startupTextTitle = '';
+    this.startupTextSubtitle = '';
+  }
+
+  async saveStartupText(): Promise<void> {
+    if (!this.startupTextThemeId) return;
+    try {
+      await StartupCoverTextStore.update(getContext(this), this.startupTextThemeId,
+        this.startupTextTitle, this.startupTextSubtitle);
+      this.closeStartupTextDialog();
+      HdsFeedback.showToast('启动文案已更新');
+    } catch (e) {
+      console.error('保存启动文案失败:', e);
+      HdsFeedback.showToast('保存启动文案失败，请重试');
+    }
+  }
+
+  openCustomThemeActions(schemeId: string, event?: GestureEvent): void {
+    const finger = event && event.fingerList.length > 0 ? event.fingerList[0] : undefined;
+    if (finger) {
+      this.contextMenuX = finger.globalX;
+      this.contextMenuY = finger.globalY;
+    }
+    this.actionCustomSchemeId = schemeId;
+    this.showCustomThemeActionMenu = true;
+  }
+
+  closeCustomThemeActions(): void {
+    this.showCustomThemeActionMenu = false;
+    this.actionCustomSchemeId = '';
+  }
+
+  actionCustomScheme(): CustomThemeScheme | null {
+    return CustomThemeSchemeStore.find(this.customSchemes, this.actionCustomSchemeId);
+  }
+
+  updateContextViewport(area: Area): void {
+    const width = Number(area.width);
+    const height = Number(area.height);
+    if (Number.isFinite(width) && width > 0) this.contextViewportWidth = width;
+    if (Number.isFinite(height) && height > 0) this.contextViewportHeight = height;
+  }
+
+  contextMenuLeft(menuWidth: number): number {
+    return Math.max(12, Math.min(this.contextMenuX - 18, this.contextViewportWidth - menuWidth - 12));
+  }
+
+  contextMenuTop(menuHeight: number): number {
+    const below = this.contextMenuY + 12;
+    if (below + menuHeight <= this.contextViewportHeight - 12) return below;
+    return Math.max(this.statusBarHeight + 8, this.contextMenuY - menuHeight - 12);
+  }
+
+  closeRenameCustomThemeDialog(): void {
+    this.showRenameCustomThemeDialog = false;
+    this.renameCustomThemeName = '';
+    this.actionCustomSchemeId = '';
+  }
+
+  async renameCustomTheme(): Promise<void> {
+    const scheme = this.actionCustomScheme();
+    const name = this.renameCustomThemeName.trim();
+    if (!scheme || !name) return;
+    try {
+      const settings = await AppThemeSettingsStore.load(getContext(this));
+      const renamed = await CustomThemeSchemeStore.rename(getContext(this), settings, scheme.id, name);
+      if (!renamed) {
+        HdsFeedback.showToast('名称为空、重复或方案不存在');
+        return;
+      }
+      this.closeRenameCustomThemeDialog();
+      await this.refreshCustomSchemes();
+      HdsFeedback.showToast('自定义主题已重命名');
+    } catch (e) {
+      console.error('重命名自定义主题失败:', e);
+      HdsFeedback.showToast('重命名失败，请稍后重试');
+    }
+  }
+
+  requestDeleteCustomTheme(schemeId: string): void {
+    if (this.customSchemes.length <= 1) {
+      this.closeCustomThemeActions();
+      HdsFeedback.showToast('至少需要保留一套自定义主题');
+      return;
+    }
+    this.actionCustomSchemeId = schemeId;
+    this.showDeleteCustomThemeDialog = true;
+  }
+
+  closeDeleteCustomThemeDialog(): void {
+    this.showDeleteCustomThemeDialog = false;
+    this.actionCustomSchemeId = '';
+  }
+
+  async confirmDeleteCustomTheme(): Promise<void> {
+    const schemeId = this.actionCustomSchemeId;
+    this.showDeleteCustomThemeDialog = false;
+    await this.deleteCustomThemeScheme(schemeId);
+  }
+
+  async deleteCustomThemeFromSwipe(scheme: CustomThemeScheme): Promise<void> {
+    await this.deleteCustomThemeScheme(scheme.id);
+  }
+
+  async deleteCustomThemeScheme(schemeId: string): Promise<void> {
+    const scheme = CustomThemeSchemeStore.find(this.customSchemes, schemeId);
+    if (!scheme) return;
+    if (this.customSchemes.length <= 1) {
+      this.closeCustomThemeSwipeActions();
+      HdsFeedback.showToast('至少需要保留一套自定义主题');
+      return;
+    }
+    try {
+      if (this.appThemeId === ThemeIds.CUSTOM && this.activeCustomSchemeId === schemeId) {
+        await this.selectTheme(ThemeIds.PLAIN_DEFAULT, '', false);
+        if (this.appThemeId === ThemeIds.CUSTOM) {
+          return;
+        }
+      }
+      const settings = await AppThemeSettingsStore.load(getContext(this));
+      const deleted = await CustomThemeSchemeStore.delete(getContext(this), settings, schemeId);
+      if (!deleted) {
+        HdsFeedback.showToast('删除失败，至少需要保留一套方案');
+        return;
+      }
+      this.actionCustomSchemeId = '';
+      await this.refreshCustomSchemes();
+      HdsFeedback.showToast(`已删除「${scheme.name}」`);
+    } catch (e) {
+      console.error('删除自定义主题失败:', e);
+      HdsFeedback.showToast('删除失败，请稍后重试');
+    }
+  }
+
+  closeCustomThemeSwipeActions(): void {
+    setTimeout(() => {
+      try {
+        this.themeListScroller.closeAllSwipeActions();
+      } catch (e) {
+        console.warn('关闭自定义主题滑动操作失败:', e);
+      }
+    }, 0);
+  }
+
+  @Builder
+  themeBookCoverSetting(theme: ThemePack) {
+    Row({ space: 12 }) {
+      Stack() {
+        Swiper() {
+          ForEach(this.themeCoverSet(theme), (cover: ResourceStr, index: number) => {
+            Image(cover)
+              .width(42)
+              .height(58)
+              .objectFit(ImageFit.Fill)
+              .draggable(false)
+          }, (_cover: ResourceStr, index: number) => `active_cover_${index}`)
+        }
+        .width(42)
+        .height(58)
+        .autoPlay(this.themeCoverSet(theme).length > 1)
+        .interval(2800)
+        .indicator(false)
+        .loop(true)
+        Image(ThemeAssetRegistry.themeShelfFrame(theme.book.shelfFrameAssetId))
+          .width(42)
+          .height(58)
+          .objectFit(ImageFit.Fill)
+          .draggable(false)
+      }
+      .width(42)
+      .height(58)
+
+      Column({ space: 4 }) {
+        Text('主题书籍封面')
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.activeVariant(theme).colors.primaryTextColor)
+        Text(this.themeBookCoverEnabled ? '书架已使用主题封面和配套边框' : '保留每本书原有封面')
+          .fontSize(12)
+          .fontColor(this.activeVariant(theme).colors.subTextColor)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Toggle({ type: ToggleType.Switch, isOn: this.themeBookCoverEnabled })
+        .selectedColor(this.accentColor())
+        .onChange((enabled: boolean) => {
+          this.setThemeBookCoverEnabled(enabled);
+        })
+    }
+    .width('100%')
+    .padding(12)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(theme.radius.medium)
+    .backgroundColor(this.activeVariant(theme).colors.inputColor)
+  }
+
+  @Builder
+  themeCard(theme: ThemePack, customSchemeId: string = '') {
+    Column({ space: 12 }) {
+      Row({ space: 10 }) {
+        Image(ThemeAssetRegistry.themeLogo(theme.id))
+          .width(42)
+          .height(42)
+          .borderRadius(theme.radius.medium)
+          .objectFit(ImageFit.Contain)
+          .draggable(false)
+
+        Column({ space: 3 }) {
+          Text(theme.name)
+            .fontSize(17)
+            .fontWeight(FontWeight.Bold)
+            .fontFamily(theme.typography.appFontFamily)
+            .fontColor(this.activeVariant(theme).colors.primaryTextColor)
+          Text(theme.description)
+            .fontSize(12)
+            .fontColor(this.activeVariant(theme).colors.subTextColor)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        if (this.isSelected(theme, customSchemeId)) {
+          Text('已启用')
+            .fontSize(12)
+            .fontColor('#FFFFFF')
+            .padding({ left: 9, right: 9, top: 4, bottom: 4 })
+            .borderRadius(12)
+            .backgroundColor(this.activeVariant(theme).colors.accentColor)
+        } else if (this.applyingThemeId === (customSchemeId || theme.id)) {
+          Text('应用中')
+            .fontSize(12)
+            .fontColor(this.activeVariant(theme).colors.accentColor)
+        } else if (this.isCustomSchemePending(theme, customSchemeId)) {
+          Text('待应用')
+            .fontSize(12)
+            .fontColor(this.activeVariant(theme).colors.accentColor)
+            .padding({ left: 9, right: 9, top: 4, bottom: 4 })
+            .borderRadius(12)
+            .backgroundColor(this.activeVariant(theme).colors.inputColor)
+        }
+      }
+      .width('100%')
+
+      this.themeVisualPreview(theme, customSchemeId)
+      if (this.isSelected(theme, customSchemeId) && this.themeHasBookCover(theme)) {
+        this.themeBookCoverSetting(theme)
+      }
+      Row({ space: 8 }) {
+        if (!this.isSelected(theme, customSchemeId) && this.themeHasBookCover(theme)) {
+          Stack() {
+            Swiper() {
+              ForEach(this.themeCoverSet(theme), (cover: ResourceStr, index: number) => {
+                Image(cover)
+                  .width(28)
+                  .height(40)
+                  .objectFit(ImageFit.Fill)
+                  .draggable(false)
+              }, (_cover: ResourceStr, index: number) => `${theme.id}_cover_${index}`)
+            }
+            .width(28)
+            .height(40)
+            .autoPlay(this.themeCoverSet(theme).length > 1)
+            .interval(3000)
+            .indicator(false)
+            .loop(true)
+            Image(ThemeAssetRegistry.themeShelfFrame(theme.book.shelfFrameAssetId))
+              .width(28)
+              .height(40)
+              .objectFit(ImageFit.Fill)
+              .draggable(false)
+          }
+          .width(28)
+          .height(40)
+        }
+        Text(`${theme.readerLayout.fontSize} 字号 · ${theme.readerLayout.lineHeight} 行距 · ` +
+          `${theme.readerLayout.marginLeft}/${theme.readerLayout.marginRight} 左右边距`)
+          .fontSize(11)
+          .fontColor(this.activeVariant(theme).colors.subTextColor)
+          .layoutWeight(1)
+      }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      if (theme.id === ThemeIds.CUSTOM) {
+        Row() {
+          Text('浅色 / 深色可分别组合全部主题部件')
+            .fontSize(11)
+            .fontColor(this.activeVariant(theme).colors.subTextColor)
+            .layoutWeight(1)
+          Button('编辑主题')
+            .height(32)
+            .fontSize(12)
+            .fontColor('#FFFFFF')
+            .backgroundColor(this.activeVariant(theme).colors.buttonColor)
+            .onClick(() => {
+              router.pushUrl({
+                url: 'pages/ThemeColorSettings',
+                params: { schemeId: customSchemeId }
+              });
+            })
+        }
+        .width('100%')
+      }
+    }
+    .width('100%')
+    .padding(14)
+    .borderRadius(theme.radius.card)
+    .backgroundColor(this.activeVariant(theme).colors.cardColor)
+    .border({
+      width: this.isThemeCardHighlighted(theme, customSchemeId) ? 2 : 1,
+      color: this.isThemeCardHighlighted(theme, customSchemeId) ? this.activeVariant(theme).colors.accentColor :
+        this.activeVariant(theme).colors.dividerColor
+    })
+    .gesture(
+      LongPressGesture({ repeat: false })
+        .onAction((event: GestureEvent) => {
+          if (customSchemeId) {
+            this.openCustomThemeActions(customSchemeId, event);
+          }
+        })
+    )
+    .onClick(() => {
+      this.handleThemeCardClick(theme, customSchemeId);
+    })
+  }
+
+  isThemeCardHighlighted(theme: ThemePack, customSchemeId: string = ''): boolean {
+    return this.isSelected(theme, customSchemeId);
+  }
+
+  isCustomSchemePending(theme: ThemePack, customSchemeId: string): boolean {
+    return theme.id === ThemeIds.CUSTOM && this.appThemeId === ThemeIds.CUSTOM &&
+      this.activeCustomSchemeId === customSchemeId && !this.isSelected(theme, customSchemeId);
+  }
+
+  handleThemeCardClick(theme: ThemePack, customSchemeId: string = ''): void {
+    this.selectTheme(theme.id, customSchemeId);
+  }
+
+  allThemes(): ThemePack[] {
+    const themes: ThemePack[] = [];
+    for (const theme of BuiltinThemeRegistry.all()) {
+      if (theme.id !== ThemeIds.PLAIN_DEFAULT) {
+        themes.push(theme);
+      }
+    }
+    return themes;
+  }
+
+  openThemeStore(): void {
+    this.showThemeStore = true;
+  }
+
+  closeThemeStore(): void {
+    this.showThemeStore = false;
+  }
+
+  storeThemes(): ThemePack[] {
+    return this.allThemes();
+  }
+
+  /** Cover takes whatever the swipe page has left after its fixed detail rows. */
+  storeCoverHeight(): number {
+    const swiper = this.storeSwiperHeight > 0 ? this.storeSwiperHeight : 630;
+    return Math.max(STORE_COVER_MIN_HEIGHT,
+      Math.min(STORE_COVER_MAX_HEIGHT, swiper - STORE_PAGE_FIXED_HEIGHT));
+  }
+
+  themeHasBookCover(theme: ThemePack): boolean {
+    return !!theme.book.coverAssetId && this.themeCoverSet(theme).length > 0;
+  }
+
+  @Builder
+  themeVisualPreview(theme: ThemePack, customSchemeId: string = '') {
+    Column({ space: 9 }) {
+      Stack({ alignContent: Alignment.TopStart }) {
+        ThemeStartupCover({
+          themeId: theme.startup.styleId,
+          darkMode: this.appDarkMode,
+          compact: true,
+          animated: false,
+          customImagePath: this.customPreviewStartupImage(customSchemeId),
+          titleOverride: this.customPreviewStartupTitle(customSchemeId),
+          subtitleOverride: this.customPreviewStartupSubtitle(customSchemeId),
+          explicitText: !!customSchemeId,
+          showTextEditButton: theme.id !== ThemeIds.PLAIN_DEFAULT && theme.id !== ThemeIds.CUSTOM,
+          onEditText: () => this.openStartupTextDialog(theme.id)
+        })
+      }
+      .width('100%')
+      .height(126)
+      .borderRadius(theme.radius.medium)
+      .clip(true)
+
+      Row({ space: 10 }) {
+      Stack() {
+        ReaderThemeBackground({
+          surfaceColor: this.activeVariant(theme).reader.backgroundColor,
+          backgroundAssetId: this.activeVariant(theme).reader.backgroundAssetId,
+          compact: true
+        })
+        Text('阅读')
+          .fontSize(13)
+          .fontFamily(theme.typography.appFontFamily)
+          .fontColor(this.activeVariant(theme).reader.textColor)
+      }
+      .width(76)
+      .height(58)
+      .borderRadius(theme.radius.medium)
+      .clip(true)
+
+      Column({ space: 7 }) {
+        Row({ space: 6 }) {
+          Blank()
+            .height(8)
+            .layoutWeight(1)
+            .borderRadius(4)
+            .backgroundColor(this.activeVariant(theme).colors.primaryTextColor)
+          Blank()
+            .width(32)
+            .height(8)
+            .borderRadius(4)
+            .backgroundColor(this.activeVariant(theme).colors.subTextColor)
+        }
+        Text() {
+          ContainerSpan() {
+            ImageSpan(ThemeAssetRegistry.regexBubbleCap(this.activeVariant(theme).regexEmphasis.bubbleStyle))
+              .width(16)
+              .height(16)
+              .objectFit(ImageFit.Contain)
+              .verticalAlign(ImageSpanAlignment.CENTER)
+            Span(this.themeRegexPreviewLabel(theme))
+              .fontSize(12)
+              .fontColor(this.themeRegexPreview(theme).textColor)
+              .textShadow(this.themeRegexPreviewShadow(theme))
+              .decoration({ type: TextDecorationType.None })
+            ImageSpan(ThemeAssetRegistry.regexBubbleCap(this.activeVariant(theme).regexEmphasis.bubbleStyle))
+              .width(16)
+              .height(16)
+              .objectFit(ImageFit.Contain)
+              .verticalAlign(ImageSpanAlignment.CENTER)
+              .rotate({ angle: 180 })
+          }
+          .textBackgroundStyle(this.themeRegexPreviewBackground(theme))
+        }
+        Row({ space: 5 }) {
+          ForEach(['bookshelf', 'explore', 'search', 'mine'], (tabId: string) => {
+            Image(ThemeAssetRegistry.navigationIcon(theme.navigation.iconPackId, tabId))
+              .width(16)
+              .height(16)
+              .fillColor(this.activeVariant(theme).colors.accentColor)
+              .draggable(false)
+          }, (tabId: string) => `${theme.id}_${tabId}`)
+        }
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .padding(10)
+    .borderRadius(theme.radius.medium)
+    .backgroundColor(this.activeVariant(theme).colors.inputColor)
+  }
+
+  customPreviewStartupImage(customSchemeId: string): string {
+    const scheme = CustomThemeSchemeStore.find(this.customSchemes, customSchemeId);
+    if (!scheme) return '';
+    return this.appDarkMode ? scheme.settings.customDarkStartupImagePath :
+      scheme.settings.customLightStartupImagePath;
+  }
+
+  customPreviewStartupTitle(customSchemeId: string): string {
+    const scheme = CustomThemeSchemeStore.find(this.customSchemes, customSchemeId);
+    if (!scheme) return '';
+    return this.appDarkMode ? scheme.settings.customDarkStartupTitle :
+      scheme.settings.customLightStartupTitle;
+  }
+
+  customPreviewStartupSubtitle(customSchemeId: string): string {
+    const scheme = CustomThemeSchemeStore.find(this.customSchemes, customSchemeId);
+    if (!scheme) return '';
+    return this.appDarkMode ? scheme.settings.customDarkStartupSubtitle :
+      scheme.settings.customLightStartupSubtitle;
+  }
+
+  themeRegexPreview(theme: ThemePack): ReaderResolvedRegexEmphasis {
+    const variant = this.activeVariant(theme);
+    const context = new ReaderRegexEmphasisContext();
+    context.inheritedMode = variant.regexEmphasis.emphasisMode;
+    context.inheritedBubbleStyleId = variant.regexEmphasis.bubbleStyle;
+    context.inheritedColor = variant.regexEmphasis.emphasisColor;
+    context.inheritedTextColor = variant.regexEmphasis.emphasisTextColor;
+    context.accentColor = variant.colors.accentColor;
+    context.surfaceColor = variant.reader.backgroundColor;
+    context.normalTextColor = variant.reader.textColor;
+    context.darkMode = variant.reader.contentTone === 'dark';
+    return ReaderRegexBubbleStyleResolver.resolve(null, context);
+  }
+
+  themeCoverSet(theme: ThemePack): ResourceStr[] {
+    return ThemeAssetRegistry.themeBookCovers(theme.book.coverAssetId);
+  }
+
+  themeRegexPreviewLabel(theme: ThemePack): string {
+    const styleId = this.activeVariant(theme).regexEmphasis.bubbleStyle;
+    if (styleId === 'classic-glass') return '经典玻璃';
+    if (styleId === 'warm-scroll') return '暖纸卷轴';
+    if (styleId === 'forest-dew') return '林间露珠';
+    if (styleId === 'ink-brush') return '水墨笔触';
+    if (styleId === 'neon-pulse') return '霓虹脉冲';
+    if (styleId === 'strawberry-ribbon') return '草莓软框';
+    if (styleId === 'crimson-stamp') return '赤墨印章';
+    if (styleId === 'celadon-slip') return '青瓷纸笺';
+    if (styleId === 'rose-frame') return '玫瑰信框';
+    if (styleId === 'moon-halo') return '月光描边';
+    if (styleId === 'sword-talisman') return '剑符';
+    if (styleId === 'qingluan-jade') return '青鸾玉令';
+    if (styleId === 'pipi-soft-paw') return '皮皮软爪';
+    return '强调气泡';
+  }
+
+  themeRegexPreviewBackground(theme: ThemePack): TextBackgroundStyle {
+    const style = this.themeRegexPreview(theme);
+    if (!style.backgroundEnabled) return {};
+    return {
+      color: style.backgroundColor,
+      radius: {
+        topLeft: style.radiusTopLeft,
+        topRight: style.radiusTopRight,
+        bottomLeft: style.radiusBottomLeft,
+        bottomRight: style.radiusBottomRight
+      }
+    };
+  }
+
+  themeRegexPreviewShadow(theme: ThemePack): ShadowOptions | ShadowOptions[] {
+    const style = this.themeRegexPreview(theme);
+    if (style.textShadows.length > 0) return style.textShadows;
+    return {
+      radius: style.textShadowRadius,
+      color: style.textShadowColor,
+      offsetX: style.textShadowOffsetX,
+      offsetY: style.textShadowOffsetY
+    };
+  }
+
+  themeRegexPreviewDecoration(theme: ThemePack): DecorationStyleInterface {
+    const style = this.themeRegexPreview(theme);
+    if (!style.decorationEnabled) return { type: TextDecorationType.None };
+    return {
+      type: TextDecorationType.Underline,
+      color: style.decorationColor,
+      style: this.themeRegexDecorationStyle(style.decorationStyleId)
+    };
+  }
+
+  themeRegexDecorationStyle(styleId: string): TextDecorationStyle {
+    if (styleId === 'double') return TextDecorationStyle.DOUBLE;
+    if (styleId === 'dotted') return TextDecorationStyle.DOTTED;
+    if (styleId === 'dashed') return TextDecorationStyle.DASHED;
+    if (styleId === 'wavy') return TextDecorationStyle.WAVY;
+    return TextDecorationStyle.SOLID;
+  }
+
+}
