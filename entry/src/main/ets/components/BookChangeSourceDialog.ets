@@ -496,10 +496,11 @@ export struct BookChangeSourceDialog {
     }
   }
 
-  /** 切换书源置顶：置顶后下次换源优先搜索。 */
+  /** 切换书源置顶：置顶后立即排到列表最前，下次换源也优先搜索。 */
   togglePinnedSource(sourceUrl: string): void {
     ChangeSourceOptionsStore.togglePinnedSource(getContext(this), sourceUrl).then((pinned: string[]) => {
       this.pinnedSourceUrls = new Set(pinned);
+      this.sortResults();
     }).catch(() => {});
   }
 
@@ -732,15 +733,33 @@ export struct BookChangeSourceDialog {
 
   /** 过滤 + 排序后整体替换结果列表；排序规则见 SearchResultSorter：
    *  开启本章字数时按实测字数从大到小优先（主键当前阅读章节字数，相同再按最新章节字数、最新章节号），
-   *  关闭时最新章节号从大到小优先（相同再按字数），实测失败沉底。 */
+   *  关闭时最新章节号从大到小优先（相同再按字数），实测失败沉底；
+   *  置顶书源始终排在最前（组内仍按上述规则排序），点击置顶立即生效。 */
   updateResults(raw: SearchBook[]): void {
     const target = this.targetBook;
     if (!target) return;
-    this.results = SearchResultSorter.sort(this.filterResults(raw), this.loadWordCount);
+    this.results = this.sortWithPinnedFirst(this.filterResults(raw));
   }
 
   sortResults(): void {
-    this.results = SearchResultSorter.sort(this.results.slice(), this.loadWordCount);
+    this.results = this.sortWithPinnedFirst(this.results.slice());
+  }
+
+  sortWithPinnedFirst(list: SearchBook[]): SearchBook[] {
+    if (this.pinnedSourceUrls.size === 0) {
+      return SearchResultSorter.sort(list, this.loadWordCount);
+    }
+    const pinned: SearchBook[] = [];
+    const rest: SearchBook[] = [];
+    for (const item of list) {
+      if (this.isSourcePinned(item.origin || '')) {
+        pinned.push(item);
+      } else {
+        rest.push(item);
+      }
+    }
+    return SearchResultSorter.sort(pinned, this.loadWordCount)
+      .concat(SearchResultSorter.sort(rest, this.loadWordCount));
   }
 
   filterResults(results: SearchBook[]): SearchBook[] {
@@ -945,99 +964,97 @@ export struct BookChangeSourceDialog {
           List({ space: 8 }) {
             ForEach(this.results, (book: SearchBook) => {
               ListItem() {
-                Row() {
-                  Column({ space: 4 }) {
-                    Row({ space: 4 }) {
-                      Text(book.originName || book.origin)
-                        .fontSize(15)
-                        .fontWeight(FontWeight.Bold)
-                        .fontColor(this.primaryTextColor())
+                Column({ space: 4 }) {
+                  Row({ space: 4 }) {
+                    Text(book.originName || book.origin)
+                      .fontSize(15)
+                      .fontWeight(FontWeight.Bold)
+                      .fontColor(this.primaryTextColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
+                    if (this.isCurrentSourceResult(book)) {
+                      Text('当前')
+                        .fontSize(10)
+                        .fontColor('#FFFFFF')
+                        .padding({ left: 5, right: 5, top: 1, bottom: 1 })
+                        .borderRadius(6)
+                        .backgroundColor('#2196F3')
+                    }
+                    if (this.isSourcePinned(book.origin || '')) {
+                      Text('置顶')
+                        .fontSize(10)
+                        .fontColor('#FFFFFF')
+                        .padding({ left: 5, right: 5, top: 1, bottom: 1 })
+                        .borderRadius(6)
+                        .backgroundColor('#FF9800')
+                    }
+                    SymbolGlyph(this.isSourcePinned(book.origin || '') ?
+                      $r('sys.symbol.pin_fill') : $r('sys.symbol.pin'))
+                      .fontSize(18)
+                      .fontColor([this.isSourcePinned(book.origin || '') ? '#FF9800' : this.subTextColor()])
+                      .width(28)
+                      .height(28)
+                      .onClick(() => this.togglePinnedSource(book.origin || ''))
+                    Button(this.switching && this.switchingBook === book ? '切换中' : '切换')
+                      .width(72)
+                      .height(32)
+                      .fontSize(13)
+                      .borderRadius(16)
+                      .backgroundColor(this.buttonColor())
+                      .fontColor('#FFFFFF')
+                      // 切换中不锁其它书源：慢/死书源可直接改选，避免只能等待或退出。
+                      .onClick(() => this.switchSource(book))
+                  }
+                  .width('100%')
+                  Text(`作者：${book.author || '未知'}`)
+                    .fontSize(12)
+                    .fontColor(this.subTextColor())
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .width('100%')
+                  Text(`最新：${book.latestChapterTitle || '书源未提供'}`)
+                    .fontSize(12)
+                    .fontColor(this.subTextColor())
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .width('100%')
+                  if (this.loadWordCount) {
+                    Column({ space: 4 }) {
+                      Text(this.currentChipText(book))
+                        .fontSize(11)
+                        .fontColor(book.currentChapterWordCount > 0 ? this.primaryTextColor() :
+                          (book.currentChapterWordCount === 0 ? '#D94838' : this.subTextColor()))
+                        .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                        .borderRadius(9)
+                        .backgroundColor(this.chipColor())
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .layoutWeight(1)
-                      if (this.isCurrentSourceResult(book)) {
-                        Text('当前')
-                          .fontSize(10)
-                          .fontColor('#FFFFFF')
-                          .padding({ left: 5, right: 5, top: 1, bottom: 1 })
-                          .borderRadius(6)
-                          .backgroundColor('#2196F3')
-                      }
-                      if (this.isSourcePinned(book.origin || '')) {
-                        Text('置顶')
-                          .fontSize(10)
-                          .fontColor('#FFFFFF')
-                          .padding({ left: 5, right: 5, top: 1, bottom: 1 })
-                          .borderRadius(6)
-                          .backgroundColor('#FF9800')
-                      }
+                        .width('100%')
+                      Text(this.latestChipText(book))
+                        .fontSize(11)
+                        .fontColor(book.chapterWordCount > 0 ? this.primaryTextColor() :
+                          (book.chapterWordCount === 0 ? '#D94838' : this.subTextColor()))
+                        .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                        .borderRadius(9)
+                        .backgroundColor(this.chipColor())
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .width('100%')
                     }
                     .width('100%')
-                    Text(`作者：${book.author || '未知'}`)
-                      .fontSize(12)
-                      .fontColor(this.subTextColor())
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    Text(`最新：${book.latestChapterTitle || '书源未提供'}`)
-                      .fontSize(12)
-                      .fontColor(this.subTextColor())
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      .width('100%')
-                    if (this.loadWordCount) {
-                      Column({ space: 4 }) {
-                        Text(this.currentChipText(book))
-                          .fontSize(11)
-                          .fontColor(book.currentChapterWordCount > 0 ? this.primaryTextColor() :
-                            (book.currentChapterWordCount === 0 ? '#D94838' : this.subTextColor()))
-                          .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-                          .borderRadius(9)
-                          .backgroundColor(this.chipColor())
-                          .maxLines(1)
-                          .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        Text(this.latestChipText(book))
-                          .fontSize(11)
-                          .fontColor(book.chapterWordCount > 0 ? this.primaryTextColor() :
-                            (book.chapterWordCount === 0 ? '#D94838' : this.subTextColor()))
-                          .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-                          .borderRadius(9)
-                          .backgroundColor(this.chipColor())
-                          .maxLines(1)
-                          .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      }
-                      .alignItems(HorizontalAlign.Start)
-                      .width('100%')
-                    }
-                    if (this.failedBookUrls.includes(book.bookUrl)) {
-                      Text('该源切换失败，建议尝试其它书源')
-                        .fontSize(11)
-                        .fontColor('#D94838')
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    }
                   }
-                  .layoutWeight(1)
-                  .alignItems(HorizontalAlign.Start)
-
-                  SymbolGlyph(this.isSourcePinned(book.origin || '') ?
-                    $r('sys.symbol.pin_fill') : $r('sys.symbol.pin'))
-                    .fontSize(18)
-                    .fontColor([this.isSourcePinned(book.origin || '') ? '#FF9800' : this.subTextColor()])
-                    .width(32)
-                    .height(32)
-                    .onClick(() => this.togglePinnedSource(book.origin || ''))
-
-                  Button(this.switching && this.switchingBook === book ? '切换中' : '切换')
-                    .width(68)
-                    .height(32)
-                    .fontSize(13)
-                    .borderRadius(16)
-                    .backgroundColor(this.buttonColor())
-                    .fontColor('#FFFFFF')
-                    // 切换中不锁其它书源：慢/死书源可直接改选，避免只能等待或退出。
-                    .onClick(() => this.switchSource(book))
+                  if (this.failedBookUrls.includes(book.bookUrl)) {
+                    Text('该源切换失败，建议尝试其它书源')
+                      .fontSize(11)
+                      .fontColor('#D94838')
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .width('100%')
+                  }
                 }
                 .width('100%')
+                .alignItems(HorizontalAlign.Start)
                 .padding(12)
                 .backgroundColor(this.inputColor())
                 .borderRadius(10)
