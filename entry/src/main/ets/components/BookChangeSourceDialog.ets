@@ -159,10 +159,17 @@ export struct BookChangeSourceDialog {
             return;
           }
           this.searching = false;
-          // 历史结果无法区分是搜完还是提前达标结束，一律允许续搜；
-          // 若上次已搜完全部书源，续搜会立即空跑完成并自动隐藏按钮。
-          this.canResumeSearch = true;
-          this.status = `已显示历史结果，共 ${this.results.length} 个；可继续搜索剩余书源或清空重搜`;
+          // 剩余书源 = 启用可搜索源 - 上次已搜源（上面已按启用集求过交集）；
+          // 全部搜完则不再展示"可继续搜索剩余书源"和续搜按钮。
+          const remainingSources = enabledUrls === null ? -1 :
+            enabledUrls.size - this.searchedSourceUrls.size;
+          if (remainingSources === 0) {
+            this.canResumeSearch = false;
+            this.status = `已显示历史结果，共 ${this.results.length} 个`;
+          } else {
+            this.canResumeSearch = true;
+            this.status = `已显示历史结果，共 ${this.results.length} 个；可继续搜索剩余书源或清空重搜`;
+          }
           if (this.loadWordCount) {
             this.startMeasureChapterWordCounts();
           }
