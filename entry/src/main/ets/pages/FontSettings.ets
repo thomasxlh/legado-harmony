@@ -6,7 +6,7 @@ import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import fs from '@ohos.file.fs';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
-import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
+import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
 class ReaderCustomFontItem {
@@ -516,7 +516,7 @@ struct FontSettingsPage {
         .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
         .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
         .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+        .attributeModifier(new SelectMenuMaterialModifier())
         .onSelect((index: number) => {
           this.selectReaderFontByIndex(index);
         })

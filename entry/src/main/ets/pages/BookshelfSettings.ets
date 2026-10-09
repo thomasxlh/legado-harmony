@@ -10,7 +10,7 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { BookshelfDisplaySettings, BookshelfDisplaySettingsStore } from '../utils/BookshelfDisplaySettingsStore';
 import { SearchExplorePendingBook } from '../utils/SearchExplorePendingBook';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
-import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
+import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 
 @Entry
 @Component
@@ -611,7 +611,7 @@ struct BookshelfSettingsPage {
         .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
         .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
         .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+        .attributeModifier(new SelectMenuMaterialModifier())
         .onSelect((index: number) => {
           onSelect(index);
         })
@@ -656,7 +656,7 @@ struct BookshelfSettingsPage {
         .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
         .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
         .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+        .attributeModifier(new SelectMenuMaterialModifier())
         .onTouch((event: TouchEvent) => {
           if (event.type === TouchType.Down) {
             this.refreshAlbumOptionsForMenu();

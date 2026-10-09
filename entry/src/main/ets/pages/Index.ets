@@ -7348,6 +7348,18 @@ struct ExplorePage {
     }
   }
 
+  /**
+   * 本页被条件包裹（if currentIndex === 1），每次切走即销毁；
+   * 作废加载版本阻止旧回调写 UI，并取消协调器避免在飞请求继续耗流量。
+   */
+  aboutToDisappear(): void {
+    this.exploreLoadVersion++;
+    this.exploreMetadataQueue = [];
+    this.exploreMetadataQueued.clear();
+    this.isLoading = false;
+    this.coordinator.cancel();
+  }
+
   onActiveChanged(): void {
     if (this.isActive) {
       this.ensureLoaded();
@@ -9266,12 +9278,30 @@ struct SearchPage {
   private sourceGroupIndex: Map<string, BookSource[]> = new Map<string, BookSource[]>();
   private filteredSourcesCache: BookSource[] = [];
   private filteredSourcesCacheQuery: string = '__UNSET__';
+  private pendingAutoSearchTimer: number = -1;
   private readonly NO_SOURCE_GROUPS_SELECTED: string = '__NO_SOURCE_GROUPS_SELECTED__';
   private readonly NO_SOURCES_SELECTED: string = '__NO_SOURCES_SELECTED__';
 
   aboutToAppear() {
     if (this.isActive) {
       this.initPage();
+    }
+  }
+
+  /**
+   * 主题/深色模式切换会让 HdsTabs 整体重建（key 含 themeRevision），本组件随之销毁；
+   * 若不作废会话，旧实例的搜索协调器与字数测量循环会在后台继续跑完一整轮。
+   */
+  aboutToDisappear(): void {
+    this.searchSessionId++;
+    this.measureSessionId++;
+    this.measuring = false;
+    this.isSearching = false;
+    this.coordinator?.cancel();
+    this.coordinator = null;
+    if (this.pendingAutoSearchTimer >= 0) {
+      clearTimeout(this.pendingAutoSearchTimer);
+      this.pendingAutoSearchTimer = -1;
     }
   }
 
@@ -9317,7 +9347,8 @@ struct SearchPage {
       if (pendingKeyword && this.singleSourceSearchUrl) {
         AppStorage.setOrCreate('singleSourceSearchKeyword', '');
         this.keyword = pendingKeyword;
-        setTimeout((): void => {
+        this.pendingAutoSearchTimer = setTimeout((): void => {
+          this.pendingAutoSearchTimer = -1;
           this.doSearch();
         }, 0);
       }
@@ -10453,12 +10484,15 @@ struct SearchPage {
         this.statusMessage = verifyUrl ? `${resultText}；有书源需要网页验证` : resultText;
       }
     } catch (e) {
-      if (sessionId !== this.searchSessionId || this.coordinator !== activeCoordinator) {
+      console.error('搜索失败:', e);
+      // sessionId 尚为 0 说明异常发生在会话建立前（初始化/加载书源阶段），
+      // 此时守卫会把异常静默吞掉，必须单独给出反馈。
+      if (sessionId !== 0 && (sessionId !== this.searchSessionId || this.coordinator !== activeCoordinator)) {
         return;
       }
-      console.error('搜索失败:', e);
       this.isSearching = false;
       this.statusMessage = '搜索失败';
+      HdsFeedback.showToast('搜索失败');
     } finally {
       if (sessionId === this.searchSessionId && this.coordinator === activeCoordinator && !this.isSearching) {
         this.coordinator = null;

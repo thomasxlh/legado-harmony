@@ -66,6 +66,10 @@ class ExplorePlatformSelector {
 export class ExploreCoordinator {
   private http: HttpClient = new HttpClient(10000);
   private noticeMessage: string = '';
+  // Once cancelled, all loops (source listing, entry parsing, explore loading) bail at
+  // the next checkpoint. Owners call cancel() when the UI bound to this instance is
+  // destroyed, so in-flight batch work stops issuing further network requests.
+  private cancelled: boolean = false;
   private platformSelectors: Record<string, ExplorePlatformSelector> = {};
   private filterSelectors: Record<string, ExplorePlatformSelector[]> = {};
   // Menu scripts run 2-8 network requests each through the serial script runtime. The explore
@@ -76,6 +80,15 @@ export class ExploreCoordinator {
 
   getNoticeMessage(): string {
     return this.noticeMessage;
+  }
+
+  /** Cancels batch work at the next checkpoint; results computed afterwards are discarded. */
+  cancel(): void {
+    this.cancelled = true;
+  }
+
+  isCancelled(): boolean {
+    return this.cancelled;
   }
 
   /** Drops cached explore menus (source saved, filter mutated, manual refresh). */
@@ -112,6 +125,7 @@ export class ExploreCoordinator {
     const sources = await appDb.getEnabledBookSourcesForExplore();
     const options: ExploreSourceOption[] = [];
     for (const source of sources) {
+      if (this.cancelled) break;
       if (!source.enabledExplore || !source.exploreUrl) continue;
       let platforms: string[] = [];
       const loginSelector = this.parseLoginPlatformSelector(source);
@@ -137,6 +151,7 @@ export class ExploreCoordinator {
     const sources = await appDb.getEnabledBookSourcesForExplore();
     const entries: ExploreEntry[] = [];
     for (const source of sources) {
+      if (this.cancelled) break;
       if (!source.enabledExplore || !source.exploreUrl) continue;
       if (sourceUrl && source.bookSourceUrl !== sourceUrl) continue;
       if (!source.variable && this.requiresSourceVariable(source)) {
@@ -159,6 +174,7 @@ export class ExploreCoordinator {
   async explore(entry: ExploreEntry, page: number = 1, maxItems: number = 0,
     debugContext: BookSourceDebugContext | null = null): Promise<SearchBook[]> {
     this.noticeMessage = '';
+    if (this.cancelled) return [];
     const source = await appDb.getBookSource(entry.sourceUrl);
     if (!source) return [];
     try {

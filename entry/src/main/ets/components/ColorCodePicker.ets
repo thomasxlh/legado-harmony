@@ -1,5 +1,5 @@
 import { ThemeRuntime } from '../theme/ThemeRuntime';
-import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
+import { SelectMenuMaterialModifier } from './SelectMenuMaterialModifier';
 
 class HsvColor {
   hue: number = 0;
@@ -301,7 +301,7 @@ export struct ColorCodePicker {
             .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
             .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
             .menuBackgroundBlurStyle(BlurStyle.NONE)
-            .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+            .attributeModifier(new SelectMenuMaterialModifier())
             .onSelect((index: number) => {
               if (index === 2) {
                 this.openPicker();

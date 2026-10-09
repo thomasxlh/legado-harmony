@@ -103,15 +103,34 @@ export class RecentReadCardDataProvider {
     if (books.length > 0) {
       data.emptyTitle = '';
       data.emptySubtitle = '';
-      await RecentReadCardDataProvider.fillBook(context, data, 0, books[0], darkMode, coverSettings, accent);
     }
-    if (books.length > 1) {
-      await RecentReadCardDataProvider.fillBook(context, data, 1, books[1], darkMode, coverSettings, accent);
-    }
-    if (books.length > 2) {
-      await RecentReadCardDataProvider.fillBook(context, data, 2, books[2], darkMode, coverSettings, accent);
+    try {
+      if (books.length > 0) {
+        await RecentReadCardDataProvider.fillBook(context, data, 0, books[0], darkMode, coverSettings, accent);
+      }
+      if (books.length > 1) {
+        await RecentReadCardDataProvider.fillBook(context, data, 1, books[1], darkMode, coverSettings, accent);
+      }
+      if (books.length > 2) {
+        await RecentReadCardDataProvider.fillBook(context, data, 2, books[2], darkMode, coverSettings, accent);
+      }
+    } catch (e) {
+      // 中途失败时先关闭已打开的封面 fd，再向上抛出，避免泄漏。
+      RecentReadCardDataProvider.closeFormImages(data);
+      throw new Error(e instanceof Error ? e.message : String(e));
     }
     return data;
+  }
+
+  private static closeFormImages(data: RecentReadCardData): void {
+    const keys = Object.keys(data.formImages);
+    for (const key of keys) {
+      const fd = data.formImages[key];
+      try {
+        fs.closeSync(fd);
+      } catch (_) {}
+    }
+    data.formImages = {};
   }
 
   private static async fillBook(
@@ -167,18 +186,25 @@ export class RecentReadCardDataProvider {
     darkMode: boolean,
     coverSettings: CoverGallerySnapshot
   ): Promise<string> {
-    const covers = CoverGallerySettings.getDisplayCoverList(
-      book,
-      darkMode,
-      coverSettings.albumsRaw,
-      coverSettings.lightAlbumId,
-      coverSettings.darkAlbumId,
-      coverSettings.applyScope,
-      coverSettings.targetBooksRaw,
-      coverSettings.ignoreSourceCover,
-      coverSettings.coverMode
-    );
-    const raw = covers.length > 0 ? BookDisplayHelper.pickCover(covers) : '';
+    let raw = '';
+    // 图集配置解析也纳入防御：若前一本书的封面 fd 已打开，这里的异常会导致该 fd 无人关闭。
+    try {
+      const covers = CoverGallerySettings.getDisplayCoverList(
+        book,
+        darkMode,
+        coverSettings.albumsRaw,
+        coverSettings.lightAlbumId,
+        coverSettings.darkAlbumId,
+        coverSettings.applyScope,
+        coverSettings.targetBooksRaw,
+        coverSettings.ignoreSourceCover,
+        coverSettings.coverMode
+      );
+      raw = covers.length > 0 ? BookDisplayHelper.pickCover(covers) : '';
+    } catch (e) {
+      console.warn('解析最近阅读卡片封面配置失败:', e);
+      return '';
+    }
     if (!raw) {
       return '';
     }

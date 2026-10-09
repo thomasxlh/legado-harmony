@@ -36,6 +36,8 @@ export class ChangeSourceResultCache {
    *  aboutToDisappear 里的 persistResultsNow 需要尽快完成 put() 同步写入，减少组件销毁时的 race window。 */
   private static cachedStore: preferences.Preferences | null = null;
   private static cachedStoreContext: Context | null = null;
+  /** 串行化 save/clear 的索引读改写链：并发时后到的操作基于最新索引，避免互相覆盖丢条目。 */
+  private static writeChain: Promise<void> = Promise.resolve();
 
   private static async ensureStore(context: Context): Promise<preferences.Preferences> {
     if (ChangeSourceResultCache.cachedStore) return ChangeSourceResultCache.cachedStore;
@@ -65,8 +67,22 @@ export class ChangeSourceResultCache {
     return null;
   }
 
-  static async save(context: Context, bookName: string, results: SearchBook[], bookAuthor: string = '',
+  static save(context: Context, bookName: string, results: SearchBook[], bookAuthor: string = '',
     searchedSourceUrls: string[] = [], partial: boolean = false): Promise<void> {
+    return ChangeSourceResultCache.enqueueWrite((): Promise<void> =>
+      ChangeSourceResultCache.performSave(context, bookName, results, bookAuthor, searchedSourceUrls, partial));
+  }
+
+  private static enqueueWrite(task: () => Promise<void>): Promise<void> {
+    const previous = ChangeSourceResultCache.writeChain;
+    const current = previous.then((): Promise<void> => task());
+    // 链本身不因单次失败而中断，但错误仍传给本次调用的调用方。
+    ChangeSourceResultCache.writeChain = current.catch((): void => {});
+    return current;
+  }
+
+  private static async performSave(context: Context, bookName: string, results: SearchBook[],
+    bookAuthor: string, searchedSourceUrls: string[], partial: boolean): Promise<void> {
     const key = ChangeSourceResultCache.buildBookKey(bookName, bookAuthor);
     if (!key) {
       return;
@@ -99,7 +115,12 @@ export class ChangeSourceResultCache {
   }
 
   /** 删除某本书的换源结果缓存（清空重搜用）。 */
-  static async clear(context: Context, bookName: string, bookAuthor: string = ''): Promise<void> {
+  static clear(context: Context, bookName: string, bookAuthor: string = ''): Promise<void> {
+    return ChangeSourceResultCache.enqueueWrite((): Promise<void> =>
+      ChangeSourceResultCache.performClear(context, bookName, bookAuthor));
+  }
+
+  private static async performClear(context: Context, bookName: string, bookAuthor: string): Promise<void> {
     const key = ChangeSourceResultCache.buildBookKey(bookName, bookAuthor);
     if (!key) return;
     const store = await ChangeSourceResultCache.ensureStore(context);
@@ -144,6 +165,15 @@ export class ChangeSourceResultCache {
       if (!Array.isArray(parsed.searchedSourceUrls)) {
         parsed.searchedSourceUrls = [];
       }
+      // 历史数据可能含 null/非对象元素，逐个校验后再交给 cloneSearchBook，
+      // 避免 load() 里 map 访问属性时抛 TypeError。
+      const rawResults: Object[] = parsed.results as Object[];
+      const results: SearchBook[] = [];
+      for (const item of rawResults) {
+        if (!item || typeof item !== 'object') continue;
+        results.push(ChangeSourceResultCache.cloneSearchBook(item as SearchBook));
+      }
+      parsed.results = results;
       parsed.partial = parsed.partial === true;
       return parsed;
     } catch (_) {

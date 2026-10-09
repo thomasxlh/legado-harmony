@@ -75,6 +75,7 @@ import {
 } from '../model/reader/ReaderRegexFontRule';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
+import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
 import { ReaderContentPreprocessor } from '../core/concurrency/ReaderContentPreprocessor';
@@ -2898,10 +2899,14 @@ struct ReadBookPage {
           this.readerTtsQuickActionButton()
         }
         if (this.readerUseTtsQuickAction && this.shouldShowTtsMediaControls()) {
-          if (this.hdsMaterialRenderBranch) {
-            this.ttsExpandedMediaControlsBar()
+          if (this.supportsReaderImmersiveMaterial()) {
+            if (this.hdsMaterialRenderBranch) {
+              this.ttsExpandedMediaControlsBar()
+            } else {
+              this.ttsExpandedMediaControlsBar()
+            }
           } else {
-            this.ttsExpandedMediaControlsBar()
+            this.ttsExpandedMediaControlsCompat()
           }
         }
       }
@@ -11088,7 +11093,7 @@ struct ReadBookPage {
         .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
         .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
         .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+        .attributeModifier(new SelectMenuMaterialModifier())
         .onSelect((index: number) => {
           this.showReaderTypographyValueInput = false;
           this.readerTypographySelection = Math.max(0, Math.min(index, 7));
@@ -11386,7 +11391,7 @@ struct ReadBookPage {
               .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
               .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
               .menuBackgroundBlurStyle(BlurStyle.NONE)
-              .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+              .attributeModifier(new SelectMenuMaterialModifier())
               .onSelect((index: number) => {
                 this.selectCustomTheme(index);
               })
@@ -11444,7 +11449,7 @@ struct ReadBookPage {
               .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
               .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
               .menuBackgroundBlurStyle(BlurStyle.NONE)
-              .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+              .attributeModifier(new SelectMenuMaterialModifier())
               .onSelect((index: number) => {
                 this.setCurrentCustomThemeBackgroundType(index);
               })
@@ -11496,7 +11501,7 @@ struct ReadBookPage {
                   .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
                   .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
                   .menuBackgroundBlurStyle(BlurStyle.NONE)
-                  .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+                  .attributeModifier(new SelectMenuMaterialModifier())
                   .onSelect((index: number) => {
                     this.setCurrentCustomThemeImageFit(index);
                   })
@@ -12100,7 +12105,7 @@ struct ReadBookPage {
         .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
         .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
         .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+        .attributeModifier(new SelectMenuMaterialModifier())
         .onSelect((index: number) => {
           onSelect(index);
         })

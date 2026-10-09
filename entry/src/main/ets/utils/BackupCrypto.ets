@@ -1,6 +1,7 @@
 import fs from '@ohos.file.fs';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import util from '@ohos.util';
+import { BusinessError } from '@kit.BasicServicesKit';
 
 export class BackupEncryptionMetadata {
   format: string = 'legado-harmony-encrypted-backup';
@@ -72,8 +73,14 @@ export class BackupCrypto {
         await BackupCrypto.transformFile(sourcePath, targetPath, cipher, onProgress);
         await cipher.doFinal(null);
       }
-    } catch (_) {
+    } catch (error) {
       await BackupCrypto.removeFile(targetPath);
+      // 文件系统错误（139xxxxx，如空间不足/读取失败/文件被占用）不是密码问题，
+      // 必须与 GCM 认证失败区分开，否则会误导用户反复重试密码。
+      const err = error as BusinessError;
+      if (typeof err?.code === 'number' && err.code >= 13900000 && err.code < 14000000) {
+        throw new Error(`读取备份文件失败：${err.message || `错误码 ${err.code}`}`);
+      }
       throw new Error('密码错误或备份文件已损坏');
     } finally {
       key.clearMem();

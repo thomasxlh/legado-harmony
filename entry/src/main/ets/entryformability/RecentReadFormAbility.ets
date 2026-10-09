@@ -92,8 +92,11 @@ export default class RecentReadFormAbility extends FormExtensionAbility {
   }
 
   private async updateFormNow(formId: string, dimension: number, reason: string): Promise<void> {
-    const data = await this.buildData(dimension);
+    // buildData 纳入 try/finally：即使 buildData 中途抛错，
+    // fromBooks 失败路径已关闭 fd，这里再兜底关闭已拿到的 data 中的 fd。
+    let data: RecentReadCardData | null = null;
     try {
+      data = await this.buildData(dimension);
       await formProvider.updateForm(formId, RecentReadCardUpdater.bindingData(data));
       hilog.info(
         0x0000,
@@ -104,7 +107,9 @@ export default class RecentReadFormAbility extends FormExtensionAbility {
         data.orderSignature
       );
     } finally {
-      RecentReadCardUpdater.closeFormImages(data);
+      if (data !== null) {
+        RecentReadCardUpdater.closeFormImages(data);
+      }
     }
   }
 

@@ -69,6 +69,7 @@ export struct BookChangeSourceDialog {
   private resumeBaseDone: number = 0;
   private lastPersistAt: number = 0;
   private persistTimer: number = -1;
+  private destroyed: boolean = false;
 
   aboutToAppear(): void {
     if (!this.targetBook) {
@@ -82,16 +83,19 @@ export struct BookChangeSourceDialog {
     }).catch(() => {});
     ChangeSourceOptionsStore.getLoadWordCount(getContext(this))
       .then((value: boolean): void => {
+        if (this.destroyed) return;
         this.loadWordCount = value;
         this.startSession();
       })
       .catch((): void => {
+        if (this.destroyed) return;
         this.startSession();
       });
   }
 
   /** 关闭前先触发持久化再作废会话：节流窗口内未保存的 delta 会在关闭时丢失。 */
   aboutToDisappear(): void {
+    this.destroyed = true;
     this.sessionId++;
     this.switchToken++;
     this.measureSessionId++;
@@ -309,6 +313,8 @@ export struct BookChangeSourceDialog {
       if (!this.isSessionActive(sessionId)) return;
       console.error('搜索换源失败:', e);
       this.status = '搜索换源失败';
+      // 失败前已完成的书源允许续搜，避免整轮重搜已搜过的书源。
+      this.canResumeSearch = this.searchedSourceUrls.size > 0;
       // 失败前 delta 已展示的结果同样需要测量。
       this.startMeasureChapterWordCounts();
     } finally {
@@ -510,6 +516,9 @@ export struct BookChangeSourceDialog {
         await Promise.all(workers);
         if (measureSession !== this.measureSessionId) return;
       }
+    } catch (e) {
+      // 与 Index.ets 搜索页的同构实现对齐：测量链路 reject 不能无人处理。
+      console.warn('换源字数测量失败:', e);
     } finally {
       this.sortResults();
       if (measureSession === this.measureSessionId) {

@@ -21,7 +21,7 @@ import { ResponsiveManagerListLayout } from '../utils/ResponsiveManagerListLayou
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import deviceInfo from '@ohos.deviceInfo';
 import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
-import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
+import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
 import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
@@ -1924,7 +1924,7 @@ struct BookSourcePage {
                     .divider(null)
                     .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
                     .menuBackgroundBlurStyle(BlurStyle.NONE)
-                    .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+                    .attributeModifier(new SelectMenuMaterialModifier())
                     .enabled(!this.isExecutingLoginAction)
                     .onSelect((selectedIndex: number) => {
                       this.updateSourceLoginSelect(index, selectedIndex);

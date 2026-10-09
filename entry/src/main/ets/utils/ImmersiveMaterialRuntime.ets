@@ -5,8 +5,7 @@ import { hdsMaterial } from '@kit.UIDesignKit';
 /** Centralizes HDS material probing and compatibility fallback. */
 export class ImmersiveMaterialRuntime {
   static readonly KEY_LIGHT_LEVEL: string = 'immersiveLightLevel';
-  private static resolved: boolean = false;
-  private static resolvedType: hdsMaterial.MaterialType = hdsMaterial.MaterialType.ADAPTIVE;
+  private static resolvedType: hdsMaterial.MaterialType | null = null;
   private static hdsMaterialSupported: boolean | null = null;
   private static immersiveSupported: boolean | null = null;
 
@@ -54,8 +53,7 @@ export class ImmersiveMaterialRuntime {
 
   static materialType(): hdsMaterial.MaterialType {
     if (!ImmersiveMaterialRuntime.supportsHdsMaterial()) return hdsMaterial.MaterialType.NONE;
-    if (ImmersiveMaterialRuntime.resolved) return ImmersiveMaterialRuntime.resolvedType;
-    ImmersiveMaterialRuntime.resolved = true;
+    if (ImmersiveMaterialRuntime.resolvedType !== null) return ImmersiveMaterialRuntime.resolvedType;
     try {
       const supportedTypes: Array<hdsMaterial.MaterialType> = hdsMaterial.getSystemMaterialTypes();
       ImmersiveMaterialRuntime.resolvedType = supportedTypes.indexOf(hdsMaterial.MaterialType.IMMERSIVE) >= 0 ?

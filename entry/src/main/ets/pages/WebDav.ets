@@ -358,7 +358,9 @@ struct WebDavPage {
     this.restorePasswordDialogSession.open(this.getUIContext(), (): void => {
       this.restorePasswordDialogContent();
     }, {
-      autoCancel: true,
+      // 弹窗持有待解密的临时备份文件，蒙层/返回键直接关闭会泄漏该文件，
+      // 必须走"取消"按钮（cancelRestorePassword 会删除临时文件）。
+      autoCancel: false,
       maskColor: this.appDarkMode ? '#99000000' : '#33000000',
       warnTag: '显示恢复密码弹窗失败:'
     });

@@ -3,7 +3,7 @@ import pasteboard from '@ohos.pasteboard';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
-import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
+import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { lanReaderServer } from '../core/lan/LanReaderServer';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
@@ -395,7 +395,7 @@ struct OtherSettingsPage {
         .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
         .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
         .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+        .attributeModifier(new SelectMenuMaterialModifier())
         .onSelect((index: number) => this.setImmersiveLightLevel(index))
     }
     .width('calc(100% - 32vp)')

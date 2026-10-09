@@ -1,5 +1,5 @@
 import { ThemeRuntime } from '../theme/ThemeRuntime';
-import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
+import { SelectMenuMaterialModifier } from './SelectMenuMaterialModifier';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import deviceInfo from '@ohos.deviceInfo';
 
@@ -434,7 +434,7 @@ export struct ReaderTtsPlayerPanel {
       // immersive menu material is unavailable.
       .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.darkMode, ''))
       .menuBackgroundBlurStyle(ThemeRuntime.glassEnabled() ? BlurStyle.COMPONENT_THICK : BlurStyle.NONE)
-      .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+      .attributeModifier(new SelectMenuMaterialModifier())
       .onSelect((index: number) => ReaderTtsFloatingSession.selectTtsVoice(index))
   }
 

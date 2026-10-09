@@ -65,6 +65,7 @@ export class AppDataBackupManifest {
   sourceGroupPreferences: string = '';
   searchKeywords: SearchKeyword[] = [];
   bookshelfSortMode: string = 'recentRead';
+  bookshelfActiveGroupId: number = 0;
 }
 
 export class AppDataBackupExportResult {
@@ -133,6 +134,7 @@ export class AppDataBackupService {
     'app_theme_settings',
     'bookshelf_display_settings',
     'cover_gallery_settings',
+    'custom_theme_schemes',
     'glass_settings',
     'reader_replace_rules',
     'reader_settings',
@@ -213,6 +215,7 @@ export class AppDataBackupService {
       manifest.books = allBooks.filter((book: Book): boolean => !LocalBookService.isPhysicalLocalBook(book))
         .map((book: Book): Book => AppDataBackupService.sanitizeBook(book));
       manifest.bookshelfSortMode = AppStorage.get<string>('bookshelfSortMode') || 'recentRead';
+      manifest.bookshelfActiveGroupId = await BookshelfStateStore.loadActiveGroupId(context);
     }
 
     if (selection.progress) {
@@ -341,7 +344,9 @@ export class AppDataBackupService {
       return;
     }
     for (const name of names) {
-      if (!name.startsWith('app_backup_')) continue;
+      // webdav_restore_：WebDAV 恢复等待密码输入时保留在 tempDir 的备份文件，
+      // 弹窗被外力关闭或进程被杀时无人删除，这里按同样的 24h 策略兜底清理。
+      if (!name.startsWith('app_backup_') && !name.startsWith('webdav_restore_')) continue;
       const path = `${context.tempDir}/${name}`;
       try {
         const stat = await fs.stat(path);
@@ -482,6 +487,17 @@ export class AppDataBackupService {
       const restoredSortMode = BookshelfStateStore.normalizeSortMode(manifest.bookshelfSortMode);
       AppStorage.setOrCreate('bookshelfSortMode', restoredSortMode);
       await BookshelfStateStore.saveSortMode(context, restoredSortMode);
+      // 恢复书架选中分组：分组本身由 manifest.bookGroups 恢复，仅补回选中状态。
+      const restoredGroupId = Number.isInteger(manifest.bookshelfActiveGroupId) ?
+        manifest.bookshelfActiveGroupId : 0;
+      if (restoredGroupId !== 0) {
+        const restoredGroups = await db.getCustomBookGroups();
+        const groupExists = restoredGroups.some((group: BookGroup): boolean => group.groupId === restoredGroupId);
+        if (groupExists) {
+          AppStorage.setOrCreate('bookshelfActiveGroupId', restoredGroupId);
+          await BookshelfStateStore.saveActiveGroupId(context, restoredGroupId);
+        }
+      }
     }
 
     if (selection.localBooks && AppDataBackupService.hasCategory(manifest, AppDataBackupService.CATEGORY_LOCAL_BOOKS)) {
