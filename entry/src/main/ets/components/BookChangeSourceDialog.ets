@@ -2,7 +2,7 @@ import { Book, BookSource, SearchBook } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { SearchCoordinator, SearchProgress, SearchSourceResult } from '../core/book/SearchCoordinator';
 import { WebBookService } from '../core/book/WebBookService';
-import { ChapterWordCountMeasurer } from '../core/book/ChapterWordCountMeasurer';
+import { ChapterMeasureTarget, ChapterWordCountMeasurer } from '../core/book/ChapterWordCountMeasurer';
 import { ChangeSourceCacheData, ChangeSourceResultCache } from '../utils/ChangeSourceResultCache';
 import { ChangeSourceOptionsStore } from '../utils/ChangeSourceOptionsStore';
 import { SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
@@ -96,6 +96,9 @@ export struct BookChangeSourceDialog {
   /** 关闭前先触发持久化再作废会话：节流窗口内未保存的 delta 会在关闭时丢失。 */
   aboutToDisappear(): void {
     this.destroyed = true;
+    // 先捕获搜索是否仍在进行再作废状态：只有被中断的搜索才落盘 partial（重开时自动续搜）；
+    // 已完成的搜索保留结果且不自动续搜，切换成功后重开面板直接显示历史结果。
+    const searchInterrupted = this.searching;
     this.sessionId++;
     this.switchToken++;
     this.measureSessionId++;
@@ -104,8 +107,8 @@ export struct BookChangeSourceDialog {
     this.clearPersistTimer();
     // 先持久化再取消：cancelActiveSearch 内部的 persistResultsNow 已经是 fire-and-forget，
     // 这里显式先调一次，确保 aboutToDisappear 的 grace period 内文件 IO 能完成。
-    this.persistResultsNow();
-    this.cancelActiveSearch();
+    this.persistResultsNow(searchInterrupted);
+    this.cancelActiveSearch(searchInterrupted);
   }
 
   startSession(): void {
@@ -130,22 +133,31 @@ export struct BookChangeSourceDialog {
       const cached = await ChangeSourceResultCache.load(getContext(this), book.name, book.author);
       if (!this.isSessionActive(sessionId)) return;
       if (cached && cached.results.length > 0) {
-        this.updateResults(cached.results);
-        for (const item of this.results) {
-          item.author = BookFieldSanitizer.cleanAuthor(item.author);
-          item.latestChapterTitle = BookFieldSanitizer.cleanChapterTitle(item.latestChapterTitle);
-          item.wordCount = BookFieldSanitizer.cleanWordCount(item.wordCount);
-        }
-        this.searchedSourceUrls = new Set<string>();
-        for (const url of cached.searchedSourceUrls) {
-          if (url) this.searchedSourceUrls.add(url);
-        }
-        if (this.results.length > 0 && cached.partial) {
-          this.status = '已恢复上次搜索结果，正在继续搜索剩余书源...';
-          this.search(sessionId, true);
-          return;
-        }
-        if (this.results.length > 0) {
+        // 禁用的书源不参与换源：丢弃历史结果里来自已禁用书源的条目（条数随过滤结果展示）。
+        const enabledUrls = await this.loadEnabledSourceUrls();
+        if (!this.isSessionActive(sessionId)) return;
+        const usableResults = enabledUrls === null ? cached.results.slice() :
+          cached.results.filter((item: SearchBook): boolean => enabledUrls.has(item.origin || ''));
+        if (usableResults.length > 0) {
+          this.updateResults(usableResults);
+          for (const item of this.results) {
+            item.author = BookFieldSanitizer.cleanAuthor(item.author);
+            item.latestChapterTitle = BookFieldSanitizer.cleanChapterTitle(item.latestChapterTitle);
+            item.wordCount = BookFieldSanitizer.cleanWordCount(item.wordCount);
+          }
+          this.searchedSourceUrls = new Set<string>();
+          // 续搜计数基数只统计启用书源：历史会话可能积累后来被禁用的书源 URL，
+          // 不过滤会导致"已搜索 x/总数"的 x 虚高（如 100 启用 + 100 禁用 = x/200）。
+          for (const url of cached.searchedSourceUrls) {
+            if (url && (enabledUrls === null || enabledUrls.has(url))) {
+              this.searchedSourceUrls.add(url);
+            }
+          }
+          if (cached.partial) {
+            this.status = '已恢复上次搜索结果，正在继续搜索剩余书源...';
+            this.search(sessionId, true);
+            return;
+          }
           this.searching = false;
           // 历史结果无法区分是搜完还是提前达标结束，一律允许续搜；
           // 若上次已搜完全部书源，续搜会立即空跑完成并自动隐藏按钮。
@@ -162,6 +174,23 @@ export struct BookChangeSourceDialog {
     }
     if (this.isSessionActive(sessionId)) {
       this.search(sessionId, false);
+    }
+  }
+
+  /** 启用书源 URL 集合；读取失败返回 null（跳过过滤，保持旧结果可用）。 */
+  async loadEnabledSourceUrls(): Promise<Set<string> | null> {
+    try {
+      const db = AppDatabase.getInstance();
+      await db.initWithContext(getContext(this));
+      const urls = await db.getEnabledBookSourceUrls();
+      const enabled = new Set<string>();
+      for (const url of urls) {
+        if (url) enabled.add(url);
+      }
+      return enabled;
+    } catch (e) {
+      console.warn('读取启用书源失败:', e);
+      return null;
     }
   }
 
@@ -248,7 +277,9 @@ export struct BookChangeSourceDialog {
       this.status = resume ?
         `已搜索 ${this.resumeBaseDone} 个书源，正在继续搜索剩余书源...` : '正在搜索可用书源...';
     }
-    const excludeSourceUrls: string[] = [target.origin].concat(this.snapshotSearchedUrls());
+    // 当前书源也参与搜索与展示（打"当前"徽标）：置顶当前源的用户期望在列表里看到它，
+    // 点击切换等同刷新该源详情与目录，进度保留。
+    const excludeSourceUrls: string[] = this.snapshotSearchedUrls();
     try {
       const results = await coordinator.search(target.name, (progress: SearchProgress) => {
         if (!this.isSessionActive(sessionId)) return;
@@ -301,8 +332,10 @@ export struct BookChangeSourceDialog {
         }
       }
       try {
+        // 搜索已正常结束（含提前达标）：partial 只表示"被中断"，完成态落盘 false，
+        // 重开面板直接展示历史结果，剩余书源由用户手动点"继续搜索"。
         await ChangeSourceResultCache.save(getContext(this), cacheBookName, this.results, target.author,
-          this.snapshotSearchedUrls(), this.canResumeSearch);
+          this.snapshotSearchedUrls(), false);
       } catch (e) {
         console.warn('保存换源结果失败:', e);
       }
@@ -378,6 +411,10 @@ export struct BookChangeSourceDialog {
         HdsFeedback.showToast('书源不存在或已删除');
         return;
       }
+      if (!source.enabled) {
+        HdsFeedback.showToast('该书源已禁用，请在书源管理中启用后再切换');
+        return;
+      }
       if (token !== this.switchToken) return;
 
       const nextBook = this.buildSourceBook(searchBook, oldBook || target);
@@ -434,11 +471,11 @@ export struct BookChangeSourceDialog {
     return sessionId === this.sessionId;
   }
 
-  cancelActiveSearch(): void {
+  cancelActiveSearch(interrupted?: boolean): void {
     if (this.activeCoordinator) {
       this.activeCoordinator.cancel();
       this.activeCoordinator = null;
-      this.persistResultsNow();
+      this.persistResultsNow(interrupted);
     }
   }
 
@@ -448,10 +485,14 @@ export struct BookChangeSourceDialog {
       .catch((): void => {
       });
     if (this.loadWordCount) {
+      // 开启后切换为实测本章字数优先排序，并开始补测未测结果。
+      this.sortResults();
       this.startMeasureChapterWordCounts();
     } else {
       this.measureSessionId++;
       this.measuring = false;
+      // 关闭后回到最新章节号优先排序。
+      this.sortResults();
     }
   }
 
@@ -475,11 +516,12 @@ export struct BookChangeSourceDialog {
     this.measureChapterWordCounts(this.measureSessionId);
   }
 
-  /** 未测(-1)与测量失败(0)都收集；本会话已尝试过的跳过，避免失败项让测量循环永不退出。 */
+  /** 未测(-1)与测量失败(0)都收集（最新章节或当前阅读章节任一字段未完成即待测）；
+   *  本会话已尝试过的跳过，避免失败项让测量循环永不退出。 */
   collectPendingMeasurements(attempted: Set<string>): SearchBook[] {
     const pending: SearchBook[] = [];
     for (const item of this.results) {
-      if (item.chapterWordCount > 0) continue;
+      if (item.chapterWordCount > 0 && item.currentChapterWordCount > 0) continue;
       const key = `${item.origin || ''}\n${item.bookUrl}`;
       if (attempted.has(key)) continue;
       pending.push(item);
@@ -525,10 +567,11 @@ export struct BookChangeSourceDialog {
         this.measuring = false;
       }
       const target = this.targetBook;
-      if (measuredAny && !this.switching && target && this.results.length > 0) {
+      // destroyed 后交由 aboutToDisappear 的持久化收尾（其 partial 状态才正确），避免迟到的覆写。
+      if (measuredAny && !this.destroyed && !this.switching && target && this.results.length > 0) {
         try {
           await ChangeSourceResultCache.save(getContext(this), target.name, this.results, target.author,
-            this.snapshotSearchedUrls(), false);
+            this.snapshotSearchedUrls(), this.searching);
         } catch (e) {
           console.warn('保存换源字数结果失败:', e);
         }
@@ -549,7 +592,9 @@ export struct BookChangeSourceDialog {
     try {
       const changed = await Promise.race([this.measureOneChapterWordCount(candidate, measureSession), timeout]);
       if (timedOut && measureSession === this.measureSessionId && !this.switching) {
+        // 两个字数都置失败，防止任一字段残留 -1 让待测收集永远选中该条。
         candidate.chapterWordCount = 0;
+        candidate.currentChapterWordCount = 0;
         return true;
       }
       return changed;
@@ -561,18 +606,55 @@ export struct BookChangeSourceDialog {
   async measureOneChapterWordCount(candidate: SearchBook, measureSession: number): Promise<boolean> {
     const db = AppDatabase.getInstance();
     await db.initWithContext(getContext(this));
+    // 同时测量目标书当前阅读章节的字数：换源最关心的量（不同源同一章的内容完整度）。
+    const target = this.targetBook;
+    const currentChapter = new ChapterMeasureTarget();
+    if (target) {
+      currentChapter.index = target.durChapterIndex;
+      currentChapter.title = target.durChapterTitle || '';
+    }
     return ChapterWordCountMeasurer.measureOne(db, candidate, (): boolean =>
-      measureSession !== this.measureSessionId || this.switching);
+      measureSession !== this.measureSessionId || this.switching, currentChapter);
   }
 
-  chapterWordCountText(book: SearchBook): string {
-    if (book.chapterWordCount > 0) {
-      return `${book.chapterWordCount}`;
+  /** 章节标题过长会挤掉徽标里的字数，截断到固定长度保证字数可见。 */
+  truncateChipTitle(title: string): string {
+    const max = 12;
+    return title.length > max ? `${title.substring(0, max)}…` : title;
+  }
+
+  currentChapterWordCountText(book: SearchBook): string {
+    if (!book.currentChapterReached) {
+      return '未收录';
     }
-    if (book.chapterWordCount === 0) {
+    return this.wordCountText(book.currentChapterWordCount);
+  }
+
+  /** 当前章字数徽标：字数放最前（省略号只截尾部，字数永远可见），章节标题截断后放括号里。 */
+  currentChipText(book: SearchBook): string {
+    const target = this.targetBook;
+    const title = target ? (target.durChapterTitle || '').trim() : '';
+    const chapterText = title ? `（${this.truncateChipTitle(title)}）` :
+      (target ? `（第${target.durChapterIndex + 1}章）` : '');
+    return `当前：${this.currentChapterWordCountText(book)}${chapterText}`;
+  }
+
+  /** 最新章字数徽标：复用搜索结果已有的最新章标题，字数放最前保证可见。 */
+  latestChipText(book: SearchBook): string {
+    const title = (book.latestChapterTitle || '').trim();
+    const chapterText = title ? `（${this.truncateChipTitle(title)}）` :
+      (book.latestChapterIndex >= 0 ? `（第${book.latestChapterIndex + 1}章）` : '');
+    return `最新：${this.wordCountText(book.chapterWordCount)}${chapterText}`;
+  }
+
+  wordCountText(count: number): string {
+    if (count > 0) {
+      return `${count}字`;
+    }
+    if (count === 0) {
       return '获取失败';
     }
-    return '测量中...';
+    return '测量中';
   }
 
   snapshotSearchedUrls(): string[] {
@@ -610,13 +692,16 @@ export struct BookChangeSourceDialog {
     }
   }
 
-  async persistResultsNow(): Promise<void> {
+  /** 持久化当前结果；partial 仅在搜索仍在进行（被关闭/切换中断）时为 true，重开面板可自动续搜；
+   *  已完成的搜索落盘为非 partial，重开时直接展示历史结果，不再自动续搜。 */
+  async persistResultsNow(interrupted?: boolean): Promise<void> {
     this.lastPersistAt = Date.now();
     const target = this.targetBook;
     if (!target || this.results.length === 0) return;
+    const partial = interrupted !== undefined ? interrupted : this.searching;
     try {
       await ChangeSourceResultCache.save(getContext(this), target.name, this.results, target.author,
-        this.snapshotSearchedUrls(), true);
+        this.snapshotSearchedUrls(), partial);
     } catch (e) {
       console.warn('暂存换源结果失败:', e);
     }
@@ -645,29 +730,36 @@ export struct BookChangeSourceDialog {
     });
   }
 
-  /** 过滤 + 排序后整体替换结果列表；排序规则见 SearchResultSorter（最新章节从大到小，相同则字数从大到小，实测失败沉底）。 */
+  /** 过滤 + 排序后整体替换结果列表；排序规则见 SearchResultSorter：
+   *  开启本章字数时按实测字数从大到小优先（主键当前阅读章节字数，相同再按最新章节字数、最新章节号），
+   *  关闭时最新章节号从大到小优先（相同再按字数），实测失败沉底。 */
   updateResults(raw: SearchBook[]): void {
     const target = this.targetBook;
     if (!target) return;
-    this.results = SearchResultSorter.sort(this.filterResults(raw, target.bookUrl, target.origin));
+    this.results = SearchResultSorter.sort(this.filterResults(raw), this.loadWordCount);
   }
 
   sortResults(): void {
-    this.results = SearchResultSorter.sort(this.results.slice());
+    this.results = SearchResultSorter.sort(this.results.slice(), this.loadWordCount);
   }
 
-  filterResults(results: SearchBook[], currentBookUrl: string, currentOrigin: string): SearchBook[] {
+  filterResults(results: SearchBook[]): SearchBook[] {
     const filtered: SearchBook[] = [];
     const seen = new Set<string>();
     for (const result of results) {
-      if (!result.bookUrl || SearchBookShelfHelper.isNavigationResult(result) ||
-        (result.bookUrl === currentBookUrl && result.origin === currentOrigin)) continue;
+      // 当前书本身（同源同地址）保留展示并打"当前"徽标，不再过滤。
+      if (!result.bookUrl || SearchBookShelfHelper.isNavigationResult(result)) continue;
       const key = `${result.origin || ''}\n${result.bookUrl}`;
       if (seen.has(key)) continue;
       seen.add(key);
       filtered.push(result);
     }
     return filtered;
+  }
+
+  isCurrentSourceResult(book: SearchBook): boolean {
+    const target = this.targetBook;
+    return !!target && book.bookUrl === target.bookUrl && book.origin === target.origin;
   }
 
   buildSourceBook(searchBook: SearchBook, oldBook: Book): Book {
@@ -862,6 +954,15 @@ export struct BookChangeSourceDialog {
                         .fontColor(this.primaryTextColor())
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .layoutWeight(1)
+                      if (this.isCurrentSourceResult(book)) {
+                        Text('当前')
+                          .fontSize(10)
+                          .fontColor('#FFFFFF')
+                          .padding({ left: 5, right: 5, top: 1, bottom: 1 })
+                          .borderRadius(6)
+                          .backgroundColor('#2196F3')
+                      }
                       if (this.isSourcePinned(book.origin || '')) {
                         Text('置顶')
                           .fontSize(10)
@@ -871,27 +972,42 @@ export struct BookChangeSourceDialog {
                           .backgroundColor('#FF9800')
                       }
                     }
+                    .width('100%')
                     Text(`作者：${book.author || '未知'}`)
                       .fontSize(12)
                       .fontColor(this.subTextColor())
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    Row({ space: 8 }) {
-                      Text(`最新：${book.latestChapterTitle || '书源未提供'}`)
-                        .fontSize(12)
-                        .fontColor(this.subTextColor())
-                        .layoutWeight(1)
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      if (this.loadWordCount) {
-                        Text(`字数：${this.chapterWordCountText(book)}`)
-                          .fontSize(12)
-                          .fontColor(this.subTextColor())
+                    Text(`最新：${book.latestChapterTitle || '书源未提供'}`)
+                      .fontSize(12)
+                      .fontColor(this.subTextColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .width('100%')
+                    if (this.loadWordCount) {
+                      Column({ space: 4 }) {
+                        Text(this.currentChipText(book))
+                          .fontSize(11)
+                          .fontColor(book.currentChapterWordCount > 0 ? this.primaryTextColor() :
+                            (book.currentChapterWordCount === 0 ? '#D94838' : this.subTextColor()))
+                          .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                          .borderRadius(9)
+                          .backgroundColor(this.chipColor())
+                          .maxLines(1)
+                          .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        Text(this.latestChipText(book))
+                          .fontSize(11)
+                          .fontColor(book.chapterWordCount > 0 ? this.primaryTextColor() :
+                            (book.chapterWordCount === 0 ? '#D94838' : this.subTextColor()))
+                          .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                          .borderRadius(9)
+                          .backgroundColor(this.chipColor())
                           .maxLines(1)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                       }
+                      .alignItems(HorizontalAlign.Start)
+                      .width('100%')
                     }
-                    .width('100%')
                     if (this.failedBookUrls.includes(book.bookUrl)) {
                       Text('该源切换失败，建议尝试其它书源')
                         .fontSize(11)
@@ -926,7 +1042,7 @@ export struct BookChangeSourceDialog {
                 .backgroundColor(this.inputColor())
                 .borderRadius(10)
               }
-            }, (book: SearchBook) => `${book.origin}|${book.bookUrl}|${book.chapterWordCount}|${book.latestChapterTitle}|${this.isSourcePinned(book.origin || '') ? 'p' : 'np'}`)
+            }, (book: SearchBook) => `${book.origin}|${book.bookUrl}|${book.chapterWordCount}|${book.currentChapterWordCount}|${book.latestChapterIndex}|${book.currentChapterReached}|${book.latestChapterTitle}|${this.isSourcePinned(book.origin || '') ? 'p' : 'np'}`)
 
             if (this.searching) {
               ListItem() {
@@ -942,7 +1058,7 @@ export struct BookChangeSourceDialog {
               ListItem() {
                 Row({ space: 8 }) {
                   LoadingProgress().width(20).height(20)
-                  Text('正在测量最新章节字数...').fontSize(13).fontColor(this.subTextColor())
+                  Text('正在测量章节字数...').fontSize(13).fontColor(this.subTextColor())
                 }
                 .width('100%')
                 .height(42)
@@ -983,5 +1099,10 @@ export struct BookChangeSourceDialog {
 
   inputColor(): string {
     return ThemeRuntime.inputColor(this.appDarkMode);
+  }
+
+  /** 字数徽标底色：卡片背景是 inputColor，徽标用半透明叠加色区分层级。 */
+  chipColor(): string {
+    return this.appDarkMode ? '#24FFFFFF' : '#14000000';
   }
 }

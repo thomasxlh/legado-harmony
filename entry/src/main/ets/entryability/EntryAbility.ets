@@ -14,6 +14,7 @@ import { ReaderFontBootstrap } from '../utils/ReaderFontBootstrap';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import { TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ReaderProgressCheckpoint } from '../utils/ReaderProgressCheckpoint';
+import { CloudSyncService } from '../utils/CloudSyncService';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ThemeIds } from '../theme/ThemeModels';
 import { StartupCoverTextStore } from '../utils/StartupCoverTextStore';
@@ -284,6 +285,8 @@ export default class EntryAbility extends UIAbility {
         hilog.warn(0x0000, 'testTag', 'Restart LAN reader failed: %{public}s', JSON.stringify(e));
       });
     }
+    // 云同步为受控去抖模式：回到前台时择机合并上传本地变更。
+    CloudSyncService.requestAutoSync();
     this.syncSystemColorMode(this.context.config);
   }
 
@@ -323,6 +326,8 @@ export default class EntryAbility extends UIAbility {
     ReaderProgressCheckpoint.request('ability-background').catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Background progress checkpoint failed: %{public}s', JSON.stringify(e));
     });
+    // 退后台时合并上传一次本地变更（受 5 分钟去抖限制），听书产生的进度更新不会实时上云。
+    CloudSyncService.requestAutoSync();
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {

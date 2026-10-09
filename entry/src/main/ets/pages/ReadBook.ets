@@ -1281,8 +1281,9 @@ struct ReadBookPage {
         const storedPageCount = Number(this.book.getVariable('readProgressPageCount'));
         this.readerProgressAnchorPageCount = Number.isFinite(storedPageCount) && storedPageCount > 0 ?
           Math.round(storedPageCount) : Math.max(1, savedPosition + 1);
-        this.readerProgressAnchorPageText = this.book.getVariable('lastReadPageText') || '';
-        this.readerProgressAnchorPageImage = this.book.getVariable('lastReadPageImage') || '';
+        const shelfSnapshot = await AppDatabase.getInstance().getBookShelfSnapshot(this.book.bookUrl);
+        this.readerProgressAnchorPageText = shelfSnapshot?.pageText ?? '';
+        this.readerProgressAnchorPageImage = shelfSnapshot?.pageImage ?? '';
       }
       this.readerLightThemeIndex = ReaderThemeHelper.normalizeIndex(this.readerLightThemeIndex);
       this.readerDarkThemeIndex = ReaderThemeHelper.normalizeIndex(this.readerDarkThemeIndex);
@@ -9660,8 +9661,6 @@ struct ReadBookPage {
       this.book.putVariable(READER_PROGRESS_OFFSET_KEY, `${characterOffset}`);
       this.book.putVariable(READER_PROGRESS_OFFSET_CHAPTER_KEY, `${chapterIndex}`);
     }
-    this.book.putVariable('lastReadPageText', lastReadPageText);
-    this.book.putVariable('lastReadPageImage', lastReadPageImage);
     // The old reader page can finish an asynchronous save after the next book has
     // already opened. Never let that stale page replace the singleton engine's book.
     if (engine.book?.bookUrl === this.book.bookUrl) {
@@ -9671,7 +9670,13 @@ struct ReadBookPage {
     }
     const bookUrl = this.book.bookUrl;
     const chapterTitle = this.book.durChapterTitle;
+    // 正文片段/图片已移入本地快照表。这里剥离旧版本或云端下行行残留的这两个键，
+    // 防止 1600 字符正文继续随 books 行上云（云空间占用随同步次数累积的根因）。
+    this.book.removeVariable('lastReadPageText');
+    this.book.removeVariable('lastReadPageImage');
     const variable = this.book.variable;
+    const snapshotPageText = lastReadPageText;
+    const snapshotPageImage = lastReadPageImage;
     const syncRelevant = !!this.book.origin && this.book.origin !== 'local';
     const shouldRefreshRecentCard = chapterIndex !== this.lastRecentReadCardChapterIndex;
     this.lastRecentReadCardChapterIndex = chapterIndex;
@@ -9685,6 +9690,9 @@ struct ReadBookPage {
       const db = AppDatabase.getInstance();
       await db.updateBookReadingProgress(
         bookUrl, chapterTitle, chapterIndex, pageIndex, now, variable, syncRelevant);
+      // Shelf "continue reading" preview lives in a local-only table so the page body
+      // text never rides the synced books row up to cloud space.
+      await db.saveBookShelfSnapshot(bookUrl, snapshotPageText, snapshotPageImage);
       // Page turns are saved frequently, while the retained bookshelf page is still alive underneath the reader.
       // Publishing shelfUpdateTime here would rebuild every hidden shelf card and decode all theme cover fallbacks on
       // every turn. Persist the progress immediately, but notify the shelf only when leaving the reader.

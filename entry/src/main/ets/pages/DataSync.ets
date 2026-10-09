@@ -14,23 +14,54 @@ struct DataSyncPage {
   @StorageLink(CloudSyncService.STORAGE_SUPPORTED) cloudSyncSupported: boolean = false;
   @StorageLink(CloudSyncService.STORAGE_STATUS) syncStatus: string = CloudSyncService.STATUS_IDLE;
   @StorageLink(CloudSyncService.STORAGE_MESSAGE) syncMessage: string = '';
-  @StorageLink(CloudSyncService.STORAGE_REVISION) @Watch('onSyncStateChanged') syncRevision: number = 0;
   @StorageLink(CloudSyncService.STORAGE_LAST_SUCCESS_AT) syncLastSuccessAt: number = 0;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State syncing: boolean = false;
+  @State syncSizeText: string = '';
 
   aboutToAppear(): void {
-    this.syncing = CloudSyncService.isSyncing();
+    // 按钮的“正在同步”只跟随手动点击的生命周期，不跟随后台自动同步：
+    // 自动同步由前后台切换触发，若按钮绑定全局状态，自动同步结束的瞬间
+    // isSyncing() 尚未清除，按钮会永久停在“正在同步”。
     this.syncBars();
+    this.refreshSyncSizeText();
   }
 
   onPageShow(): void {
     this.syncBars();
   }
 
-  onSyncStateChanged(): void {
-    this.syncing = CloudSyncService.isSyncing();
+  private refreshSyncSizeText(): void {
+    CloudSyncService.estimateSyncTableSizes().then((sizes) => {
+      const nameMap: Record<string, string> = {
+        'books': '书籍',
+        'book_sources': '书源',
+        'book_groups': '分组',
+        'search_keywords': '搜索历史',
+        'sync_heartbeats': '同步心跳'
+      };
+      let total = 0;
+      let biggestTable = '';
+      let biggestBytes = 0;
+      const tables = Object.keys(sizes);
+      for (const table of tables) {
+        total += sizes[table];
+        if (sizes[table] > biggestBytes) {
+          biggestBytes = sizes[table];
+          biggestTable = table;
+        }
+      }
+      if (total <= 0) {
+        this.syncSizeText = '';
+        return;
+      }
+      const biggestName = nameMap[biggestTable] ? nameMap[biggestTable] : biggestTable;
+      this.syncSizeText =
+        `共约 ${CloudSyncService.formatBytes(total)}，其中${biggestName}约 ${CloudSyncService.formatBytes(biggestBytes)}`;
+    }).catch(() => {
+      this.syncSizeText = '';
+    });
   }
 
   build() {
@@ -46,7 +77,10 @@ struct DataSyncPage {
           Column() {
             this.infoItem('在线书架与分组', '书籍信息、阅读进度、分组与排序', true)
             this.infoItem('书源', '书源配置、分组、排序与启用状态', true)
-            this.infoItem('搜索历史', '搜索过的关键词记录', false)
+            this.infoItem('搜索历史', '搜索过的关键词记录', this.syncSizeText !== '')
+            if (this.syncSizeText !== '') {
+              this.infoItem('同步数据量', this.syncSizeText, false)
+            }
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
@@ -217,12 +251,14 @@ struct DataSyncPage {
     }
     this.syncing = true;
     try {
-      await CloudSyncService.syncNow();
+      await CloudSyncService.syncNow(true);
       HdsFeedback.showToast('已与云空间同步');
     } catch (e) {
       HdsFeedback.showToast(`同步失败：${e instanceof Error ? e.message : String(e)}`);
     } finally {
-      this.syncing = CloudSyncService.isSyncing();
+      // 不能用 CloudSyncService.isSyncing()：手动同步上传后常触发云端变更通知，
+      // 唤起一次后台自动同步，isSyncing() 会立刻变回 true，按钮将永远停在“正在同步”。
+      this.syncing = false;
     }
   }
 
@@ -245,10 +281,13 @@ struct DataSyncPage {
     if (!this.cloudSyncSupported) {
       return '当前设备系统版本不支持端云同步，可使用下方 WebDAV 备份数据。';
     }
+    if (this.syncStatus === CloudSyncService.STATUS_SYNCING && this.syncMessage) {
+      return this.syncMessage;
+    }
     if (this.syncStatus === CloudSyncService.STATUS_ERROR && this.syncMessage) {
       return `上次同步出现问题：${this.syncMessage}`;
     }
-    return '书架、书源与搜索历史通过华为云空间自动同步，登录同一华为账号的设备间保持一致。';
+    return '书架、书源与搜索历史通过华为云空间同步：应用在启动、回到前台或云端数据变化时自动合并上传，登录同一华为账号的设备间保持一致。';
   }
 
   syncIssueDescription(): string {

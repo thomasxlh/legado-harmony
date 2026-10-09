@@ -10,7 +10,7 @@ export class SearchExploreSettings {
   exactSearch: boolean = false;
   exactSearchMatchAuthor: boolean = true;
   showSearchProgress: boolean = true;
-  searchConcurrency: number = 6;
+  searchConcurrency: number = 100;
   selectedSourceGroupsRaw: string = '';
   selectedSourceUrlsRaw: string = '__LEGACY_SOURCE_GROUP_SELECTION__';
   sourceSortRaw: string = '';
@@ -35,7 +35,9 @@ export class SearchExploreSettingsStore {
   static readonly KEY_EXPLORE_SOURCE_URL: string = 'exploreSourceUrl';
   static readonly KEY_EXPLORE_PLATFORM: string = 'explorePlatform';
   private static readonly STORE_NAME: string = 'search_explore_settings';
-  private static readonly DEFAULT_SEARCH_CONCURRENCY: number = 6;
+  private static readonly DEFAULT_SEARCH_CONCURRENCY: number = 100;
+  private static readonly LEGACY_DEFAULT_SEARCH_CONCURRENCY: number = 6;
+  private static readonly KEY_CONCURRENCY_MIGRATED: string = 'searchExploreConcurrencyMigrated100';
   private static readonly MIN_SEARCH_CONCURRENCY: number = 1;
   private static cachedSettings: SearchExploreSettings | null = null;
 
@@ -68,6 +70,17 @@ export class SearchExploreSettingsStore {
       typeof storageConcurrency === 'number' ?
         SearchExploreSettingsStore.normalizeSearchConcurrency(storageConcurrency) :
         SearchExploreSettingsStore.DEFAULT_SEARCH_CONCURRENCY);
+    // 旧版本默认并发数为 6 且可能已被落盘；默认值改为 100 后做一次性迁移，
+    // 落标记避免之后用户手动改回的值在下次启动时被再次覆盖。
+    const concurrencyMigrated = await SearchExploreSettingsStore.getBoolean(
+      store, SearchExploreSettingsStore.KEY_CONCURRENCY_MIGRATED, false);
+    if (!concurrencyMigrated) {
+      if (settings.searchConcurrency === SearchExploreSettingsStore.LEGACY_DEFAULT_SEARCH_CONCURRENCY) {
+        settings.searchConcurrency = SearchExploreSettingsStore.DEFAULT_SEARCH_CONCURRENCY;
+      }
+      await store.put(SearchExploreSettingsStore.KEY_CONCURRENCY_MIGRATED, true);
+      await store.flush();
+    }
     settings.selectedSourceGroupsRaw = await SearchExploreSettingsStore.getString(
       store, SearchExploreSettingsStore.KEY_SELECTED_SOURCE_GROUPS, '');
     settings.selectedSourceUrlsRaw = await SearchExploreSettingsStore.getString(

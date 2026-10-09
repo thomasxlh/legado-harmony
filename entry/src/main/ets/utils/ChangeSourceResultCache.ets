@@ -225,6 +225,11 @@ export class ChangeSourceResultCache {
     target.weight = source.weight || 0;
     const measured = Number(source.chapterWordCount);
     target.chapterWordCount = Number.isFinite(measured) ? measured : -1;
+    const measuredCurrent = Number(source.currentChapterWordCount);
+    target.currentChapterWordCount = Number.isFinite(measuredCurrent) ? measuredCurrent : -1;
+    const latestIndex = Number(source.latestChapterIndex);
+    target.latestChapterIndex = Number.isFinite(latestIndex) ? latestIndex : -1;
+    target.currentChapterReached = source.currentChapterReached !== false;
     return target;
   }
 }

@@ -75,6 +75,24 @@ export class Book {
     this._variableMapRaw = this.variable;
   }
 
+  /** Remove a key from the variable map. Used to strip legacy keys that must not ride the synced row. */
+  removeVariable(key: string): void {
+    const map = this.variableMap;
+    if (!Object.keys(map).includes(key)) {
+      return;
+    }
+    const clean: Record<string, string> = {};
+    const keys = Object.keys(map);
+    for (const k of keys) {
+      if (k !== key) {
+        clean[k] = map[k];
+      }
+    }
+    this._variableMap = clean;
+    this.variable = JSON.stringify(clean);
+    this._variableMapRaw = this.variable;
+  }
+
   replaceVariable(raw: string): void {
     this.variable = raw || '{}';
     this._variableMap = null;
@@ -458,6 +476,12 @@ export class SearchBook {
   weight: number = 0;
   /** 换源面板实测的最新章节正文字数；-1 未测量，0 测量失败。 */
   chapterWordCount: number = -1;
+  /** 换源面板实测的当前阅读章节（目标书 durChapterIndex 对应章）正文字数；-1 未测量，0 测量失败。 */
+  currentChapterWordCount: number = -1;
+  /** 实测的最新章节在目录中的序号（0 基）；-1 未测量。 */
+  latestChapterIndex: number = -1;
+  /** 书源目录是否收录到当前阅读章节：最新章在阅读进度之前的源没有可比性，字数排序时直接沉底。 */
+  currentChapterReached: boolean = true;
   /** Transient search-list metadata; never participates in source rule execution or persistence. */
   aggregationKey: string = '';
   aggregationCount: number = 1;

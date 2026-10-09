@@ -389,6 +389,8 @@ export class ReadBookEngine {
 
   private preserveReadingState(target: Book, source: Book): void {
     target.bookUrl = source.bookUrl;
+    target.name = source.name || target.name;
+    target.author = source.author || target.author;
     target.origin = target.origin || source.origin;
     target.originName = target.originName || source.originName;
     target.group = source.group;

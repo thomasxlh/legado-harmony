@@ -15,7 +15,7 @@ struct SearchExploreSettingsPage {
   @StorageLink('searchExploreExactSearch') searchExploreExactSearch: boolean = false;
   @StorageLink('searchExploreExactSearchMatchAuthor') searchExploreExactSearchMatchAuthor: boolean = true;
   @StorageLink('searchExploreShowSearchProgress') searchExploreShowSearchProgress: boolean = true;
-  @StorageLink('searchExploreSearchConcurrency') searchExploreSearchConcurrency: number = 6;
+  @StorageLink('searchExploreSearchConcurrency') searchExploreSearchConcurrency: number = 100;
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';

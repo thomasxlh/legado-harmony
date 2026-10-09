@@ -10,7 +10,7 @@ import fs from '@ohos.file.fs';
 import fileUri from '@ohos.file.fileuri';
 import { HdsTabs } from '@kit.UIDesignKit';
 import { Book, BookChapter, BookGroup, BookSource, SearchBook, SearchKeyword } from '../model/data/Book';
-import { AppDatabase } from '../model/data/AppDatabase';
+import { AppDatabase, BookShelfSnapshot } from '../model/data/AppDatabase';
 import { SearchCoordinator, SearchCallback, SearchProgress } from '../core/book/SearchCoordinator';
 import { ExploreCoordinator, ExploreEntry, ExploreFilterGroup, ExploreSourceOption } from '../core/book/ExploreCoordinator';
 import { BookSourceStageWebRuntime } from '../core/book/BookSourceStageWebRuntime';
@@ -995,6 +995,7 @@ struct BookshelfPage {
   @StorageLink('appCustomBaseThemeId') appCustomBaseThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @State books: Book[] = [];
   @State allBooks: Book[] = [];
+  @State shelfSnapshotMap: Map<string, BookShelfSnapshot> = new Map();
   private shelfListBooksSource: ShelfBookDataSource = new ShelfBookDataSource();
   private shelfTileBooksSource: ShelfBookDataSource = new ShelfBookDataSource();
   private shelfTileEntriesSource: ShelfTileEntryDataSource = new ShelfTileEntryDataSource();
@@ -1255,6 +1256,7 @@ struct BookshelfPage {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
       const loadedBooks = SearchExplorePendingBook.filterShelfBooks(await db.getAllBooks());
+      const loadedSnapshots = await db.getBookShelfSnapshots();
       const loadedGroups = await db.getCustomBookGroups();
       if (loadSerial !== this.shelfLoadSerial) return;
       if (!this.activeShelfGroupRestored) {
@@ -1269,6 +1271,7 @@ struct BookshelfPage {
       // Commit the complete snapshot together. In particular, never expose a new expanded card while the retained
       // LazyForEach data source still contains entries from the previous shelf generation.
       this.allBooks = loadedBooks;
+      this.shelfSnapshotMap = loadedSnapshots;
       this.shelfGroups = loadedGroups;
       if (this.activeShelfGroupId > 0 && !this.shelfGroups.some((group: BookGroup) => group.groupId === this.activeShelfGroupId)) {
         this.activeShelfGroupId = 0;
@@ -7085,7 +7088,8 @@ struct BookshelfPage {
   }
 
   getLastReadPagePreviewText(book: Book): string {
-    const text = book.getVariable('lastReadPageText').trim();
+    const snapshot = this.shelfSnapshotMap.get(book.bookUrl);
+    const text = (snapshot ? snapshot.pageText : book.getVariable('lastReadPageText')).trim();
     return text || '再次阅读后，将在这里显示上次阅读页的正文内容。';
   }
 
@@ -7117,7 +7121,8 @@ struct BookshelfPage {
   }
 
   getLastReadPageImage(book: Book): string {
-    const source = book.getVariable('lastReadPageImage').trim();
+    const snapshot = this.shelfSnapshotMap.get(book.bookUrl);
+    const source = (snapshot ? snapshot.pageImage : book.getVariable('lastReadPageImage')).trim();
     if (!source || /^(?:https?:|data:|file:)/i.test(source)) {
       return source;
     }
@@ -9255,7 +9260,7 @@ struct SearchPage {
   @StorageLink('searchExploreExactSearch') exactSearch: boolean = false;
   @StorageLink('searchExploreExactSearchMatchAuthor') exactSearchMatchAuthor: boolean = true;
   @StorageLink('searchExploreShowSearchProgress') showSearchProgress: boolean = true;
-  @StorageLink('searchExploreSearchConcurrency') searchConcurrency: number = 6;
+  @StorageLink('searchExploreSearchConcurrency') searchConcurrency: number = 100;
   @StorageLink('searchExploreSelectedSourceGroups') selectedSourceGroupsRaw: string = '';
   @StorageLink('searchExploreSelectedSourceUrls') selectedSourceUrlsRaw: string =
     SearchExploreSettingsStore.LEGACY_SOURCE_SELECTION;
@@ -10395,6 +10400,11 @@ struct SearchPage {
         const targetSource = await db.getBookSource(this.singleSourceSearchUrl);
         if (!targetSource) {
           HdsFeedback.showToast('指定书源不存在或已被删除');
+          this.clearSingleSourceSearch();
+          return;
+        }
+        if (!targetSource.enabled) {
+          HdsFeedback.showToast('指定书源已禁用，请在书源管理中启用');
           this.clearSingleSourceSearch();
           return;
         }

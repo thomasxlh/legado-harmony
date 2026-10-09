@@ -1119,6 +1119,9 @@ struct AudioBookPage {
     book.durChapterTime = chapterTime;
     book.putVariable('readStarted', '1');
     book.putVariable('lastReadTime', String(chapterTime));
+    // 正文片段已移入本地快照表；剥离旧版本/云端下行行残留键，避免随 books 行上云。
+    book.removeVariable('lastReadPageText');
+    book.removeVariable('lastReadPageImage');
     const bookUrl = book.bookUrl;
     const variable = book.variable;
     const syncRelevant = !!book.origin && book.origin !== 'local';

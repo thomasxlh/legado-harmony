@@ -39,8 +39,16 @@ class BookLifecycleMigrationRecord {
   shelfModifiedTime: number = 0;
 }
 
+/** 书架"继续阅读"卡的本设备快照。分页随设备变化，不参与云同步。 */
+export class BookShelfSnapshot {
+  bookUrl: string = '';
+  pageText: string = '';
+  pageImage: string = '';
+}
+
 export class AppDatabase {
   private static readonly BATCH_INSERT_CHUNK_SIZE: number = 400;
+  static readonly MAX_SEARCH_KEYWORDS: number = 200;
   private static instance: AppDatabase | null = null;
   private store: relationalStore.RdbStore | null = null;
   private initialized: boolean = false;
@@ -51,7 +59,8 @@ export class AppDatabase {
   private bookProgressWriteTasks: Map<string, Promise<void>> = new Map<string, Promise<void>>();
   private latestBookProgressWriteTimes: Map<string, number> = new Map<string, number>();
   private readonly DATABASE_NAME = 'legado.db';
-  private readonly SCHEMA_VERSION = 18;
+  private readonly SCHEMA_VERSION = 19;
+  private cloudDeviceId: string = '';
 
   private constructor() {}
 
@@ -87,7 +96,8 @@ export class AppDatabase {
 
     this.store = await relationalStore.getRdbStore(context, config);
     await this.createTables();
-    await CloudSyncService.configure(this.store);
+    const cloudDeviceId = await this.getOrCreateCloudDeviceId();
+    await CloudSyncService.configure(this.store, cloudDeviceId);
     await this.initDefaultData();
     this.initialized = true;
   }
@@ -278,6 +288,29 @@ export class AppDatabase {
       )
     `);
 
+    await this.store.executeSql(`
+      CREATE TABLE IF NOT EXISTS book_shelf_snapshots (
+        bookUrl TEXT PRIMARY KEY,
+        pageText TEXT DEFAULT '',
+        pageImage TEXT DEFAULT '',
+        updatedAt INTEGER DEFAULT 0
+      )
+    `);
+
+    await this.store.executeSql(`
+      CREATE TABLE IF NOT EXISTS sync_heartbeats (
+        deviceId TEXT PRIMARY KEY,
+        updatedAt INTEGER DEFAULT 0
+      )
+    `);
+
+    await this.store.executeSql(`
+      CREATE TABLE IF NOT EXISTS device_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT DEFAULT ''
+      )
+    `);
+
     const schemaVersion = await this.getSchemaVersion();
     if (schemaVersion < this.SCHEMA_VERSION) {
       await this.migrateTables();
@@ -289,6 +322,9 @@ export class AppDatabase {
       }
       if (schemaVersion < 15) {
         await this.migrateBookLifecycleMetadata();
+      }
+      if (schemaVersion < 19) {
+        await this.migrateBookShelfSnapshots();
       }
       await this.setSchemaVersion(this.SCHEMA_VERSION);
     }
@@ -808,7 +844,7 @@ export class AppDatabase {
       durChapterIndex: chapterIndex,
       durChapterPos: chapterPos,
       durChapterTime: chapterTime,
-      variable: variable
+      variable: AppDatabase.stripShelfSnapshotKeys(variable)
     };
     const predicates = new relationalStore.RdbPredicates('books');
     predicates.equalTo('bookUrl', bookUrl);
@@ -820,6 +856,38 @@ export class AppDatabase {
         'progress_update_missed', 'save_reading_progress', missing, 'bookUrl 精确匹配未命中');
       console.warn(`保存阅读进度未命中数据库记录: ${bookUrl}`);
       return;
+    }
+  }
+
+  /**
+   * 书架"继续阅读"正文片段只存本地快照表。这里是所有进度落库的必经点：
+   * 无论变量来自阅读页、听书页还是局域网回传，都在写库前剥离这两个键，
+   * 保证它们不再随 books 分布式行上云。
+   */
+  private static stripShelfSnapshotKeys(variable: string): string {
+    if (!variable) {
+      return variable;
+    }
+    const mentionsText = variable.indexOf('lastReadPageText') >= 0;
+    const mentionsImage = variable.indexOf('lastReadPageImage') >= 0;
+    if (!mentionsText && !mentionsImage) {
+      return variable;
+    }
+    try {
+      const parsed = JSON.parse(variable) as Record<string, Object>;
+      if (!parsed || typeof parsed !== 'object') {
+        return variable;
+      }
+      const clean: Record<string, Object> = {};
+      const keys = Object.keys(parsed);
+      for (const key of keys) {
+        if (key !== 'lastReadPageText' && key !== 'lastReadPageImage') {
+          clean[key] = parsed[key];
+        }
+      }
+      return JSON.stringify(clean);
+    } catch (_) {
+      return variable;
     }
   }
 
@@ -1687,7 +1755,17 @@ export class AppDatabase {
   }
 
   async getEnabledBookSourcesForSearch(): Promise<BookSource[]> {
-    return this.getEnabledBookSourcesForRuleScope('search');
+    const sources = await this.getEnabledBookSourcesForRuleScope('search');
+    return sources.filter((source: BookSource): boolean =>
+      !!(source.bookSourceUrl && source.bookSourceName && source.searchUrl &&
+        source.searchRule && source.searchRule.bookList));
+  }
+
+  /** 启用且支持搜索的书源 URL 列表（换源等场景），与换源/搜索实际使用的书源集合保持同一口径。 */
+  async getEnabledBookSourceUrls(): Promise<string[]> {
+    const sources = await this.getEnabledBookSourcesForSearch();
+    return sources.map((source: BookSource): string => source.bookSourceUrl || '')
+      .filter((url: string): boolean => !!url);
   }
 
   async getEnabledBookSourcesForExplore(): Promise<BookSource[]> {
@@ -2191,6 +2269,12 @@ export class AppDatabase {
         lastUseTime: Date.now()
       };
       await this.store.insert('search_keywords', bucket);
+      // 搜索历史整表参与云同步，封顶保留最近 MAX_SEARCH_KEYWORDS 条，
+      // 防止该表随使用无限增长并同步到云空间。
+      await this.store.executeSql(
+        `DELETE FROM search_keywords WHERE keyword NOT IN ` +
+        `(SELECT keyword FROM search_keywords ORDER BY lastUseTime DESC ` +
+        `LIMIT ${AppDatabase.MAX_SEARCH_KEYWORDS})`);
     }
   }
 
@@ -2223,6 +2307,137 @@ export class AppDatabase {
     const predicates = new relationalStore.RdbPredicates('search_keywords');
     predicates.equalTo('keyword', keyword);
     await this.store.delete(predicates);
+  }
+
+  /** 保存书架"继续阅读"快照。该表不注册为分布式表，正文片段不再随 books 行上云。 */
+  async saveBookShelfSnapshot(bookUrl: string, pageText: string, pageImage: string): Promise<void> {
+    if (!this.store || !bookUrl) return;
+    try {
+      await this.store.executeSql(
+        `INSERT OR REPLACE INTO book_shelf_snapshots (bookUrl, pageText, pageImage, updatedAt) ` +
+        `VALUES (?, ?, ?, ?)`,
+        [bookUrl, pageText, pageImage, Date.now()]);
+    } catch (e) {
+      console.warn('保存书架继续阅读快照失败:', e);
+    }
+  }
+
+  async getBookShelfSnapshot(bookUrl: string): Promise<BookShelfSnapshot | null> {
+    if (!this.store || !bookUrl) return null;
+    const predicates = new relationalStore.RdbPredicates('book_shelf_snapshots');
+    predicates.equalTo('bookUrl', bookUrl);
+    const resultSet = await this.store.query(predicates, []);
+    try {
+      if (resultSet.goToFirstRow()) {
+        return this.resultSetToShelfSnapshot(resultSet);
+      }
+    } finally {
+      resultSet.close();
+    }
+    return null;
+  }
+
+  async getBookShelfSnapshots(): Promise<Map<string, BookShelfSnapshot>> {
+    const snapshots = new Map<string, BookShelfSnapshot>();
+    if (!this.store) return snapshots;
+    const resultSet = await this.store.query(new relationalStore.RdbPredicates('book_shelf_snapshots'), []);
+    try {
+      while (resultSet.goToNextRow()) {
+        const snapshot = this.resultSetToShelfSnapshot(resultSet);
+        snapshots.set(snapshot.bookUrl, snapshot);
+      }
+    } finally {
+      resultSet.close();
+    }
+    return snapshots;
+  }
+
+  private resultSetToShelfSnapshot(resultSet: relationalStore.ResultSet): BookShelfSnapshot {
+    const snapshot = new BookShelfSnapshot();
+    snapshot.bookUrl = resultSet.getString(resultSet.getColumnIndex('bookUrl'));
+    snapshot.pageText = resultSet.getString(resultSet.getColumnIndex('pageText'));
+    snapshot.pageImage = resultSet.getString(resultSet.getColumnIndex('pageImage'));
+    return snapshot;
+  }
+
+  /**
+   * 历史版本把"最后阅读页正文/图片"存进 books.variable 并随行上云。迁移到本地快照表，
+   * 同时从 variable 中剥离这两个键，让 books 行（以及云空间里的对应记录）瘦身。
+   */
+  private async migrateBookShelfSnapshots(): Promise<void> {
+    if (!this.store) return;
+    let resultSet: relationalStore.ResultSet | null = null;
+    try {
+      resultSet = await this.store.querySql('SELECT bookUrl, variable FROM books');
+      while (resultSet.goToNextRow()) {
+        const bookUrl = resultSet.getString(resultSet.getColumnIndex('bookUrl'));
+        let variable = '';
+        try {
+          variable = resultSet.getString(resultSet.getColumnIndex('variable'));
+        } catch (_) {
+          variable = '';
+        }
+        if (!variable) continue;
+        try {
+          const parsed = JSON.parse(variable) as Record<string, Object>;
+          if (!parsed || typeof parsed !== 'object') continue;
+          const keys = Object.keys(parsed);
+          const hasText = keys.includes('lastReadPageText');
+          const hasImage = keys.includes('lastReadPageImage');
+          if (!hasText && !hasImage) continue;
+          const pageTextRaw: Object | undefined = parsed['lastReadPageText'];
+          const pageImageRaw: Object | undefined = parsed['lastReadPageImage'];
+          await this.saveBookShelfSnapshot(bookUrl,
+            typeof pageTextRaw === 'string' ? pageTextRaw : '',
+            typeof pageImageRaw === 'string' ? pageImageRaw : '');
+          const clean: Record<string, Object> = {};
+          for (const key of keys) {
+            if (key !== 'lastReadPageText' && key !== 'lastReadPageImage') {
+              clean[key] = parsed[key];
+            }
+          }
+          const bucket: relationalStore.ValuesBucket = { variable: JSON.stringify(clean) };
+          const predicates = new relationalStore.RdbPredicates('books');
+          predicates.equalTo('bookUrl', bookUrl);
+          await this.store.update(bucket, predicates);
+        } catch (_) {
+          continue;
+        }
+      }
+    } catch (e) {
+      console.warn('迁移书架继续阅读快照失败:', e);
+    } finally {
+      if (resultSet) resultSet.close();
+    }
+  }
+
+  /** 端云同步心跳使用的本设备标识，首次调用时生成并持久化。 */
+  async getOrCreateCloudDeviceId(): Promise<string> {
+    if (this.cloudDeviceId) return this.cloudDeviceId;
+    if (!this.store) return '';
+    try {
+      const resultSet = await this.store.querySql(
+        `SELECT value FROM device_meta WHERE key = 'cloud_device_id'`);
+      try {
+        if (resultSet.goToFirstRow()) {
+          const value = resultSet.getString(resultSet.getColumnIndex('value'));
+          if (value) {
+            this.cloudDeviceId = value;
+            return value;
+          }
+        }
+      } finally {
+        resultSet.close();
+      }
+      const generated = `dev-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 10)}`;
+      await this.store.executeSql(
+        `INSERT OR REPLACE INTO device_meta (key, value) VALUES ('cloud_device_id', ?)`, [generated]);
+      this.cloudDeviceId = generated;
+      return generated;
+    } catch (e) {
+      console.warn('生成云同步设备标识失败:', e);
+      return '';
+    }
   }
 }
 
