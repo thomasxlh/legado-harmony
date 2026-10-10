@@ -10967,6 +10967,7 @@ struct SettingsPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink(CloudSyncService.STORAGE_SUPPORTED) cloudSyncSupported: boolean = false;
+  @StorageLink(CloudSyncService.STORAGE_LINKED) cloudSyncLinked: boolean = false;
   @StorageLink(CloudSyncService.STORAGE_STATUS) cloudSyncStatus: string = CloudSyncService.STATUS_IDLE;
   @StorageLink(CloudSyncService.STORAGE_LAST_SUCCESS_AT) cloudSyncLastSuccessAt: number = 0;
   @StorageLink(CloudSyncService.STORAGE_REVISION) @Watch('onCloudSyncStateChanged') cloudSyncRevision: number = 0;
@@ -10994,6 +10995,20 @@ struct SettingsPage {
   refreshCloudSyncSummary(): void {
     this.cloudSyncSummaryText =
       CloudSyncService.summary(this.cloudSyncStatus, this.cloudSyncLastSuccessAt);
+  }
+
+  /** 只用“系统是否支持”来决定强调色会误导用户：未确认连通时应弱化显示。 */
+  cloudSyncSummaryColor(): string {
+    if (!this.cloudSyncSupported) {
+      return this.subTextColor();
+    }
+    if (this.cloudSyncStatus === CloudSyncService.STATUS_ERROR) {
+      return '#E5484D';
+    }
+    if (this.cloudSyncLinked || this.cloudSyncLastSuccessAt > 0) {
+      return this.accentColor();
+    }
+    return this.subTextColor();
   }
 
   build() {
@@ -11087,7 +11102,7 @@ struct SettingsPage {
             .fontColor(this.primaryTextColor())
           Text(this.cloudSyncSummaryText)
             .fontSize(12)
-            .fontColor(this.cloudSyncSupported ? this.accentColor() : this.subTextColor())
+            .fontColor(this.cloudSyncSummaryColor())
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)

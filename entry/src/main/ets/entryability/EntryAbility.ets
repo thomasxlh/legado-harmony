@@ -326,8 +326,9 @@ export default class EntryAbility extends UIAbility {
     ReaderProgressCheckpoint.request('ability-background').catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Background progress checkpoint failed: %{public}s', JSON.stringify(e));
     });
-    // 退后台时合并上传一次本地变更（受 5 分钟去抖限制），听书产生的进度更新不会实时上云。
-    CloudSyncService.requestAutoSync();
+    // 退后台时合并上传一次本地变更：这是本轮最后一次上传机会（听书进度更新不会
+    // 实时上云），因此绕过去抖窗口；受去抖丢弃的历史请求由服务内部补传。
+    CloudSyncService.requestAutoSync(true);
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {

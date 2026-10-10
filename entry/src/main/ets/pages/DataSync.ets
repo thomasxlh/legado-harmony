@@ -1,6 +1,6 @@
 import { router } from '@kit.ArkUI';
 import { common, Want } from '@kit.AbilityKit';
-import { CloudSyncService } from '../utils/CloudSyncService';
+import { CloudSyncOutcome, CloudSyncService } from '../utils/CloudSyncService';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
@@ -12,6 +12,7 @@ struct DataSyncPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink(CloudSyncService.STORAGE_SUPPORTED) cloudSyncSupported: boolean = false;
+  @StorageLink(CloudSyncService.STORAGE_LINKED) cloudSyncLinked: boolean = false;
   @StorageLink(CloudSyncService.STORAGE_STATUS) syncStatus: string = CloudSyncService.STATUS_IDLE;
   @StorageLink(CloudSyncService.STORAGE_MESSAGE) syncMessage: string = '';
   @StorageLink(CloudSyncService.STORAGE_LAST_SUCCESS_AT) syncLastSuccessAt: number = 0;
@@ -147,9 +148,9 @@ struct DataSyncPage {
             .height(24)
             .color(this.accentColor())
         } else {
-          Text(this.cloudSyncSupported ? '可用' : '不可用')
+          Text(this.cloudBadgeText())
             .fontSize(12)
-            .fontColor(this.cloudSyncSupported ? this.accentColor() : this.subTextColor())
+            .fontColor(this.cloudBadgeColor())
             .padding({ left: 10, right: 10, top: 5, bottom: 5 })
             .borderRadius(12)
             .backgroundColor(this.softColor())
@@ -251,8 +252,13 @@ struct DataSyncPage {
     }
     this.syncing = true;
     try {
-      await CloudSyncService.syncNow(true);
-      HdsFeedback.showToast('已与云空间同步');
+      const outcome: CloudSyncOutcome = await CloudSyncService.syncNow(true);
+      if (outcome.status === CloudSyncService.STATUS_PENDING) {
+        // 结果未知：数据已提交，后台验证器数分钟内出最终结论。
+        HdsFeedback.showToast('已提交同步，正在后台确认云连接');
+      } else {
+        HdsFeedback.showToast('已与云空间同步');
+      }
     } catch (e) {
       HdsFeedback.showToast(`同步失败：${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -277,15 +283,50 @@ struct DataSyncPage {
     return CloudSyncService.summary(this.syncStatus, this.syncLastSuccessAt);
   }
 
+  cloudBadgeText(): string {
+    if (!this.cloudSyncSupported) {
+      return '不可用';
+    }
+    if (this.syncStatus === CloudSyncService.STATUS_ERROR) {
+      return '未连接';
+    }
+    if (this.syncStatus === CloudSyncService.STATUS_PENDING) {
+      return '确认中';
+    }
+    // supported 只说明系统版本支持该 API，不代表云链路已连通：
+    // 从未确认连通时显示“待连接”，避免长期误导为“可用”。
+    return this.cloudSyncLinked ? '可用' : '待连接';
+  }
+
+  cloudBadgeColor(): string {
+    if (!this.cloudSyncSupported) {
+      return this.subTextColor();
+    }
+    if (this.syncStatus === CloudSyncService.STATUS_ERROR) {
+      return '#E5484D';
+    }
+    if (this.syncStatus === CloudSyncService.STATUS_PENDING) {
+      return '#E6A23C';
+    }
+    return this.accentColor();
+  }
+
   statusDescription(): string {
     if (!this.cloudSyncSupported) {
       return '当前设备系统版本不支持端云同步，可使用下方 WebDAV 备份数据。';
+    }
+    if (this.syncStatus === CloudSyncService.STATUS_PENDING) {
+      return '已提交同步：系统正在后台上传并确认云连接，数分钟内自动更新状态，无需反复点击。';
     }
     if (this.syncStatus === CloudSyncService.STATUS_SYNCING && this.syncMessage) {
       return this.syncMessage;
     }
     if (this.syncStatus === CloudSyncService.STATUS_ERROR && this.syncMessage) {
       return `上次同步出现问题：${this.syncMessage}`;
+    }
+    if (!this.cloudSyncLinked) {
+      // 从未确认过连通：不能声称“设备间保持一致”。
+      return '尚未确认云空间连接：请在“设置-云空间”中登录华为账号并开启本应用的同步开关，随后点击上方“立即同步”验证。';
     }
     return '书架、书源与搜索历史通过华为云空间同步：应用在启动、回到前台或云端数据变化时自动合并上传，登录同一华为账号的设备间保持一致。';
   }
@@ -300,6 +341,9 @@ struct DataSyncPage {
   statusColor(): string {
     if (this.syncStatus === CloudSyncService.STATUS_ERROR) {
       return '#E5484D';
+    }
+    if (this.syncStatus === CloudSyncService.STATUS_PENDING) {
+      return '#E6A23C';
     }
     if (this.syncStatus === CloudSyncService.STATUS_UNSUPPORTED) {
       return this.subTextColor();
