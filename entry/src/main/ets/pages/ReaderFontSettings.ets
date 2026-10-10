@@ -508,6 +508,10 @@ struct ReaderFontSettingsPage {
   subTextColor(): string {
     return ThemeRuntime.subTextColor(this.appDarkMode);
   }
+  /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string {
+    return ThemeRuntime.dangerColor(this.appDarkMode);
+  }
 
   accentColor(): string {
     return ThemeRuntime.accentColor(this.appDarkMode);
@@ -740,7 +744,7 @@ struct ReaderFontSettingsPage {
           })
         Button('删除')
           .fontSize(13)
-          .fontColor('#E53935')
+          .fontColor(this.dangerColor())
           .backgroundColor(this.inputColor())
           .height(32)
           .onClick(() => {

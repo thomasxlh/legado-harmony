@@ -58,6 +58,10 @@ export class ThemeRuntime {
   static readonly KEY_DARK_BUTTON_COLOR: string = 'themeDarkButtonColor';
   static readonly KEY_LIGHT_DANGER_COLOR: string = 'themeLightDangerColor';
   static readonly KEY_DARK_DANGER_COLOR: string = 'themeDarkDangerColor';
+  static readonly KEY_LIGHT_SUCCESS_COLOR: string = 'themeLightSuccessColor';
+  static readonly KEY_DARK_SUCCESS_COLOR: string = 'themeDarkSuccessColor';
+  static readonly KEY_LIGHT_WARNING_COLOR: string = 'themeLightWarningColor';
+  static readonly KEY_DARK_WARNING_COLOR: string = 'themeDarkWarningColor';
 
   static readonly KEY_LIGHT_READER_BACKGROUND_COLOR: string = 'themeLightReaderBackgroundColor';
   static readonly KEY_DARK_READER_BACKGROUND_COLOR: string = 'themeDarkReaderBackgroundColor';
@@ -371,6 +375,26 @@ export class ThemeRuntime {
       ThemeRuntime.KEY_LIGHT_DANGER_COLOR, fallback);
   }
 
+  /**
+   * 成功/生效态（替换规则命中、校验通过等）。
+   * 与 dangerColor 完全同一套机制：主题包按浅色/深色分别给值，可被自定义主题覆盖。
+   */
+  static successColor(darkMode: boolean): string {
+    const fallback = ThemeRuntime.fallbackVariant(darkMode).colors.successColor;
+    return ThemeRuntime.colorFromStorage(darkMode ? ThemeRuntime.KEY_DARK_SUCCESS_COLOR :
+      ThemeRuntime.KEY_LIGHT_SUCCESS_COLOR, fallback);
+  }
+
+  /**
+   * 警示/待确认态（规则部分匹配、云同步"确认中"等）。
+   * 同 successColor，按模式分别取值。
+   */
+  static warningColor(darkMode: boolean): string {
+    const fallback = ThemeRuntime.fallbackVariant(darkMode).colors.warningColor;
+    return ThemeRuntime.colorFromStorage(darkMode ? ThemeRuntime.KEY_DARK_WARNING_COLOR :
+      ThemeRuntime.KEY_LIGHT_WARNING_COLOR, fallback);
+  }
+
   static fontFamily(): string {
     if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
       return ThemeRuntime.customSourceTheme('typography').typography.appFontFamily || 'sans-serif';
@@ -535,6 +559,8 @@ export class ThemeRuntime {
     const buttonColor = ThemeRuntime.normalizeColor(buttonOverride || variant.colors.buttonColor,
       fallback.colors.buttonColor);
     const dangerColor = ThemeRuntime.normalizeColor(variant.colors.dangerColor, fallback.colors.dangerColor);
+    const successColor = ThemeRuntime.normalizeColor(variant.colors.successColor, fallback.colors.successColor);
+    const warningColor = ThemeRuntime.normalizeColor(variant.colors.warningColor, fallback.colors.warningColor);
     const readerBackgroundColor = ThemeRuntime.normalizeColor(variant.reader.backgroundColor,
       fallback.reader.backgroundColor);
     const readerTextColor = ThemeRuntime.normalizeColor(variant.reader.textColor, fallback.reader.textColor);
@@ -559,6 +585,8 @@ export class ThemeRuntime {
       ThemeRuntime.setString(ThemeRuntime.KEY_DARK_ACCENT_COLOR, accentColor);
       ThemeRuntime.setString(ThemeRuntime.KEY_DARK_BUTTON_COLOR, buttonColor);
       ThemeRuntime.setString(ThemeRuntime.KEY_DARK_DANGER_COLOR, dangerColor);
+      ThemeRuntime.setString(ThemeRuntime.KEY_DARK_SUCCESS_COLOR, successColor);
+      ThemeRuntime.setString(ThemeRuntime.KEY_DARK_WARNING_COLOR, warningColor);
       ThemeRuntime.setString(ThemeRuntime.KEY_DARK_READER_BACKGROUND_COLOR, readerBackgroundColor);
       ThemeRuntime.setString(ThemeRuntime.KEY_DARK_READER_BACKGROUND_ASSET_ID,
         (variant.reader.backgroundAssetId || '').trim());
@@ -586,6 +614,8 @@ export class ThemeRuntime {
     ThemeRuntime.setString(ThemeRuntime.KEY_LIGHT_ACCENT_COLOR, accentColor);
     ThemeRuntime.setString(ThemeRuntime.KEY_LIGHT_BUTTON_COLOR, buttonColor);
     ThemeRuntime.setString(ThemeRuntime.KEY_LIGHT_DANGER_COLOR, dangerColor);
+    ThemeRuntime.setString(ThemeRuntime.KEY_LIGHT_SUCCESS_COLOR, successColor);
+    ThemeRuntime.setString(ThemeRuntime.KEY_LIGHT_WARNING_COLOR, warningColor);
     ThemeRuntime.setString(ThemeRuntime.KEY_LIGHT_READER_BACKGROUND_COLOR, readerBackgroundColor);
     ThemeRuntime.setString(ThemeRuntime.KEY_LIGHT_READER_BACKGROUND_ASSET_ID,
       (variant.reader.backgroundAssetId || '').trim());

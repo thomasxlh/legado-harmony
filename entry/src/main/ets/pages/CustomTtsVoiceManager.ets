@@ -950,6 +950,16 @@ struct CustomTtsVoiceManagerPage {
     return ThemeRuntime.buttonColor(this.appDarkMode);
   }
 
+  /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string {
+    return ThemeRuntime.dangerColor(this.appDarkMode);
+  }
+
+  /** 成功/生效态语义色（已启用）。 */
+  successColor(): string {
+    return ThemeRuntime.successColor(this.appDarkMode);
+  }
+
   @Builder
   titleBar() {
     Row() {
@@ -1072,7 +1082,7 @@ struct CustomTtsVoiceManagerPage {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(voice.enabled ? '已启用' : '已禁用')
           .fontSize(12)
-          .fontColor(voice.enabled ? '#1E8E3E' : this.subTextColor())
+          .fontColor(voice.enabled ? this.successColor() : this.subTextColor())
           .margin({ top: 4 })
       }
       .layoutWeight(1)
@@ -1156,7 +1166,7 @@ struct CustomTtsVoiceManagerPage {
           () => this.toggleActionVoiceEnabled())
         this.voiceContextActionItem($r('sys.symbol.list_bullet'), '多选', this.primaryTextColor(),
           () => this.enterActionVoiceSelection())
-        this.voiceContextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => this.deleteActionVoice())
+        this.voiceContextActionItem($r('sys.symbol.trash'), '删除', this.dangerColor(), () => this.deleteActionVoice())
       }
       .width(148)
       .padding({ top: 6, bottom: 6 })
@@ -1217,7 +1227,7 @@ struct CustomTtsVoiceManagerPage {
         .height(42)
         .margin({ left: 8 })
         .enabled(this.selectedVoiceIds.length > 0 && !this.isBatchOperating)
-        .backgroundColor('#E53935')
+        .backgroundColor(this.dangerColor())
         .fontColor('#FFFFFF')
         .onClick(() => {
           this.batchDelete();

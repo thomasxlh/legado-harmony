@@ -509,7 +509,7 @@ struct BookSourcePage {
 
                       if (this.sourceNeedsLogin(source)) {
                         this.sourceLoginStatusBadge(
-                          this.sourceLoggedIn(source) ? '#1E8E3E' : '#C62828',
+                          this.sourceLoggedIn(source) ? this.successColor() : this.dangerColor(),
                           this.sourceLoggedIn(source) ? '已登录' : '未登录')
                       }
                       if (source.isLocked) {
@@ -548,10 +548,10 @@ struct BookSourcePage {
                     Column() {
                       Text(source.enabled ? '已启用' : '已禁用')
                         .fontSize(12)
-                        .fontColor(source.enabled ? '#1E8E3E' : this.subTextColor())
+                        .fontColor(source.enabled ? this.successColor() : this.subTextColor())
                       Text(source.enabledExplore ? '发现已启用' : '发现已禁用')
                         .fontSize(12)
-                        .fontColor(source.enabledExplore ? '#1E8E3E' : this.subTextColor())
+                        .fontColor(source.enabledExplore ? this.successColor() : this.subTextColor())
                         .margin({ top: 4 })
                     }
                     .alignItems(HorizontalAlign.End)
@@ -807,7 +807,7 @@ struct BookSourcePage {
               Button('删除')
                 .width('45%')
                 .height(44)
-                .backgroundColor('#E53935')
+                .backgroundColor(this.dangerColor())
                 .onClick(() => {
                   this.showBatchDeleteDialog = false;
                   this.batchDeleteSelectedSources();
@@ -1075,7 +1075,7 @@ struct BookSourcePage {
                     .borderRadius(10)
                     .fontSize(11)
                     .enabled(this.checkBadUrls.length > 0 && !this.isBatchOperating)
-                    .backgroundColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? '#F57C00' : this.inputColor())
+                    .backgroundColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? this.warningColor() : this.inputColor())
                     .fontColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? '#FFFFFF' : this.subTextColor())
                     .onClick(() => {
                       this.disableFailedCheckedSources();
@@ -1087,7 +1087,7 @@ struct BookSourcePage {
                     .borderRadius(10)
                     .fontSize(11)
                     .enabled(this.checkBadUrls.length > 0 && !this.isBatchOperating)
-                    .backgroundColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? '#E53935' : this.inputColor())
+                    .backgroundColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? this.dangerColor() : this.inputColor())
                     .fontColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? '#FFFFFF' : this.subTextColor())
                     .onClick(() => {
                       this.deleteFailedCheckedSources();
@@ -1436,7 +1436,7 @@ struct BookSourcePage {
           this.showMoreActionDialog = false;
           this.exportSelectedSources();
         })
-        this.popupActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+        this.popupActionItem($r('sys.symbol.trash'), '删除', this.dangerColor(), () => {
           this.showMoreActionDialog = false;
           this.showBatchDeleteDialog = true;
         }, false)
@@ -1808,7 +1808,7 @@ struct BookSourcePage {
         this.contextActionItem($r('sys.symbol.list_bullet'), '多选', this.primaryTextColor(),
           () => this.enterActionSourceSelection())
         if (!this.actionSourceLocked()) {
-          this.contextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+          this.contextActionItem($r('sys.symbol.trash'), '删除', this.dangerColor(), () => {
               this.showSourceActionDialog = false;
               this.openSourceDeleteDialog();
             })
@@ -2083,15 +2083,20 @@ struct BookSourcePage {
     if (validationStatus === BookSource.VALIDATION_NO_RESULTS) return '无结果';
     if (validationStatus === BookSource.VALIDATION_NEEDS_VERIFICATION) return '需要验证';
     if (validationStatus === BookSource.VALIDATION_TEMPORARY_ERROR) return '暂时异常';
+    if (validationStatus === BookSource.VALIDATION_RATE_LIMITED) return '限流等待';
     return '未校验';
   }
 
   sourceValidationStatusColor(validationStatus: number): string {
-    if (validationStatus === BookSource.VALIDATION_PASSED) return '#1E8E3E';
-    if (validationStatus === BookSource.VALIDATION_FAILED) return '#C62828';
-    if (validationStatus === BookSource.VALIDATION_NO_RESULTS) return '#8A6D3B';
-    if (validationStatus === BookSource.VALIDATION_NEEDS_VERIFICATION) return '#1565C0';
-    if (validationStatus === BookSource.VALIDATION_TEMPORARY_ERROR) return '#F57C00';
+    if (validationStatus === BookSource.VALIDATION_PASSED) return this.successColor();
+    if (validationStatus === BookSource.VALIDATION_FAILED) return this.dangerColor();
+    // 无结果与临时错误同属"没拿到书但源未必坏"，共用警示色，靠徽章文字区分。
+    if (validationStatus === BookSource.VALIDATION_NO_RESULTS) return this.warningColor();
+    // 需要验证是"要用户操作"而非出错，用强调色。
+    if (validationStatus === BookSource.VALIDATION_NEEDS_VERIFICATION) return this.accentColor();
+    if (validationStatus === BookSource.VALIDATION_TEMPORARY_ERROR) return this.warningColor();
+    // 限流等待同样是"源未必坏、稍后可用"，沿用警示色，靠徽章文字区分。
+    if (validationStatus === BookSource.VALIDATION_RATE_LIMITED) return this.warningColor();
     return this.subTextColor();
   }
 
@@ -2148,7 +2153,7 @@ struct BookSourcePage {
               .backgroundColor(this.inputColor()).borderRadius(4).margin({ left: 6 })
           }
           if (this.sourceNeedsLogin(source)) {
-            this.sourceLoginStatusBadge(this.sourceLoggedIn(source) ? '#1E8E3E' : '#C62828', this.sourceLoggedIn(source) ? '已登录' : '未登录')
+            this.sourceLoginStatusBadge(this.sourceLoggedIn(source) ? this.successColor() : this.dangerColor(), this.sourceLoggedIn(source) ? '已登录' : '未登录')
           }
         }.width('100%')
         Row({ space: 7 }) {
@@ -2166,9 +2171,9 @@ struct BookSourcePage {
       }))
       Column() {
         Text(source.enabled ? '已启用' : '已禁用').fontSize(12)
-          .fontColor(source.enabled ? '#1E8E3E' : this.subTextColor())
+          .fontColor(source.enabled ? this.successColor() : this.subTextColor())
         Text(source.enabledExplore ? '发现已启用' : '发现已禁用').fontSize(12)
-          .fontColor(source.enabledExplore ? '#1E8E3E' : this.subTextColor()).margin({ top: 4 })
+          .fontColor(source.enabledExplore ? this.successColor() : this.subTextColor()).margin({ top: 4 })
       }.alignItems(HorizontalAlign.End)
     }
     .width('100%')
@@ -2721,7 +2726,7 @@ struct BookSourcePage {
                   .onClick(() => this.openManagedSourceGroupRename(group))
                 Text('删除')
                   .fontSize(13)
-                  .fontColor('#E53935')
+                  .fontColor(this.dangerColor())
                   .height(36)
                   .padding({ left: 9, right: 4 })
                   .textAlign(TextAlign.Center)
@@ -2758,7 +2763,7 @@ struct BookSourcePage {
           .height(42)
           .borderRadius(10)
           .enabled(this.selectedManagedSourceGroups.length > 0 && !this.isBatchOperating)
-          .backgroundColor('#E53935')
+          .backgroundColor(this.dangerColor())
           .fontColor('#FFFFFF')
           .onClick(() => this.openDeleteSelectedSourceGroupsDialog())
       }
@@ -2808,7 +2813,7 @@ struct BookSourcePage {
             this.showSourceGroupActionMenu = false;
             this.openRenameSourceGroupDialog();
           })
-        this.contextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+        this.contextActionItem($r('sys.symbol.trash'), '删除', this.dangerColor(), () => {
             this.showSourceGroupActionMenu = false;
             this.openDeleteSourceGroupDialog();
           })
@@ -2925,7 +2930,7 @@ struct BookSourcePage {
           .layoutWeight(1)
           .height(42)
           .borderRadius(10)
-          .backgroundColor('#E53935')
+          .backgroundColor(this.dangerColor())
           .fontColor('#FFFFFF')
           .enabled(!this.isBatchOperating)
           .onClick(() => this.deleteSourceGroup())
@@ -2958,7 +2963,7 @@ struct BookSourcePage {
           .layoutWeight(1)
           .height(42)
           .borderRadius(10)
-          .backgroundColor('#E53935')
+          .backgroundColor(this.dangerColor())
           .fontColor('#FFFFFF')
           .enabled(this.selectedManagedSourceGroups.length > 0 && !this.isBatchOperating)
           .onClick(() => this.deleteSelectedSourceGroups())
@@ -3109,6 +3114,20 @@ struct BookSourcePage {
 
   subTextColor(): string {
     return ThemeRuntime.subTextColor(this.appDarkMode);
+  }
+  /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string {
+    return ThemeRuntime.dangerColor(this.appDarkMode);
+  }
+
+  /** 成功/生效态语义色（已启用、已登录、校验通过）。 */
+  successColor(): string {
+    return ThemeRuntime.successColor(this.appDarkMode);
+  }
+
+  /** 警示/待确认态语义色（临时错误、待重试）。 */
+  warningColor(): string {
+    return ThemeRuntime.warningColor(this.appDarkMode);
   }
 
   placeholderTextColor(): string {
@@ -5891,7 +5910,9 @@ struct BookSourcePage {
       this.checkNoResultCount++;
     } else if (source.validationStatus === BookSource.VALIDATION_NEEDS_VERIFICATION) {
       this.checkNeedVerificationCount++;
-    } else if (source.validationStatus === BookSource.VALIDATION_TEMPORARY_ERROR) {
+    } else if (source.validationStatus === BookSource.VALIDATION_TEMPORARY_ERROR ||
+      source.validationStatus === BookSource.VALIDATION_RATE_LIMITED) {
+      // 限流等待与暂时异常同属"源未必坏、稍后可用"，汇总到同一计数，徽章文字仍区分。
       this.checkTemporaryErrorCount++;
     }
     if (source.validationStatus !== BookSource.VALIDATION_FAILED) {

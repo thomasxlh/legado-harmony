@@ -165,7 +165,7 @@ struct TtsSettingsPage {
             Button(this.isPreviewing ? '停止试听' : '试听')
               .width('100%')
               .height(42)
-              .backgroundColor(this.isPreviewing ? '#E53935' : this.buttonColor())
+              .backgroundColor(this.isPreviewing ? this.dangerColor() : this.buttonColor())
               .fontColor('#FFFFFF')
               .onClick(() => {
                 this.togglePreview();
@@ -212,6 +212,10 @@ struct TtsSettingsPage {
 
   subTextColor(): string {
     return ThemeRuntime.subTextColor(this.appDarkMode);
+  }
+  /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string {
+    return ThemeRuntime.dangerColor(this.appDarkMode);
   }
 
   inputColor(): string {

@@ -13,6 +13,17 @@ import { RuleValue } from './RuleValue';
 import { BookSourceDebugRuleTrace } from '../book/BookSourceDebugModels';
 
 /**
+ * 单条解析流水线内部的跨帧节奏控制：
+ * - 每处理 FRAME_YIELD_ITEM_INTERVAL 个条目强制让出一个完整 UI 帧；
+ * - 距上次跨帧让步累计耗时超过 FORCE_FRAME_BUDGET_MS 时同样跨帧。
+ * 这些让步只有在"其他解析流水线被 MainThreadParseGate 挂起"时才能形成看门狗可观察的
+ * 空档——已到期的 1ms timer 会被原生循环合并进同一个 uv_timer_task，单纯缩短让步间隔
+ * 无法阻止高并发搜索时的连续微任务链（THREAD_BLOCK_6S appfreeze 的根因）。
+ */
+const FRAME_YIELD_ITEM_INTERVAL: number = 8;
+const FORCE_FRAME_BUDGET_MS: number = 48;
+
+/**
  * The single public execution gateway for rule parsing.
  *
  * Phase one centralizes cancellation, timing, cooperative yielding and full-JS routing. The
@@ -55,7 +66,6 @@ export class RuleExecutionService {
       token.throwIfCancelled();
       const deadlineAt = startedAt + Math.max(500, request.timeoutMs || 15000);
       const slice = CooperativeScheduler.createTimeSlice(request.uiSliceMs);
-      const itemChunkSize = Math.max(4, Math.min(Math.round(request.itemChunkSize || 16), 64));
       const fullJsValues: Record<string, string[]> = {};
       const fieldStartedAt: Record<string, number> = {};
       const fieldMatchedCount: Record<string, number> = {};
@@ -122,10 +132,12 @@ export class RuleExecutionService {
       // fresh multi-hundred-KB huge object exhausted the shared heap (shared-heap OOM).
       let lastContextRecord: Record<string, string> | null = null;
       let lastContextJson = '';
+      let frameWindowStartedAt = Date.now();
       for (let itemIndex = 0; itemIndex < itemCount; itemIndex++) {
-        if (itemIndex > 0 && itemIndex % itemChunkSize === 0) {
+        if (itemIndex > 0 && itemIndex % FRAME_YIELD_ITEM_INTERVAL === 0) {
           await CooperativeScheduler.yieldToNextUiFrame();
           result.yieldedCount++;
+          frameWindowStartedAt = Date.now();
           token.throwIfCancelled();
         }
         if (await slice.checkpoint(token)) result.yieldedCount++;
@@ -152,8 +164,19 @@ this.seedSourceVariables(analyzer.getContext(), request.source, request.contextV
               itemValues[field.name] = field.resolveUrl ? analyzer.getString(field.rule, true) :
                 analyzer.analyzeFirst(field.rule);
             }
+            const syncElapsed = Date.now() - fieldStartedAt;
             CooperativeScheduler.reportSynchronousOperation(`rule/${request.stage}/${field.name}`,
-              Date.now() - fieldStartedAt, `input=${content.length}`);
+              syncElapsed, `input=${content.length}`);
+            // 单条规则命中病态正则（观测到 270ms/576 字符的回溯）无法中断，只能在它返回后
+            // 立刻补一个完整帧让步；同时按累计 CPU 窗口补帧，避免一批"都不算危险"的规则
+            // 首尾相接把两个 8 条目帧之间填满。
+            if (syncElapsed >= CooperativeScheduler.DANGEROUS_OPERATION_MS ||
+              Date.now() - frameWindowStartedAt >= FORCE_FRAME_BUDGET_MS) {
+              await CooperativeScheduler.yieldToNextUiFrame();
+              result.yieldedCount++;
+              frameWindowStartedAt = Date.now();
+              token.throwIfCancelled();
+            }
           }
           const extractedValue = itemValues[field.name] || '';
           if (extractedValue && extractedValue !== '[]' && extractedValue !== '{}') {

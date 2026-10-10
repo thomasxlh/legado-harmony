@@ -30,6 +30,7 @@ export struct ColorCodePicker {
   onColorChange: (color: string) => void = (_color: string): void => {};
   onColorModeChange: (mode: string) => void = (_mode: string): void => {};
 
+  // 用户可选调色板：这些是固定色板项，不跟随主题变化，也不要替换成语义色。
   private presetColors: string[] = [
     '#007DFF', '#4E9BFF', '#00A870', '#2E7D68', '#FF7A1A', '#E53935',
     '#D81B60', '#7A5AF8', '#8E24AA', '#00ACC1', '#607D8B', '#FFE58A'

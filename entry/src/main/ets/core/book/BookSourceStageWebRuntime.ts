@@ -112,20 +112,31 @@ class StageWebRuntimeTask {
 }
 
 /**
- * Shared ArkWeb host for complex non-login source scripts. Calls are serialized and every
- * network/cookie side effect is replayed through the native bridge before a result is accepted.
+ * 复杂书源脚本（完整 JS searchUrl、jsLib、@js 规则等）的并行宿主数。
+ * Index 页按此数量挂载隐藏 Web 节点；其他路由页挂载的宿主也可被调度，
+ * 但同时执行的脚本任务数始终不超过该上限。
+ */
+export const STAGE_RUNTIME_POOL_SIZE: number = 3;
+
+/**
+ * Shared ArkWeb host pool for complex non-login source scripts. Up to STAGE_RUNTIME_POOL_SIZE
+ * tasks execute in parallel across hidden Web hosts; every network/cookie side effect is replayed
+ * through the native bridge before a result is accepted. Tasks that arrive while every host is
+ * busy (or the admission buffers are full) wait in FIFO order instead of failing.
  */
 export class BookSourceStageWebRuntime {
-  private static readonly MAX_QUEUED_TASKS: number = 16;
+  private static readonly MAX_PARALLEL_TASKS: number = STAGE_RUNTIME_POOL_SIZE;
+  // 已受理（排队或执行中）任务的累计输入字节上限；超出后任务在 waiting 队列等待，不再直接失败。
   private static readonly MAX_QUEUED_BYTES: number = 24 * 1024 * 1024;
   private static readonly MAX_CACHE_SOURCES: number = 24;
   private static readonly MAX_CACHE_ENTRIES_PER_SOURCE: number = 128;
   private static readonly MAX_CACHE_BYTES_PER_SOURCE: number = 512 * 1024;
   private static readonly MAX_CACHE_BYTES_TOTAL: number = 4 * 1024 * 1024;
-  // ArkWeb keeps native compiler/renderer allocations outside the ArkTS heap. Rebuilding the
+  // ArkWeb keeps native compiler/renderer allocations outside the ArkTS heap. Rebuilding a
   // hidden host frequently prevents a sequence of large user-supplied libraries from growing
-  // those allocations until HarmonyOS reports a foreground THREAD_BLOCK freeze. Six completed
-  // tasks still bounds growth while halving the rebuild stalls multi-request sources incur.
+  // those allocations until HarmonyOS reports a foreground THREAD_BLOCK freeze. The budget is
+  // tracked per controller; with a pool only hosts with another ready peer are recycled so
+  // parallelism never drops to zero during a planned rebuild.
   private static readonly RECYCLE_TASK_INTERVAL: number = 6;
   // A wait that stays unsuccessful past this point is treated as a stuck host (missing
   // lifecycle callback or an unfinished reset) instead of a normal attach race.
@@ -137,21 +148,32 @@ export class BookSourceStageWebRuntime {
   private static readonly PROBE_ADOPTED: number = 1;
   private static readonly PROBE_DEAD: number = 2;
   private static instance: BookSourceStageWebRuntime | null = null;
+  /** 最近 attach 的控制器，作为无明确目标时的回退（与旧单宿主行为一致）。 */
   private controller: webview.WebviewController | null = null;
   private controllers: webview.WebviewController[] = [];
   private readyControllers: Set<webview.WebviewController> = new Set<webview.WebviewController>();
   private ready: boolean = false;
+  /** 等待受理（字节预算不足）或等待空闲宿主的任务。 */
+  private waiting: StageWebRuntimeTask[] = [];
+  /** 已受理、等待分配控制器的任务（FIFO）。 */
   private tasks: StageWebRuntimeTask[] = [];
   private queuedBytes: number = 0;
-  private running: boolean = false;
-  private activeTask: StageWebRuntimeTask | null = null;
-  private activeHttpClient: HttpClient | null = null;
+  /** 正在执行的任务及其绑定的控制器。 */
+  private activeTasks: Set<StageWebRuntimeTask> = new Set<StageWebRuntimeTask>();
+  private busyControllers: Set<webview.WebviewController> = new Set<webview.WebviewController>();
+  private taskControllers: Map<StageWebRuntimeTask, webview.WebviewController> =
+    new Map<StageWebRuntimeTask, webview.WebviewController>();
+  /** 每个任务独立的 HTTP 客户端，支持只取消某个 owner 的在途请求。 */
+  private taskHttpClients: Map<StageWebRuntimeTask, HttpClient> =
+    new Map<StageWebRuntimeTask, HttpClient>();
   private cancelledOwners: Set<string> = new Set<string>();
   private caches: Record<string, Record<string, string>> = {};
   private cacheTouchedAt: Record<string, number> = {};
-  private resetHandler: (() => void) | null = null;
-  private resetHandlerController: webview.WebviewController | null = null;
-  private resetRequested: boolean = false;
+  private resetHandlers: Map<webview.WebviewController, () => void> =
+    new Map<webview.WebviewController, () => void>();
+  private resetRequestedControllers: Set<webview.WebviewController> = new Set<webview.WebviewController>();
+  private controllerTaskCounts: Map<webview.WebviewController, number> =
+    new Map<webview.WebviewController, number>();
   private completedTaskCount: number = 0;
   private lastRecoveryAttemptAt: number = 0;
   private probeBusy: boolean = false;
@@ -165,14 +187,13 @@ export class BookSourceStageWebRuntime {
 
   setResetHandler(handler: (() => void) | null,
     controller: webview.WebviewController | null = this.controller): void {
-    this.resetHandler = handler;
-    this.resetHandlerController = handler ? controller : null;
+    if (!controller) return;
+    if (handler) this.resetHandlers.set(controller, handler);
+    else this.resetHandlers.delete(controller);
   }
 
   clearResetHandler(controller: webview.WebviewController): void {
-    if (this.resetHandlerController !== controller) return;
-    this.resetHandler = null;
-    this.resetHandlerController = null;
+    this.resetHandlers.delete(controller);
   }
 
   attach(controller: webview.WebviewController): void {
@@ -180,9 +201,10 @@ export class BookSourceStageWebRuntime {
     this.controllers.push(controller);
     this.controller = controller;
     this.ready = this.readyControllers.has(controller);
-    this.resetRequested = false;
-    this.completedTaskCount = 0;
+    this.resetRequestedControllers.delete(controller);
+    if (!this.controllerTaskCounts.has(controller)) this.controllerTaskCounts.set(controller, 0);
     console.info('[StageWebRuntime] attach, ' + this.describeState());
+    this.pump();
   }
 
   setReady(ready: boolean, controller: webview.WebviewController | null = null): void {
@@ -191,9 +213,8 @@ export class BookSourceStageWebRuntime {
     if (ready) this.readyControllers.add(target);
     else this.readyControllers.delete(target);
     if (this.controller === target) this.ready = ready;
-    // Drain queued tasks even when the recovered controller is not `this.controller`:
-    // executeTask dispatches through findReadyController(), not this field.
-    if (ready) this.startNext();
+    // Any ready host can take a queued task; the pump picks a free one.
+    if (ready) this.pump();
   }
 
   async waitUntilAvailable(timeoutMs: number = 5000): Promise<boolean> {
@@ -220,17 +241,26 @@ export class BookSourceStageWebRuntime {
   detach(controller: webview.WebviewController): void {
     this.controllers = this.controllers.filter((item: webview.WebviewController): boolean => item !== controller);
     this.readyControllers.delete(controller);
+    this.busyControllers.delete(controller);
+    this.resetRequestedControllers.delete(controller);
+    this.controllerTaskCounts.delete(controller);
     console.info('[StageWebRuntime] detach, ' + this.describeState());
-    if (this.controller !== controller) return;
-    this.controller = this.controllers.length > 0 ? this.controllers[this.controllers.length - 1] : null;
-    this.ready = !!this.controller && this.readyControllers.has(this.controller);
-    if (this.ready) this.startNext();
+    if (this.controller === controller) {
+      this.controller = this.controllers.length > 0 ? this.controllers[this.controllers.length - 1] : null;
+      this.ready = !!this.controller && this.readyControllers.has(this.controller);
+    }
+    // A bound task (if any) fails on its next script evaluation; free slots for others.
+    this.pump();
   }
 
   isAvailable(): boolean {
     return this.findReadyController() !== null;
   }
 
+  /**
+   * 提交脚本任务。队列满（字节预算或宿主全忙）时任务进入 FIFO 等待，不再以“队列繁忙”
+   * 临时错误失败；任务可随 owner 取消（cancelOwner）。只有单任务输入超限仍是硬性拒绝。
+   */
   execute(request: StageWebRuntimeRequest): Promise<StageWebRuntimeResult> {
     return new Promise<StageWebRuntimeResult>((resolve, reject) => {
       if (request.ownerId && this.cancelledOwners.has(request.ownerId)) {
@@ -244,38 +274,50 @@ export class BookSourceStageWebRuntime {
         reject(new Error(`书源脚本输入过大(${Math.ceil(estimatedBytes / 1024)} KiB)`));
         return;
       }
-      if (this.tasks.length >= BookSourceStageWebRuntime.MAX_QUEUED_TASKS ||
-        this.queuedBytes + estimatedBytes > BookSourceStageWebRuntime.MAX_QUEUED_BYTES) {
-        reject(new Error('书源脚本队列繁忙，请稍后重试'));
-        return;
-      }
       const task = new StageWebRuntimeTask();
       task.request = request;
       task.estimatedBytes = estimatedBytes;
       task.resolve = resolve;
       task.reject = reject;
-      this.tasks.push(task);
-      this.queuedBytes += estimatedBytes;
-      this.startNext();
+      this.waiting.push(task);
+      this.pump();
     });
   }
 
   cancelOwner(ownerId: string): void {
     if (!ownerId) return;
     this.cancelledOwners.add(ownerId);
-    const remaining: StageWebRuntimeTask[] = [];
+    const remainingWaiting: StageWebRuntimeTask[] = [];
+    for (const task of this.waiting) {
+      if (task.request.ownerId === ownerId) this.rejectTask(task, new Error('书源脚本任务已取消'));
+      else remainingWaiting.push(task);
+    }
+    this.waiting = remainingWaiting;
+    const remainingQueued: StageWebRuntimeTask[] = [];
     for (const task of this.tasks) {
       if (task.request.ownerId === ownerId) {
         this.queuedBytes = Math.max(0, this.queuedBytes - task.estimatedBytes);
-        if (task.reject) task.reject(new Error('书源脚本任务已取消'));
+        this.rejectTask(task, new Error('书源脚本任务已取消'));
       } else {
-        remaining.push(task);
+        remainingQueued.push(task);
       }
     }
-    this.tasks = remaining;
-    if (this.activeTask?.request.ownerId === ownerId && this.activeHttpClient) {
-      this.activeHttpClient.cancelAll();
+    this.tasks = remainingQueued;
+    // 已在执行的脚本无法中断 runJavaScript，只能取消其在途 HTTP（fetch/ajax），
+    // 脚本下一个检查点会因 ensureNotCancelled 终止。
+    for (const task of this.activeTasks) {
+      if (task.request.ownerId === ownerId) {
+        const client = this.taskHttpClients.get(task);
+        if (client) client.cancelAll();
+      }
     }
+    this.pump();
+  }
+
+  private rejectTask(task: StageWebRuntimeTask, error: Error): void {
+    if (task.reject) task.reject(error);
+    task.resolve = null;
+    task.reject = null;
   }
 
   clearOwner(ownerId: string): void {
@@ -300,7 +342,7 @@ export class BookSourceStageWebRuntime {
     if (this.isAvailable()) return false;
     const probeOutcome = await this.probeNotReadyControllers();
     if (probeOutcome === BookSourceStageWebRuntime.PROBE_ADOPTED) return false;
-    const stuckReset = this.resetRequested;
+    const stuckReset = this.resetRequestedControllers.size > 0;
     const deadRenderer = probeOutcome === BookSourceStageWebRuntime.PROBE_DEAD;
     // A host that is merely still attaching (cold start: no controller, no pending reset) must
     // not be remounted here, that would only prolong startup.
@@ -353,22 +395,43 @@ export class BookSourceStageWebRuntime {
     });
   }
 
-  /** Re-invoke the host page's reset handler. Each host guards re-entry itself. */
+  /**
+   * Asks a host page to rebuild its Web node. Prefer the controller whose reset is pending;
+   * otherwise the most recently attached one. Each host guards re-entry itself.
+   */
   private forceHostRebuild(): void {
-    const handler = this.resetHandler;
-    if (!handler) {
+    let target: webview.WebviewController | null = null;
+    const pending = Array.from(this.resetRequestedControllers);
+    for (let i = 0; i < pending.length; i++) {
+      if (this.resetHandlers.has(pending[i])) {
+        target = pending[i];
+        break;
+      }
+    }
+    if (!target && this.controller && this.resetHandlers.has(this.controller)) target = this.controller;
+    if (!target) {
+      for (let i = this.controllers.length - 1; i >= 0; i--) {
+        if (this.resetHandlers.has(this.controllers[i])) {
+          target = this.controllers[i];
+          break;
+        }
+      }
+    }
+    if (!target) {
       console.warn('[StageWebRuntime] recovery impossible, no reset handler, ' + this.describeState());
       return;
     }
-    this.resetRequested = true;
+    const handler = this.resetHandlers.get(target);
+    if (!handler) return;
+    this.resetRequestedControllers.add(target);
     console.warn('[StageWebRuntime] forced host rebuild, ' + this.describeState());
     handler();
   }
 
   private describeState(): string {
     return `hosts=${this.controllers.length} ready=${this.readyControllers.size}` +
-      ` reset=${this.resetRequested} running=${this.running}` +
-      ` queued=${this.tasks.length} done=${this.completedTaskCount}`;
+      ` reset=${this.resetRequestedControllers.size} active=${this.activeTasks.size}` +
+      ` queued=${this.tasks.length} waiting=${this.waiting.length} done=${this.completedTaskCount}`;
   }
 
   /** Compact URL preview for diagnostics. Keeps the query (to spot per-replay changes) but
@@ -399,21 +462,62 @@ export class BookSourceStageWebRuntime {
     return match ? match[1] : '未知主机';
   }
 
-  private startNext(): void {
-    if (this.running) return;
-    if (!this.findReadyController()) {
-      // Queued tasks with no usable controller would otherwise wait forever: nothing calls
-      // setReady() once lifecycle callbacks have been missed. Nudge the recovery path.
-      if (this.tasks.length > 0) this.scheduleIdleRecovery();
-      return;
+  /**
+   * 调度核心：先按字节预算 FIFO 受理 waiting 队列（队头放不下则后面等待，防止饥饿），
+   * 再为每个空闲的 ready 控制器派发一个任务，并行度不超过 MAX_PARALLEL_TASKS。
+   * 可重入：setReady/attach/detach/任务结束/取消时都会调用。
+   */
+  private pump(): void {
+    while (this.waiting.length > 0) {
+      const head = this.waiting[0];
+      if (head.request.ownerId && this.cancelledOwners.has(head.request.ownerId)) {
+        this.waiting.shift();
+        this.rejectTask(head, new Error('书源脚本任务已取消'));
+        continue;
+      }
+      if (this.queuedBytes + head.estimatedBytes > BookSourceStageWebRuntime.MAX_QUEUED_BYTES) break;
+      this.waiting.shift();
+      this.tasks.push(head);
+      this.queuedBytes += head.estimatedBytes;
     }
-    if (this.tasks.length === 0) return;
-    const task = this.tasks.shift();
-    if (!task) return;
-    this.queuedBytes = Math.max(0, this.queuedBytes - task.estimatedBytes);
-    this.running = true;
-    this.activeTask = task;
-    this.executeTask(task.request)
+    let blocked = false;
+    while (this.activeTasks.size < BookSourceStageWebRuntime.MAX_PARALLEL_TASKS && this.tasks.length > 0) {
+      const controller = this.pickIdleReadyController();
+      if (!controller) {
+        blocked = true;
+        break;
+      }
+      const task = this.tasks.shift();
+      if (!task) break;
+      this.queuedBytes = Math.max(0, this.queuedBytes - task.estimatedBytes);
+      this.dispatchTask(task, controller);
+    }
+    // No usable controller but work exists (or is waiting): nudge recovery instead of stalling.
+    if ((blocked || this.activeTasks.size === 0) &&
+      (this.tasks.length > 0 || this.waiting.length > 0)) {
+      this.scheduleIdleRecovery();
+    }
+  }
+
+  private pickIdleReadyController(): webview.WebviewController | null {
+    if (this.controller && this.readyControllers.has(this.controller) &&
+      !this.busyControllers.has(this.controller)) {
+      return this.controller;
+    }
+    for (let i = this.controllers.length - 1; i >= 0; i--) {
+      const candidate = this.controllers[i];
+      if (this.readyControllers.has(candidate) && !this.busyControllers.has(candidate)) return candidate;
+    }
+    return null;
+  }
+
+  private dispatchTask(task: StageWebRuntimeTask, controller: webview.WebviewController): void {
+    this.activeTasks.add(task);
+    this.busyControllers.add(controller);
+    this.taskControllers.set(task, controller);
+    console.info(`[StageWebRuntime] dispatch owner=${task.request.ownerId || '-'} ` +
+      `active=${this.activeTasks.size} ` + this.describeState());
+    this.executeTask(task.request, task, controller)
       .then((value: StageWebRuntimeResult): void => {
         if (task.resolve) task.resolve(value);
       })
@@ -421,16 +525,50 @@ export class BookSourceStageWebRuntime {
         if (task.reject) task.reject(error);
       })
       .finally((): void => {
-        this.activeTask = null;
-        this.activeHttpClient = null;
-        this.running = false;
-        this.completedTaskCount++;
-        if (this.maybeRecycleController()) return;
-        this.startNext();
+        this.activeTasks.delete(task);
+        this.taskControllers.delete(task);
+        this.taskHttpClients.delete(task);
+        this.busyControllers.delete(controller);
+        const count = (this.controllerTaskCounts.get(controller) || 0) + 1;
+        this.controllerTaskCounts.set(controller, count);
+        const recycled = this.recycleControllerIfDue(controller, count);
+        if (!recycled && count >= BookSourceStageWebRuntime.RECYCLE_TASK_INTERVAL) {
+          this.controllerTaskCounts.set(controller, 0);
+        }
+        this.pump();
       });
   }
 
-  private async executeTask(request: StageWebRuntimeRequest): Promise<StageWebRuntimeResult> {
+  /**
+   * 定期重建宿主以约束 ArkWeb 原生堆增长。多宿主时仅当另有 ready 宿主才重建，保证并行度
+   * 不归零；单宿主（读书页等）保持旧行为，重建期间任务等待新宿主 attach。
+   */
+  private recycleControllerIfDue(controller: webview.WebviewController, completedCount: number): boolean {
+    if (completedCount < BookSourceStageWebRuntime.RECYCLE_TASK_INTERVAL) return false;
+    const handler = this.resetHandlers.get(controller);
+    if (!handler) {
+      this.controllerTaskCounts.set(controller, 0);
+      return false;
+    }
+    if (this.controllers.length > 1) {
+      let hasReadyPeer = false;
+      for (const candidate of this.readyControllers) {
+        if (candidate !== controller) {
+          hasReadyPeer = true;
+          break;
+        }
+      }
+      if (!hasReadyPeer) return false; // 等下一轮，避免唯一可用宿主被撤
+    }
+    this.resetRequestedControllers.add(controller);
+    console.info('[StageWebRuntime] recycling host after ' + completedCount + ' tasks, ' +
+      this.describeState());
+    handler();
+    return true;
+  }
+
+  private async executeTask(request: StageWebRuntimeRequest, task: StageWebRuntimeTask,
+    boundController: webview.WebviewController): Promise<StageWebRuntimeResult> {
     this.ensureNotCancelled(request);
     // Coordinators may hold a source snapshot while the login/editor page saves a new token.
     // Refresh missing runtime fields before executing so a stale empty snapshot cannot issue an
@@ -468,7 +606,7 @@ export class BookSourceStageWebRuntime {
       this.ensureNotCancelled(request);
       const script = this.buildScript(request, responses, stringResults, cookies, cacheState,
         fixedNow, randomSeed, journal.responseHeaders);
-      const raw = await this.runJavaScript(script);
+      const raw = await this.runJavaScript(script, boundController);
       this.ensureNotCancelled(request);
       const step = this.parseStep(raw);
       if (request.debugContext && step.logs) {
@@ -553,7 +691,7 @@ export class BookSourceStageWebRuntime {
         }
         journal.markRequestStarted(`${BookSourceHostActionKind.HTTP_REQUEST}\n${spec}`);
         const fetchStartedAt = Date.now();
-        const response = await this.fetch(request, spec, step.pendingHeaders);
+        const response = await this.fetch(request, task, spec, step.pendingHeaders);
         console.info('[StageWebRuntime] fetch done in ' + (Date.now() - fetchStartedAt) + 'ms' +
           ' status=' + response.statusCode + (response.success ? '' : ' err=' + (response.error || '').slice(0, 60)));
         this.ensureNotCancelled(request);
@@ -733,13 +871,13 @@ export class BookSourceStageWebRuntime {
     return '';
   }
 
-  private async fetch(request: StageWebRuntimeRequest, requestUrl: string,
-    runtimeHeadersRaw: string = '{}'): Promise<HttpResponse> {
+  private async fetch(request: StageWebRuntimeRequest, task: StageWebRuntimeTask,
+    requestUrl: string, runtimeHeadersRaw: string = '{}'): Promise<HttpResponse> {
     const timeout = Math.max(3000, Math.min(request.networkTimeoutMs || 20000, 30000));
     const responseLimit = Math.max(64 * 1024,
       Math.min(request.maxResponseBytes || 8 * 1024 * 1024, 8 * 1024 * 1024));
     const client = new HttpClient(timeout);
-    this.activeHttpClient = client;
+    this.taskHttpClients.set(task, client);
     try {
       let runtimeHeaders: Record<string, string> = {};
       try {
@@ -759,7 +897,7 @@ export class BookSourceStageWebRuntime {
         .setNoTimeoutRetry(true)
         .fetch(requestUrl, responseLimit, request.debugContext);
     } finally {
-      if (this.activeHttpClient === client) this.activeHttpClient = null;
+      if (this.taskHttpClients.get(task) === client) this.taskHttpClients.delete(task);
     }
   }
 
@@ -796,21 +934,30 @@ export class BookSourceStageWebRuntime {
     }
   }
 
-  private async runJavaScript(script: string): Promise<string> {
-    let controller = this.findReadyController();
-    // A routed detail page can mount its hidden Web host while the Index host is still alive.
-    // During onControllerAttached -> onPageBegin -> onPageEnd, `this.controller` temporarily
-    // points at an unready controller although another attached controller is usable. Also, the
-    // database refresh at the start of a task gives that lifecycle race a chance to happen after
-    // the queue has already accepted the task. Resolve a ready attached controller at the actual
-    // execution point and wait for remount/recycle recovery when none is ready.
+  /**
+   * 在任务绑定的控制器上执行脚本。绑定控制器若在任务中途被 detach/重建，则等待恢复后
+   * 临时借用一个没有任务占用的 ready 控制器（仅本次求值，避免与其他任务抢同一 Web 内核）。
+   */
+  private async runJavaScript(script: string, boundController: webview.WebviewController): Promise<string> {
+    let controller = this.readyControllers.has(boundController) ? boundController : null;
     if (!controller) {
       const available = await this.waitUntilAvailable(5000);
-      if (available) controller = this.findReadyController();
+      if (available) {
+        controller = this.readyControllers.has(boundController) ? boundController : this.pickIdleReadyController();
+      }
     }
     if (!controller) {
       console.warn('[StageWebRuntime] unavailable after wait, ' + this.describeState());
       throw new Error('书源脚本运行环境未就绪');
+    }
+    if (controller !== boundController) {
+      // 借用的控制器只在本次求值期间标记占用，任务结束时只释放其原绑定槽位。
+      this.busyControllers.add(controller);
+      try {
+        return await this.runJavaScriptOnController(controller, script);
+      } finally {
+        this.busyControllers.delete(controller);
+      }
     }
     return this.runJavaScriptOnController(controller, script);
   }
@@ -853,35 +1000,20 @@ export class BookSourceStageWebRuntime {
   private quarantineController(controller: webview.WebviewController, reason: string): void {
     console.warn('[StageWebRuntime] quarantine: ' + reason + ', ' + this.describeState());
     this.readyControllers.delete(controller);
+    this.busyControllers.delete(controller);
+    this.controllerTaskCounts.delete(controller);
     this.controllers = this.controllers.filter((item: webview.WebviewController): boolean => item !== controller);
     if (this.controller === controller) {
       this.controller = this.controllers.length > 0 ? this.controllers[this.controllers.length - 1] : null;
       this.ready = !!this.controller && this.readyControllers.has(this.controller);
     }
-    if (this.ready || this.resetRequested || !this.resetHandler ||
-      this.resetHandlerController !== controller) return;
-    this.resetRequested = true;
-    console.warn('[StageWebRuntime] reset requested:', reason);
-    this.resetHandler();
-  }
-
-  private maybeRecycleController(): boolean {
-    if (this.completedTaskCount < BookSourceStageWebRuntime.RECYCLE_TASK_INTERVAL ||
-      this.resetRequested || !this.controller || !this.resetHandler ||
-      this.resetHandlerController !== this.controller) {
-      return false;
+    const handler = this.resetHandlers.get(controller);
+    if (handler) {
+      this.resetRequestedControllers.add(controller);
+      console.warn('[StageWebRuntime] reset requested:', reason);
+      handler();
     }
-    const controller = this.controller;
-    const handler = this.resetHandler;
-    this.readyControllers.delete(controller);
-    this.controllers = this.controllers.filter((item: webview.WebviewController): boolean => item !== controller);
-    this.controller = this.controllers.length > 0 ? this.controllers[this.controllers.length - 1] : null;
-    this.ready = !!this.controller && this.readyControllers.has(this.controller);
-    this.resetRequested = true;
-    this.completedTaskCount = 0;
-    console.info('[StageWebRuntime] recycle requested after task budget');
-    handler();
-    return true;
+    this.pump();
   }
 
   private estimateRequestBytes(request: StageWebRuntimeRequest): number {

@@ -69,6 +69,16 @@ export class ThemeColorTokens {
   accentColor: string = '#007DFF';
   buttonColor: string = '#007DFF';
   dangerColor: string = '#E53935';
+  /**
+   * 成功/生效态（如替换规则命中、校验通过）。
+   * 内置主题包暂不逐包定义，由 ThemeRuntime 提供默认值；自定义主题可覆盖。
+   */
+  successColor: string = '#1E8E3E';
+  /**
+   * 警示/待确认态（如规则部分匹配、云同步确认中）。
+   * 同 successColor，由 ThemeRuntime 提供默认值。
+   */
+  warningColor: string = '#D17A00';
 }
 
 export class ThemeReaderTokens {

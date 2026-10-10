@@ -18,6 +18,7 @@ import { BookSourceStageRuleSupport } from './BookSourceStageRuleSupport';
 import { RuleExecutionService } from '../rule/RuleExecutionService';
 import { RuleBatchExecutionRequest, RuleBatchExecutionResult, RuleFieldRequest } from '../rule/RuleExecutionModels';
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
+import { MainThreadParseGate } from '../concurrency/MainThreadParseGate';
 import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
@@ -222,6 +223,11 @@ export class ExploreCoordinator {
         return [];
       }
 
+      // 与搜索同一进程级主线程解析闸门：发现页解析与后台搜索同时进行时，规则解析并发仍有界，
+      // 避免响应突发到达时让步 timer 被合并成连续微任务链触发 appfreeze。
+      const parseGranted = await MainThreadParseGate.get().acquire((): boolean => this.cancelled);
+      if (!parseGranted || this.cancelled) return [];
+      try {
       const baseUrl = BookUrlResolver.effectiveBase(resp, reqUrl, source.bookSourceUrl);
       const rule = new AnalyzeRule(resp.body, baseUrl);
       this.seedSourceVariables(rule.getContext(), source);
@@ -370,6 +376,9 @@ export class ExploreCoordinator {
           'firstItem:', parseItems[0].substring(0, Math.min(parseItems[0].length, 240)));
       }
       return books;
+      } finally {
+        MainThreadParseGate.get().release();
+      }
     } catch (e) {
       console.error('[ExploreCoordinator] explore failed:', e);
       const message = e instanceof Error ? e.message : String(e || '');

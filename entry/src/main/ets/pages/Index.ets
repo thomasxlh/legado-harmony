@@ -3,7 +3,8 @@ import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { webview } from '@kit.ArkWeb';
+import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
+import { STAGE_RUNTIME_POOL_SIZE } from '../core/book/BookSourceStageWebRuntime';
 import deviceInfo from '@ohos.deviceInfo';
 import image from '@ohos.multimedia.image';
 import fs from '@ohos.file.fs';
@@ -13,7 +14,6 @@ import { Book, BookChapter, BookGroup, BookSource, SearchBook, SearchKeyword } f
 import { AppDatabase, BookShelfSnapshot } from '../model/data/AppDatabase';
 import { SearchCoordinator, SearchCallback, SearchProgress } from '../core/book/SearchCoordinator';
 import { ExploreCoordinator, ExploreEntry, ExploreFilterGroup, ExploreSourceOption } from '../core/book/ExploreCoordinator';
-import { BookSourceStageWebRuntime } from '../core/book/BookSourceStageWebRuntime';
 import { ReadBookEngine } from '../core/book/ReadBookEngine';
 import { SearchBookResultList } from '../components/book/SearchBookResultList';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
@@ -39,7 +39,6 @@ import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { CloudSyncService } from '../utils/CloudSyncService';
-import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import { ReaderTtsPlayerPanel } from '../components/ReaderTtsPlayerPanel';
 import { TtsCatalogSheet, CatalogTitleDataSource } from '../components/TtsCatalogSheet';
@@ -87,11 +86,8 @@ interface ShelfFullTextCacheTask {
 @Entry
 @Component
 struct Index {
-  private stageRuntimeController: webview.WebviewController = new webview.WebviewController();
-  @State stageRuntimeMounted: boolean = WebRuntimeAvailability.isAvailable();
-  private stageRuntimeResetScheduled: boolean = false;
-  private stageRuntimeDisappearing: boolean = false;
-  private stageRuntimeAttachRetryId: number = -1;
+  // 复杂书源 JS 脚本宿主池：多个隐藏 Web 节点并行执行脚本（数量由 STAGE_RUNTIME_POOL_SIZE 决定）。
+  private stageRuntimeHostSlots: number[] = [];
   private shortcutRoutingActive: boolean = false;
   @State currentIndex: number = 0;
   @State hdsMaterialRenderBranch: boolean = false;
@@ -130,12 +126,7 @@ struct Index {
 
   aboutToAppear() {
     this.shortcutRoutingActive = true;
-    this.stageRuntimeDisappearing = false;
-    if (this.stageRuntimeMounted) {
-      this.scheduleStageRuntimeAttachFallback(0);
-      BookSourceStageWebRuntime.get().setResetHandler((): void => this.resetStageRuntimeHost(),
-        this.stageRuntimeController);
-    }
+    for (let slot = 0; slot < STAGE_RUNTIME_POOL_SIZE; slot++) this.stageRuntimeHostSlots.push(slot);
     hilog.info(0x0000, 'testTag', 'StartupTrace Index aboutToAppear %{public}d', Date.now());
     this.syncHomeSystemBars();
     this.openPendingShortcut();
@@ -169,56 +160,6 @@ struct Index {
 
   onPageHide(): void {
     this.shortcutRoutingActive = false;
-  }
-
-  aboutToDisappear(): void {
-    this.stageRuntimeDisappearing = true;
-    if (this.stageRuntimeAttachRetryId >= 0) clearTimeout(this.stageRuntimeAttachRetryId);
-    this.stageRuntimeAttachRetryId = -1;
-    BookSourceStageWebRuntime.get().clearResetHandler(this.stageRuntimeController);
-    BookSourceStageWebRuntime.get().detach(this.stageRuntimeController);
-  }
-
-  private adoptStageRuntimeController(): void {
-    if (this.stageRuntimeDisappearing) return;
-    if (this.stageRuntimeAttachRetryId >= 0) clearTimeout(this.stageRuntimeAttachRetryId);
-    this.stageRuntimeAttachRetryId = -1;
-    BookSourceStageWebRuntime.get().attach(this.stageRuntimeController);
-    BookSourceStageWebRuntime.get().setResetHandler((): void => this.resetStageRuntimeHost(),
-      this.stageRuntimeController);
-  }
-
-  private scheduleStageRuntimeAttachFallback(attempt: number): void {
-    if (this.stageRuntimeDisappearing) return;
-    this.stageRuntimeAttachRetryId = setTimeout((): void => {
-      if (this.stageRuntimeDisappearing) return;
-      try {
-        // A successful getWebId proves the controller is associated with a Web component. On
-        // some routed/hidden Web nodes ArkWeb omits onControllerAttached — including nodes
-        // rebuilt by resetStageRuntimeHost() — so treat this poll as the authoritative attach path.
-        this.stageRuntimeController.getWebId();
-        this.adoptStageRuntimeController();
-        return;
-      } catch (_) {}
-      if (attempt < 100) this.scheduleStageRuntimeAttachFallback(attempt + 1);
-    }, attempt === 0 ? 0 : 100);
-  }
-
-  resetStageRuntimeHost(): void {
-    if (this.stageRuntimeResetScheduled) return;
-    this.stageRuntimeResetScheduled = true;
-    if (this.stageRuntimeAttachRetryId >= 0) clearTimeout(this.stageRuntimeAttachRetryId);
-    this.stageRuntimeAttachRetryId = -1;
-    const previous = this.stageRuntimeController;
-    BookSourceStageWebRuntime.get().detach(previous);
-    this.stageRuntimeMounted = false;
-    // Let ArkUI commit the unmounted branch before constructing the replacement controller.
-    setTimeout(() => {
-      this.stageRuntimeController = new webview.WebviewController();
-      this.stageRuntimeMounted = WebRuntimeAvailability.isAvailable();
-      this.stageRuntimeResetScheduled = false;
-      this.scheduleStageRuntimeAttachFallback(0);
-    }, 50);
   }
 
   onSingleSourceSearchRequested(): void {
@@ -465,24 +406,10 @@ struct Index {
       if (this.globalTtsActive && this.showGlobalTtsPanel && this.showGlobalTtsCatalog) {
         this.globalTtsCatalogOverlay()
       }
-      if (this.stageRuntimeMounted) {
-        Web({ src: 'about:blank', controller: this.stageRuntimeController })
-          .width(1)
-          .height(1)
-          .opacity(0.01)
-          .javaScriptAccess(true)
-          .domStorageAccess(true)
-          .mixedMode(MixedMode.All)
-          .onControllerAttached(() => {
-            this.adoptStageRuntimeController();
-          })
-          .onPageBegin(() => {
-            BookSourceStageWebRuntime.get().setReady(false, this.stageRuntimeController);
-          })
-          .onPageEnd(() => {
-            BookSourceStageWebRuntime.get().setReady(true, this.stageRuntimeController);
-          })
-      }
+      // 复杂书源脚本宿主池：多个隐藏 Web 节点让完整 JS 书源的脚本阶段并行执行。
+      ForEach(this.stageRuntimeHostSlots, (slot: number) => {
+        BookSourceStageRuntimeHost()
+      }, (slot: number): string => `stage-runtime-host-${slot}`)
       WebBookFetchRuntimeHost()
     }
     .width('100%')
@@ -1510,7 +1437,9 @@ struct BookshelfPage {
         if (progress.finished) this.networkCoverSearching = false;
       }, {
         exactMatch: true,
-        exactMatchAuthor: false
+        exactMatchAuthor: false,
+        // 网络封面搜索同样遵循全局提前收工阈值（默认 0 = 搜完全部书源）。
+        stopAfterResults: SearchExploreSettingsStore.getStopAfterResults()
       });
       if (token !== this.networkCoverSearchToken || this.networkCoverCoordinator !== coordinator) return;
       this.appendNetworkCoverCandidates(results);
@@ -2231,7 +2160,7 @@ struct BookshelfPage {
                 this.enterBookMultiSelect(bookUrl);
               }
             })
-            this.contextActionItem($r('sys.symbol.trash'), '移出书架', '#E53935', () => {
+            this.contextActionItem($r('sys.symbol.trash'), '移出书架', this.dangerColor(), () => {
               if (this.pendingActionBook) {
                 const book = this.pendingActionBook;
                 this.closeBookActions();
@@ -2549,7 +2478,7 @@ struct BookshelfPage {
         .height(42)
         .fontSize(14)
         .borderRadius(10)
-        .backgroundColor('#E53935')
+        .backgroundColor(this.dangerColor())
         .fontColor('#FFFFFF')
         .enabled(this.selectedBookUrls.length > 0)
         .onClick(() => {
@@ -2686,7 +2615,7 @@ struct BookshelfPage {
             this.showBookGroupActionMenu = false;
             this.openRenameBookGroupDialog();
           })
-        this.contextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+        this.contextActionItem($r('sys.symbol.trash'), '删除', this.dangerColor(), () => {
             this.pendingDeleteBookGroup = this.pendingBookGroup;
             this.showBookGroupActionMenu = false;
             this.openDeleteBookGroupDialog();
@@ -2743,7 +2672,7 @@ struct BookshelfPage {
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeDeleteBookGroupDialog())
         Button('删除', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
-          .backgroundColor('#E53935').fontColor('#FFFFFF').onClick(() => this.deleteShelfBookGroup())
+          .backgroundColor(this.dangerColor()).fontColor('#FFFFFF').onClick(() => this.deleteShelfBookGroup())
       }.width('100%')
     }    .padding(22)
   }
@@ -2771,7 +2700,7 @@ struct BookshelfPage {
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeBatchDeleteDialog())
         Button('删除', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
-          .backgroundColor('#E53935').fontColor('#FFFFFF').onClick(() => this.deleteSelectedBooks())
+          .backgroundColor(this.dangerColor()).fontColor('#FFFFFF').onClick(() => this.deleteSelectedBooks())
       }.width('100%')
     }    .padding(22)
   }
@@ -2827,7 +2756,7 @@ struct BookshelfPage {
         Button('删除')
           .layoutWeight(1)
           .height(44)
-          .backgroundColor('#E53935')
+          .backgroundColor(this.dangerColor())
           .fontColor('#FFFFFF')
           .onClick(() => {
             if (this.pendingDeleteBook) {
@@ -3348,6 +3277,8 @@ struct BookshelfPage {
 
   getBookColor(name: string): string {
     if (!name) return '#007DFF';
+    // 书名哈希标识色：色值参与哈希取模，改动会让同一本书在换主题/换版本后颜色跳变。
+    // 属于调色板而非语义危险色，不要替换成 ThemeRuntime.dangerColor。
     const colors = ['#007DFF', '#E53935', '#43A047', '#EF6C00', '#8E24AA', '#00ACC1', '#D81B60', '#5E35B1'];
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
@@ -4855,7 +4786,7 @@ struct BookshelfPage {
           warnTag: '显示章节缓存弹窗失败:'
         });
       })
-      this.actionItem('清除已缓存章节', '#E53935', () => {
+      this.actionItem('清除已缓存章节', this.dangerColor(), () => {
         this.clearCachedChapters();
       })
 
@@ -7273,6 +7204,11 @@ struct BookshelfPage {
   buttonColor(): string {
     return ThemeRuntime.buttonColor(this.appDarkMode);
   }
+
+  /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string {
+    return ThemeRuntime.dangerColor(this.appDarkMode);
+  }
 }
 
 @Component
@@ -9213,9 +9149,11 @@ struct ExplorePage {
   }
 }
 
-/** 搜索结果字数测量：并发数与单条限时（与换源面板一致）。 */
-const SEARCH_MEASURE_WORKER_COUNT = 6;
-const SEARCH_MEASURE_ITEM_TIMEOUT_MS = 30000;
+/** 搜索结果字数测量：搜索结束后才启动（不与在途搜索抢资源），并发 12 路更快出齐；
+ *  JS 书源实际被 3 槽 ArkWeb 宿主池收窄，各候选源互不相同、每源由 concurrentRate 限流兜底。
+ *  单条限时 45s：详情/目录/正文串行的慢源也有机会在会话内出字，死源仍按时释放。 */
+const SEARCH_MEASURE_WORKER_COUNT = 12;
+const SEARCH_MEASURE_ITEM_TIMEOUT_MS = 45000;
 /** 搜索范围弹窗：仅单分组且书源数不超过该值时自动展开，避免数千书源一次性渲染卡顿。 */
 const SEARCH_SOURCE_PICKER_AUTO_EXPAND_MAX = 300;
 
@@ -9261,6 +9199,8 @@ struct SearchPage {
   @StorageLink('searchExploreExactSearchMatchAuthor') exactSearchMatchAuthor: boolean = true;
   @StorageLink('searchExploreShowSearchProgress') showSearchProgress: boolean = true;
   @StorageLink('searchExploreSearchConcurrency') searchConcurrency: number = 100;
+  /** 攒够该数量的搜索结果就提前收工；0 表示搜完全部书源。 */
+  @StorageLink('searchExploreStopAfterResults') stopAfterResults: number = 0;
   @StorageLink('searchExploreSelectedSourceGroups') selectedSourceGroupsRaw: string = '';
   @StorageLink('searchExploreSelectedSourceUrls') selectedSourceUrlsRaw: string =
     SearchExploreSettingsStore.LEGACY_SOURCE_SELECTION;
@@ -9375,9 +9315,10 @@ struct SearchPage {
       SearchResultAggregationStore.aggregate(sorted) : sorted.slice();
   }
 
-  /** 结果到达即实测最新章节字数（边搜边测）；已在测量时由运行中的循环捡起新到结果，不重启会话作废在飞测量。 */
+  /** 搜索结束后实测最新章节字数；搜索进行中直接返回，避免测量请求拖慢/拖垮在途搜索。
+   *  已在测量时由运行中的循环捡起新到结果，不重启会话作废在飞测量。 */
   startMeasureSearchWordCounts(): void {
-    if (this.measuring || this.searchResults.length === 0) return;
+    if (this.measuring || this.isSearching || this.searchResults.length === 0) return;
     this.measuring = true;
     this.measureSessionId++;
     this.measureSearchWordCounts(this.measureSessionId);
@@ -9399,12 +9340,12 @@ struct SearchPage {
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
-      while (measureSession === this.measureSessionId) {
+      while (!this.isSearching && measureSession === this.measureSessionId) {
         const pending = this.collectPendingMeasurements(attempted);
         if (pending.length === 0) break;
         let nextIndex = 0;
         const worker = async (): Promise<void> => {
-          while (measureSession === this.measureSessionId) {
+          while (!this.isSearching && measureSession === this.measureSessionId) {
             const index = nextIndex++;
             if (index >= pending.length) break;
             const candidate = pending[index];
@@ -9816,7 +9757,7 @@ struct SearchPage {
         ImmersiveBackButton({
             icon: this.isSearching ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'),
             iconOffsetX: 0,
-            iconColor: this.isSearching ? '#E53935' : this.primaryTextColor(),
+            iconColor: this.isSearching ? this.dangerColor() : this.primaryTextColor(),
             darkMode: this.appDarkMode,
             buttonSize: 40,
             containerWidth: 40,
@@ -10457,28 +10398,26 @@ struct SearchPage {
         } else if (p.deltaResults && p.deltaResults.length > 0) {
           this.applySearchResultsSnapshot(this.appendSearchResults(this.searchResults, p.deltaResults));
         }
-        // 学换源面板：结果一到就实测最新章节字数，边搜边测；测量会随实测值到达重排同名结果。
-        if (p.deltaResults && p.deltaResults.length > 0) {
-          this.startMeasureSearchWordCounts();
-        }
+        // 字数测量在搜索结束后统一启动：边搜边测会让"详情+目录+正文"测量请求与搜索
+        // 抢同一套书源并发令牌（concurrentRate）、ArkWeb 宿主池与网络连接，拖慢/拖垮搜索。
         if (this.showSearchProgress) {
           this.statusMessage = p.status;
         }
         this.verificationUrl = p.verificationUrl || AppStorage.get<string>('pendingVerificationUrl') || '';
         this.verificationTitle = p.verificationTitle || AppStorage.get<string>('pendingVerificationTitle') || '网页验证';
         if (p.finished) {
+          this.isSearching = false;
           this.requestSearchShelfStatusSync(this.searchResults);
           this.startMeasureSearchWordCounts();
-        }
-        if (p.finished) {
-          this.isSearching = false;
         }
       };
 
       const allBooks = await coordinator.search(keyword, callback, {
         exactMatch: this.exactSearch,
         exactMatchAuthor: this.exactSearchMatchAuthor,
-        targetSources: targetSources
+        targetSources: targetSources,
+        // 与换源面板共用同一全局设置：默认 0 表示搜完全部书源。
+        stopAfterResults: SearchExploreSettingsStore.getStopAfterResults()
       });
       if (sessionId !== this.searchSessionId || this.coordinator !== coordinator) {
         return;
@@ -10711,6 +10650,7 @@ struct SearchPage {
       settings.exactSearchMatchAuthor = this.exactSearchMatchAuthor;
       settings.showSearchProgress = this.showSearchProgress;
       settings.searchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(this.searchConcurrency);
+      settings.stopAfterResults = SearchExploreSettingsStore.normalizeStopAfterResults(this.stopAfterResults);
       settings.selectedSourceGroupsRaw = this.selectedSourceGroupsRaw;
       settings.selectedSourceUrlsRaw = this.selectedSourceUrlsRaw;
       settings.sourceSortRaw = AppStorage.get<string>('searchExploreSourceSort') || '';
@@ -10761,8 +10701,13 @@ struct SearchPage {
           this.saveSearchExploreSettings();
         })
 
-        this.numberSettingRow('搜索并发数', 1, (value: number) => {
+        this.numberSettingRow('搜索并发数', this.searchConcurrency, 1, 999, (value: number) => {
           this.searchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(value);
+          this.saveSearchExploreSettings();
+        })
+
+        this.numberSettingRow('提前结束搜索', this.stopAfterResults, 0, 300, (value: number) => {
+          this.stopAfterResults = SearchExploreSettingsStore.normalizeStopAfterResults(value);
           this.saveSearchExploreSettings();
         })
 
@@ -10828,7 +10773,8 @@ struct SearchPage {
   }
 
   @Builder
-  numberSettingRow(title: string, minValue: number, onChange: (value: number) => void) {
+  numberSettingRow(title: string, value: number, minValue: number, maxValue: number,
+    onChange: (value: number) => void) {
     Row() {
       Text(title)
         .fontSize(15)
@@ -10843,10 +10789,10 @@ struct SearchPage {
           .height(30)
           .textAlign(TextAlign.Center)
           .onClick(() => {
-            onChange(Math.max(minValue, this.searchConcurrency - 1));
+            onChange(Math.max(minValue, value - 1));
           })
         TextInput({
-          text: `${this.searchConcurrency}`,
+          text: `${value}`,
         })
           .type(InputType.Number)
           .width(52)
@@ -10858,10 +10804,11 @@ struct SearchPage {
           .backgroundColor(this.appDarkMode ? '#24FFFFFF' : '#14000000')
           .borderRadius(8)
           .padding({ left: 4, right: 4 })
-          .onChange((value: string) => {
-            const parsed = Number.parseInt(value, 10);
+          .onChange((text: string) => {
+            // 允许清空输入框再输入：空串按 0 处理（提前收工阈值 0 是合法值）。
+            const parsed = text.trim() === '' ? 0 : Number.parseInt(text, 10);
             if (!Number.isNaN(parsed)) {
-              onChange(parsed);
+              onChange(Math.min(maxValue, Math.max(minValue, parsed)));
             }
           })
         Text('+')
@@ -10871,7 +10818,7 @@ struct SearchPage {
           .height(30)
           .textAlign(TextAlign.Center)
           .onClick(() => {
-            onChange(this.searchConcurrency + 1);
+            onChange(Math.min(maxValue, value + 1));
           })
       }
       .height(32)
@@ -10931,6 +10878,11 @@ struct SearchPage {
 
   statusMessageColor(): string {
     return this.appDarkMode ? '#14251B' : '#E8F5E9';
+  }
+
+  /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string {
+    return ThemeRuntime.dangerColor(this.appDarkMode);
   }
 
   buttonColor(): string {
@@ -11003,7 +10955,7 @@ struct SettingsPage {
       return this.subTextColor();
     }
     if (this.cloudSyncStatus === CloudSyncService.STATUS_ERROR) {
-      return '#E5484D';
+      return this.dangerColor();
     }
     if (this.cloudSyncLinked || this.cloudSyncLastSuccessAt > 0) {
       return this.accentColor();
@@ -11183,6 +11135,11 @@ struct SettingsPage {
 
   glassCardColor(): string {
     return ThemeRuntime.cardColor(this.appDarkMode);
+  }
+
+  /** 错误/失败态语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string {
+    return ThemeRuntime.dangerColor(this.appDarkMode);
   }
 
   dividerColor(): string {

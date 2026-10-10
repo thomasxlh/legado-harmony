@@ -2,7 +2,7 @@ import { BookSource } from '../../model/data/Book';
 import { HttpClient, HttpRequest, HttpResponse } from '../http/HttpClient';
 import { VerificationSupport } from '../http/VerificationSupport';
 import { RequestSessionConfig, RequestSessionSupport } from '../http/RequestSessionSupport';
-import { BookSourceRateLimiter } from '../http/BookSourceRateLimiter';
+import { BookSourceRateLimiter, RateLimitAcquireHooks, RateLimitAcquireResult } from '../http/BookSourceRateLimiter';
 import { util } from '@kit.ArkTS';
 import { BookSourceDebugContext } from '../book/BookSourceDebugModels';
 import { BookSourceHeaderRuntime } from '../book/BookSourceHeaderRuntime';
@@ -31,6 +31,8 @@ export class AnalyzeUrl {
   private noTimeoutRetry: boolean = false;
   /** Optional cancellation callback; when set, stuck rate-limiter waits abort immediately. */
   private cancelCheck?: () => boolean;
+  /** 搜索场景注入：限流等待上限 + 等待开始/结束回调（暂停单源网络超时计时）。 */
+  private rateLimitHooks?: RateLimitAcquireHooks;
 
   constructor(source: BookSource | null, client: HttpClient,
     runtimeSourceHeaders: Record<string, string> = {},
@@ -44,6 +46,12 @@ export class AnalyzeUrl {
 
   setCancelCheck(check: () => boolean): AnalyzeUrl {
     this.cancelCheck = check;
+    return this;
+  }
+
+  /** 注入限流排队钩子（等待上限、等待状态回调），仅搜索超时预算控制使用。 */
+  setRateLimitHooks(hooks: RateLimitAcquireHooks): AnalyzeUrl {
+    this.rateLimitHooks = hooks;
     return this;
   }
 
@@ -574,7 +582,11 @@ export class AnalyzeUrl {
 
   private async fetchFollowingRedirects(req: HttpRequest): Promise<HttpResponse> {
     let currentReq = req;
-    await BookSourceRateLimiter.acquire(this.source, this.cancelCheck);
+    let acquireResult = await BookSourceRateLimiter.acquire(this.source, this.cancelCheck,
+      this.rateLimitHooks);
+    if (acquireResult !== RateLimitAcquireResult.Acquired) {
+      return this.blockedResponse(currentReq, acquireResult);
+    }
     let lastResp = await this.client.execute(currentReq);
     for (let i = 0; i < 3; i++) {
       if (lastResp.statusCode < 300 || lastResp.statusCode >= 400) return lastResp;
@@ -588,10 +600,28 @@ export class AnalyzeUrl {
       currentReq = switchToGet ?
         { ...currentReq, url: nextUrl, method: 'GET', body: '', headers: redirectHeaders } :
         { ...currentReq, url: nextUrl, headers: redirectHeaders };
-      await BookSourceRateLimiter.acquire(this.source, this.cancelCheck);
+      acquireResult = await BookSourceRateLimiter.acquire(this.source, this.cancelCheck,
+        this.rateLimitHooks);
+      if (acquireResult !== RateLimitAcquireResult.Acquired) {
+        return this.blockedResponse(currentReq, acquireResult);
+      }
       lastResp = await this.client.execute(currentReq);
     }
     return lastResp;
+  }
+
+  /** 请求尚未发出就被限流/取消拦截时的响应；rateLimited 由上层映射为独立的"限流等待"状态。 */
+  private blockedResponse(req: HttpRequest, acquireResult: RateLimitAcquireResult): HttpResponse {
+    const rateLimited = acquireResult === RateLimitAcquireResult.RateLimited;
+    return {
+      url: req.url,
+      statusCode: 0,
+      headers: {},
+      body: '',
+      success: false,
+      error: rateLimited ? 'rate limited: source concurrentRate window exceeded' : '请求已取消',
+      rateLimited: rateLimited
+    };
   }
 
   private findHeader(headers: Record<string, string>, name: string): string {

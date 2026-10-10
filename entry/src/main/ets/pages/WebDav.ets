@@ -298,7 +298,7 @@ struct WebDavPage {
       Column() {
         this.entryContextActionItem($r('sys.symbol.square_and_pencil'), '重命名', this.primaryTextColor(),
           () => this.openRenameEntryDialog())
-        this.entryContextActionItem($r('sys.symbol.trash'), '删除', '#E53935',
+        this.entryContextActionItem($r('sys.symbol.trash'), '删除', this.dangerColor(),
           () => this.confirmDeleteEntry())
       }
       .width(148)
@@ -1032,7 +1032,7 @@ struct WebDavPage {
       title: entry.directory ? '删除文件夹' : '删除文件',
       message: entry.directory ? `确定删除“${entry.name}”及其中的全部内容吗？此操作无法撤销。` :
         `确定删除“${entry.name}”吗？此操作无法撤销。`,
-      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: '#E53935' }]
+      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: this.dangerColor() }]
     });
     if (confirmation.index !== 1) return;
     this.busy = true;
@@ -1401,4 +1401,7 @@ struct WebDavPage {
   subTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }
   accentColor(): string { return ThemeRuntime.accentColor(this.appDarkMode); }
   softColor(): string { return this.appDarkMode ? '#24272D' : '#EEF2F7'; }
+
+  /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string { return ThemeRuntime.dangerColor(this.appDarkMode); }
 }

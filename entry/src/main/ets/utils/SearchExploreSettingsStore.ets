@@ -11,6 +11,8 @@ export class SearchExploreSettings {
   exactSearchMatchAuthor: boolean = true;
   showSearchProgress: boolean = true;
   searchConcurrency: number = 100;
+  /** 攒够该数量的搜索结果就提前收工，不再搜剩余书源；0 表示关闭提前收工、搜完全部书源。 */
+  stopAfterResults: number = 0;
   selectedSourceGroupsRaw: string = '';
   selectedSourceUrlsRaw: string = '__LEGACY_SOURCE_GROUP_SELECTION__';
   sourceSortRaw: string = '';
@@ -28,6 +30,7 @@ export class SearchExploreSettingsStore {
   static readonly KEY_EXACT_SEARCH_MATCH_AUTHOR: string = 'searchExploreExactSearchMatchAuthor';
   static readonly KEY_SHOW_SEARCH_PROGRESS: string = 'searchExploreShowSearchProgress';
   static readonly KEY_SEARCH_CONCURRENCY: string = 'searchExploreSearchConcurrency';
+  static readonly KEY_STOP_AFTER_RESULTS: string = 'searchExploreStopAfterResults';
   static readonly KEY_SELECTED_SOURCE_GROUPS: string = 'searchExploreSelectedSourceGroups';
   static readonly KEY_SELECTED_SOURCE_URLS: string = 'searchExploreSelectedSourceUrls';
   static readonly LEGACY_SOURCE_SELECTION: string = '__LEGACY_SOURCE_GROUP_SELECTION__';
@@ -36,6 +39,10 @@ export class SearchExploreSettingsStore {
   static readonly KEY_EXPLORE_PLATFORM: string = 'explorePlatform';
   private static readonly STORE_NAME: string = 'search_explore_settings';
   private static readonly DEFAULT_SEARCH_CONCURRENCY: number = 100;
+  /** 默认关闭提前收工：默认行为是搜完全部启用书源，"搜索完成"即本轮彻底结束。 */
+  private static readonly DEFAULT_STOP_AFTER_RESULTS: number = 0;
+  /** 提前收工阈值上限：与 SearchCoordinator 的单次搜索总结果上限保持一致。 */
+  private static readonly MAX_STOP_AFTER_RESULTS: number = 300;
   private static readonly LEGACY_DEFAULT_SEARCH_CONCURRENCY: number = 6;
   private static readonly KEY_CONCURRENCY_MIGRATED: string = 'searchExploreConcurrencyMigrated100';
   private static readonly MIN_SEARCH_CONCURRENCY: number = 1;
@@ -81,6 +88,11 @@ export class SearchExploreSettingsStore {
       await store.put(SearchExploreSettingsStore.KEY_CONCURRENCY_MIGRATED, true);
       await store.flush();
     }
+    // 提前收工阈值：允许 0（关闭提前收工），不能复用只接受正数的 getNumber。
+    settings.stopAfterResults = SearchExploreSettingsStore.normalizeStopAfterResults(
+      await SearchExploreSettingsStore.getNonNegativeNumber(store,
+        SearchExploreSettingsStore.KEY_STOP_AFTER_RESULTS,
+        SearchExploreSettingsStore.DEFAULT_STOP_AFTER_RESULTS));
     settings.selectedSourceGroupsRaw = await SearchExploreSettingsStore.getString(
       store, SearchExploreSettingsStore.KEY_SELECTED_SOURCE_GROUPS, '');
     settings.selectedSourceUrlsRaw = await SearchExploreSettingsStore.getString(
@@ -111,6 +123,8 @@ export class SearchExploreSettingsStore {
     await store.put(SearchExploreSettingsStore.KEY_SHOW_SEARCH_PROGRESS, settings.showSearchProgress);
     await store.put(SearchExploreSettingsStore.KEY_SEARCH_CONCURRENCY,
       SearchExploreSettingsStore.normalizeSearchConcurrency(settings.searchConcurrency));
+    await store.put(SearchExploreSettingsStore.KEY_STOP_AFTER_RESULTS,
+      SearchExploreSettingsStore.normalizeStopAfterResults(settings.stopAfterResults));
     await store.put(SearchExploreSettingsStore.KEY_SELECTED_SOURCE_GROUPS, settings.selectedSourceGroupsRaw);
     await store.put(SearchExploreSettingsStore.KEY_SELECTED_SOURCE_URLS, settings.selectedSourceUrlsRaw);
     await store.put(SearchExploreSettingsStore.KEY_SOURCE_SORT, settings.sourceSortRaw);
@@ -156,6 +170,8 @@ export class SearchExploreSettingsStore {
     AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_SHOW_SEARCH_PROGRESS, settings.showSearchProgress);
     AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_SEARCH_CONCURRENCY,
       SearchExploreSettingsStore.normalizeSearchConcurrency(settings.searchConcurrency));
+    AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_STOP_AFTER_RESULTS,
+      SearchExploreSettingsStore.normalizeStopAfterResults(settings.stopAfterResults));
     AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_SELECTED_SOURCE_GROUPS, settings.selectedSourceGroupsRaw);
     AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_SELECTED_SOURCE_URLS, settings.selectedSourceUrlsRaw);
     AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_SOURCE_SORT, settings.sourceSortRaw);
@@ -182,6 +198,30 @@ export class SearchExploreSettingsStore {
     return Math.max(SearchExploreSettingsStore.MIN_SEARCH_CONCURRENCY, parsed);
   }
 
+  /** 0 合法（关闭提前收工）；非法值回落到默认值，过大值夹到单次搜索上限。 */
+  static normalizeStopAfterResults(value: number): number {
+    const parsed = Math.round(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return SearchExploreSettingsStore.DEFAULT_STOP_AFTER_RESULTS;
+    }
+    return Math.min(parsed, SearchExploreSettingsStore.MAX_STOP_AFTER_RESULTS);
+  }
+
+  /**
+   * 提前收工阈值：0 表示搜完全部书源。
+   * 与 getSearchConcurrency 同构：优先读缓存，再回落到 AppStorage。
+   */
+  static getStopAfterResults(): number {
+    const cached = SearchExploreSettingsStore.cachedSettings?.stopAfterResults;
+    if (typeof cached === 'number' && cached >= 0) {
+      return SearchExploreSettingsStore.normalizeStopAfterResults(cached);
+    }
+    const value = AppStorage.get<number>(SearchExploreSettingsStore.KEY_STOP_AFTER_RESULTS);
+    return typeof value === 'number' && value >= 0 ?
+      SearchExploreSettingsStore.normalizeStopAfterResults(value) :
+      SearchExploreSettingsStore.DEFAULT_STOP_AFTER_RESULTS;
+  }
+
   private static async getBoolean(
     store: preferences.Preferences,
     key: string,
@@ -202,6 +242,7 @@ export class SearchExploreSettingsStore {
     settings.exactSearchMatchAuthor = source.exactSearchMatchAuthor;
     settings.showSearchProgress = source.showSearchProgress;
     settings.searchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(source.searchConcurrency);
+    settings.stopAfterResults = SearchExploreSettingsStore.normalizeStopAfterResults(source.stopAfterResults);
     settings.selectedSourceGroupsRaw = source.selectedSourceGroupsRaw;
     settings.selectedSourceUrlsRaw = source.selectedSourceUrlsRaw || '';
     settings.sourceSortRaw = source.sourceSortRaw;
@@ -217,6 +258,25 @@ export class SearchExploreSettingsStore {
   ): Promise<string> {
     const value = await store.get(key, fallback);
     return typeof value === 'string' ? value : fallback;
+  }
+
+  private static async getNonNegativeNumber(
+    store: preferences.Preferences,
+    key: string,
+    fallback: number
+  ): Promise<number> {
+    const value = await store.get(key, fallback);
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      return value;
+    }
+    // preferences 偶尔以字符串存数字，兼容读取但同样要求非负。
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        return parsed;
+      }
+    }
+    return fallback;
   }
 
   private static async getNumber(
@@ -246,6 +306,7 @@ export class SearchExploreSettingsStore {
       left.exactSearch !== right.exactSearch ||
       left.exactSearchMatchAuthor !== right.exactSearchMatchAuthor ||
       left.showSearchProgress !== right.showSearchProgress ||
+      left.stopAfterResults !== right.stopAfterResults ||
       left.selectedSourceUrlsRaw !== right.selectedSourceUrlsRaw;
   }
 }

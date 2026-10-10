@@ -175,13 +175,13 @@ export class BuiltinThemeRegistry {
     );
     theme.light = BuiltinThemeRegistry.variant(
       BuiltinThemeRegistry.colors('#F5F7FA', '#FFFFFF', '#EEF2F7', '#1F2937', '#667085', '#E4E7EC',
-        '#007DFF', '#007DFF', '#E5484D'),
+        '#007DFF', '#007DFF', '#E5484D', '#1E8E3E', '#D17A00'),
       BuiltinThemeRegistry.reader('#F7F1E3', '', '#2F261D', '#7A6F63', 'light'),
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.CLASSIC_GLASS, '#70B6F2', '#1B4168')
     );
     theme.dark = BuiltinThemeRegistry.variant(
       BuiltinThemeRegistry.colors('#101318', '#191D24', '#242A33', '#F2F4F7', '#98A2B3', '#2D3440',
-        '#4E9BFF', '#3F8CFF', '#FF6B6B'),
+        '#4E9BFF', '#3F8CFF', '#FF6B6B', '#4CAF50', '#FFC53D'),
       BuiltinThemeRegistry.reader('#1F2329', '', '#D8D8D8', '#9AA0A6', 'dark'),
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.CLASSIC_GLASS, '#4E9BFF', '#DCEBFF')
     );
@@ -531,7 +531,7 @@ export class BuiltinThemeRegistry {
 
   private static colors(pageColor: string, cardColor: string, inputColor: string, primaryTextColor: string,
     subTextColor: string, dividerColor: string, accentColor: string, buttonColor: string,
-    dangerColor: string): ThemeColorTokens {
+    dangerColor: string, successColor: string = '', warningColor: string = ''): ThemeColorTokens {
     const colors = new ThemeColorTokens();
     colors.pageColor = pageColor;
     colors.cardColor = cardColor;
@@ -542,6 +542,14 @@ export class BuiltinThemeRegistry {
     colors.accentColor = accentColor;
     colors.buttonColor = buttonColor;
     colors.dangerColor = dangerColor;
+    // 成功/警示色是后补的语义 token：内置主题未逐包指定时沿用 token 默认值，
+    // 需要区分的主题可显式传入（与 dangerColor 同一约定）。
+    if (successColor) {
+      colors.successColor = successColor;
+    }
+    if (warningColor) {
+      colors.warningColor = warningColor;
+    }
     return colors;
   }
 
@@ -668,7 +676,8 @@ export class BuiltinThemeRegistry {
     return BuiltinThemeRegistry.variant(
       BuiltinThemeRegistry.colors(source.colors.pageColor, source.colors.cardColor, source.colors.inputColor,
         source.colors.primaryTextColor, source.colors.subTextColor, source.colors.dividerColor,
-        source.colors.accentColor, source.colors.buttonColor, source.colors.dangerColor),
+        source.colors.accentColor, source.colors.buttonColor, source.colors.dangerColor,
+        source.colors.successColor, source.colors.warningColor),
       BuiltinThemeRegistry.reader(source.reader.backgroundColor, source.reader.backgroundAssetId,
         source.reader.textColor, source.reader.subTextColor, source.reader.contentTone),
       BuiltinThemeRegistry.regex(source.regexEmphasis.bubbleStyle, source.regexEmphasis.emphasisColor,

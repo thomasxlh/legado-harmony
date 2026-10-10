@@ -581,6 +581,10 @@ struct CoverGalleryManagerPage {
   subTextColor(): string {
     return ThemeRuntime.subTextColor(this.appDarkMode);
   }
+  /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string {
+    return ThemeRuntime.dangerColor(this.appDarkMode);
+  }
 
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
@@ -820,7 +824,7 @@ struct CoverGalleryManagerPage {
       Row({ space: 8 }) {
         this.actionButton('导出 ZIP', this.buttonColor(), () => this.exportSelectedAlbumZip())
         this.actionButton('管理图片', this.buttonColor(), () => this.openImageManager())
-        this.actionButton('删除图集', '#E53935', () => this.requestDeleteSelectedAlbum())
+        this.actionButton('删除图集', this.dangerColor(), () => this.requestDeleteSelectedAlbum())
       }
 
       this.albumPreview()
@@ -979,7 +983,7 @@ struct CoverGalleryManagerPage {
         Button('删除')
           .height(42)
           .layoutWeight(1)
-          .backgroundColor('#E53935')
+          .backgroundColor(this.dangerColor())
           .fontColor('#FFFFFF')
           .onClick(() => {
             this.deleteSelectedAlbum();
@@ -1021,7 +1025,7 @@ struct CoverGalleryManagerPage {
       Row({ space: 8 }) {
         this.imageManageButton('全选', this.buttonColor(), () => this.selectAllImages())
         this.imageManageButton('取消选择', '#60656F', () => this.clearImageSelection())
-        this.imageManageButton('删除所选', '#E53935', () => this.deleteSelectedImages())
+        this.imageManageButton('删除所选', this.dangerColor(), () => this.deleteSelectedImages())
       }
       .width('100%')
 

@@ -2264,7 +2264,7 @@ export class AppDatabase {
   private normalizeBookSourceValidationStatus(value: number): number {
     if (value === BookSource.VALIDATION_PASSED || value === BookSource.VALIDATION_FAILED ||
       value === BookSource.VALIDATION_NO_RESULTS || value === BookSource.VALIDATION_NEEDS_VERIFICATION ||
-      value === BookSource.VALIDATION_TEMPORARY_ERROR) {
+      value === BookSource.VALIDATION_TEMPORARY_ERROR || value === BookSource.VALIDATION_RATE_LIMITED) {
       return value;
     }
     return BookSource.VALIDATION_UNCHECKED;

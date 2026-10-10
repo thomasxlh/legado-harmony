@@ -1,7 +1,7 @@
 import { Book, BookChapter, BookSource } from '../../model/data/Book';
-import { HttpClient } from '../http/HttpClient';
+import { HttpClient, HttpResponse } from '../http/HttpClient';
 import { AnalyzeUrl } from '../rule/AnalyzeUrl';
-import { AnalyzeRule } from '../rule/AnalyzeRule';
+import { AnalyzeRule, TOC_HTML_PARSE_LENGTH } from '../rule/AnalyzeRule';
 import { RuleContext } from '../rule/RuleContext';
 import { util } from '@kit.ArkTS';
 import { VerificationSupport } from '../http/VerificationSupport';
@@ -31,6 +31,57 @@ import { BookSourceDebugContext } from './BookSourceDebugModels';
 class ContentPageData {
   content: string = '';
   nextUrl: string = '';
+}
+
+/** 字数测量稀疏目录探测结果：只携带最新章与当前阅读章，不含全量目录。 */
+export class MeasurementTocProbe {
+  totalCount: number = 0;
+  latestChapter: BookChapter | null = null;
+  /** currentIndex < 0（不需要当前章）时恒为 null；需要时 null 表示该源目录未收录阅读进度。 */
+  currentChapter: BookChapter | null = null;
+}
+
+/** 分页 URL 模板：prefix + 页码token + suffix；token 之外的数字段（书 id 等）在组内恒定。 */
+class TocPageTemplate {
+  prefix: string = '';
+  suffix: string = '';
+  page2Token: number = 0;
+  lastToken: number = 0;
+  lastUrl: string = '';
+}
+
+/** 首页数字页码锚点按"唯一变化数字段"聚合出的候选模板组。 */
+class TocPageAnchorGroup {
+  prefix: string = '';
+  suffix: string = '';
+  tokens: number[] = [];
+  private tokenSet: Set<number> = new Set();
+
+  addToken(token: number): void {
+    if (!this.tokenSet.has(token)) {
+      this.tokenSet.add(token);
+      this.tokens.push(token);
+    }
+  }
+
+  maxToken(): number {
+    let max = 0;
+    for (const token of this.tokens) {
+      if (token > max) max = token;
+    }
+    return max;
+  }
+}
+
+class LiteTocPage {
+  body: string = '';
+  baseUrl: string = '';
+  chapters: BookChapter[] = [];
+}
+
+class ReconciledPageTemplate {
+  group: TocPageAnchorGroup | null = null;
+  token: number = 0;
 }
 
 export class WebBookService {
@@ -271,7 +322,8 @@ export class WebBookService {
 
   async getChapterList(source: BookSource, book: Book, maxChapters: number = 0,
     allowGenericFallback: boolean = true,
-    debugContext: BookSourceDebugContext | null = null): Promise<BookChapter[]> {
+    debugContext: BookSourceDebugContext | null = null,
+    liteFields: boolean = false): Promise<BookChapter[]> {
     AppStorage.setOrCreate('bookSourceStageLastError', '');
     BookSourceMetadataSupport.applyBook(source, book, [book.bookUrl, book.tocUrl]);
     const chapterLimit = maxChapters > 0 ? Math.max(1, Math.round(maxChapters)) : 0;
@@ -325,47 +377,86 @@ export class WebBookService {
       if (page === 0) {
         firstBody = currentResp.body;
         firstBaseUrl = baseUrl;
-        const runtimeInput = this.stageDataUrlInput(tocRule.chapterList, currentUrl, currentResp.body);
-        const stageBaseUrl = EncodedSourceUrl.decode(currentUrl) ? currentUrl : baseUrl;
-        const runtimeList = await this.runStageRule(source, book, tocRule.chapterList,
-          runtimeInput, stageBaseUrl, SourceRuntimeStage.TOC, null,
-          EncodedSourceUrl.scalarVariables(currentUrl), debugContext);
-        if (runtimeList) {
-            const runtimeChapters = await this.parseStageChapterList(source, book, runtimeList, baseUrl,
-              chapterLimit, debugContext);
-          if (runtimeChapters.length > 0) {
-            return runtimeChapters;
-          }
-          AppStorage.setOrCreate('bookSourceStageLastError',
-            `目录脚本已返回内容，但没有转换出章节（返回 ${runtimeList.length} 字符）`);
-        } else if (this.stageRuleCode(tocRule.chapterList || '')) {
-          const lastError = AppStorage.get<string>('bookSourceStageLastError') || '';
-          if (!lastError) AppStorage.setOrCreate('bookSourceStageLastError', '目录脚本返回空结果');
-        }
       }
       const remainingLimit = chapterLimit > 0 ? Math.max(0, chapterLimit - chapters.length) : 0;
       if (chapterLimit > 0 && remainingLimit === 0) break;
-      const pageChapters = await this.parseChapterPage(source, book, currentResp.body, baseUrl, ctx,
-        chapters.length, remainingLimit, debugContext);
+      // The chapterList rule (including <js>/@js scripts) runs on EVERY page, matching Legado's
+      // BookChapterList.analyzeChapterList. The old code ran stage scripts only on page 0 and
+      // returned immediately, so scripted catalogs with nextTocUrl pagination kept only page 1
+      // (a typical 20-30 chapter slice), which made both the reader catalog and the change-source
+      // word-count measurement report a truncated "latest chapter".
+      const pageChapters = await this.parseTocPage(source, book, currentResp.body, currentUrl,
+        baseUrl, ctx, chapters.length, remainingLimit, debugContext, chapters.length === 0,
+        liteFields);
+      let limitReached = false;
       for (const chapter of pageChapters) {
         const chapterKey = this.urlWithoutFragment(chapter.url);
         if (seenChapterUrls.has(chapterKey)) continue;
         seenChapterUrls.add(chapterKey);
         chapter.index = chapters.length;
         chapters.push(chapter);
-        if (chapterLimit > 0 && chapters.length >= chapterLimit) break;
+        if (chapterLimit > 0 && chapters.length >= chapterLimit) {
+          limitReached = true;
+          break;
+        }
       }
-      if (chapterLimit > 0 && chapters.length >= chapterLimit) break;
+      if (chapters.length > 0) {
+        // A later page produced chapters: stale script diagnostics from an empty earlier attempt
+        // must not surface as the catalog error after we return.
+        AppStorage.setOrCreate('bookSourceStageLastError', '');
+      }
+      if (limitReached || (chapterLimit > 0 && chapters.length >= chapterLimit)) break;
       if (!tocRule.nextTocUrl) break;
-      const nextUrl = await this.executeSingleRuleField(source, book, null, tocRule.nextTocUrl,
-        currentResp.body, baseUrl, SourceRuntimeStage.TOC, ctx, true, debugContext);
-      const nextKey = this.urlWithoutFragment(nextUrl);
-      if (!nextUrl || seenPageUrls.has(nextKey)) break;
-      currentUrl = nextUrl;
-      currentResp = EncodedSourceUrl.canHandle(currentUrl) ?
-        await this.fetchEncodedDataUrl(currentUrl, source) : await au.fetch(currentUrl, undefined, debugContext);
+      // Legado evaluates nextTocUrl with getStringList(isUrl=true): one URL means sequential
+      // paging, several URLs mean "fetch every remaining page concurrently". A script/selector
+      // that returned the whole pager used to collapse to a single string and abort pagination,
+      // again leaving just page 1's 20-30 chapters.
+      const nextUrls = await this.evaluateNextTocUrls(source, book, currentResp.body, baseUrl,
+        ctx, debugContext);
+      const pendingUrls: string[] = [];
+      for (const nextUrl of nextUrls) {
+        const nextKey = this.urlWithoutFragment(nextUrl);
+        if (!nextKey || nextKey === pageKey || seenPageUrls.has(nextKey)) continue;
+        // Reserve ahead so fan-out URLs (and a failed sequential fetch) cannot be visited twice.
+        seenPageUrls.add(nextKey);
+        pendingUrls.push(nextUrl);
+      }
+      if (pendingUrls.length === 0) break;
+      const pageBudget = Math.max(0, 1000 - seenPageUrls.size);
+      if (pendingUrls.length === 1) {
+        currentUrl = pendingUrls[0];
+        const nextResp = await this.fetchTocPage(au, source, currentUrl, debugContext);
+        if (!nextResp) break;
+        currentResp = nextResp;
+        continue;
+      }
+      const parallelUrls = pageBudget > 0 ? pendingUrls.slice(0, pageBudget) : [];
+      const parallelPages = await this.fetchTocPagesInParallel(au, source, book, parallelUrls,
+        ctx, debugContext, liteFields);
+      for (const parallelChapters of parallelPages) {
+        for (const chapter of parallelChapters) {
+          const chapterKey = this.urlWithoutFragment(chapter.url);
+          if (seenChapterUrls.has(chapterKey)) continue;
+          seenChapterUrls.add(chapterKey);
+          chapter.index = chapters.length;
+          chapters.push(chapter);
+          if (chapterLimit > 0 && chapters.length >= chapterLimit) {
+            limitReached = true;
+            break;
+          }
+        }
+        if (limitReached) break;
+      }
+      if (chapters.length > 0) {
+        AppStorage.setOrCreate('bookSourceStageLastError', '');
+      }
+      // The enumerated URL list already covers every remaining page; child pages' own nextTocUrl
+      // values are discarded, matching Legado's parallel pagination branch.
+      break;
     }
 
+    console.log('[WS] getChapterList pages:', seenPageUrls.size, 'chapters:', chapters.length,
+      'nextTocUrl:', tocRule.nextTocUrl ? 'set' : 'empty');
     book.variable = ctx.toPersistentJson();
     if (chapters.length > 0) return chapters;
 
@@ -377,6 +468,566 @@ export class WebBookService {
       return chapterLimit > 0 ? fallbackChapters.slice(0, chapterLimit) : fallbackChapters;
     }
     return chapters;
+  }
+
+  /**
+   * 字数测量链路是否会占用 ArkWeb 阶段宿主池（3 槽、与 JS 书源搜索共享）。
+   * 搜索进行中只允许早期测量"纯本地规则"源：JS 源的详情/目录/正文规则必须排队 ArkWeb 宿主，
+   * 边搜边测会抢占在搜 JS 源（曾经导致搜索限流等待/超时的根因），故 JS 源推迟到搜索结束后测。
+   * needBookInfo 为 true（候选没有 tocUrl）时还要把 bookInfoRule 的 JS 规则计入。
+   */
+  static measurementRequiresStage(source: BookSource, needBookInfo: boolean): boolean {
+    if (WebBookService.ruleObjectHasStageCode(source.tocRule)) return true;
+    if (WebBookService.ruleObjectHasStageCode(source.contentRule)) return true;
+    if (needBookInfo && WebBookService.ruleObjectHasStageCode(source.bookInfoRule)) return true;
+    return false;
+  }
+
+  private static ruleObjectHasStageCode(rule: Object): boolean {
+    if (!rule) return false;
+    const record = rule as Record<string, Object>;
+    const keys = Object.keys(record);
+    for (let i = 0; i < keys.length; i++) {
+      const value = record[keys[i]];
+      if (typeof value !== 'string') continue;
+      const lower = (value as string).toLowerCase();
+      // 与 RuleExecutionService 的派发标记对齐；裸 js: 前缀（整条即脚本）保守计入，
+      // 误判只会把该源推迟到搜索结束后测量，不会在搜索中抢占 ArkWeb 宿主。
+      if (lower.indexOf('<js>') >= 0 || lower.indexOf('@js:') >= 0 || lower.startsWith('js:')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 字数测量专用目录探测。目标只有两个章节：最新一章、当前阅读章节（currentIndex < 0 表示不需要）。
+   *  - nextTocUrl 在首页枚举出全部页码（Legado 列表语义）：只取尾页与当前章所在页，中间页按首页页容估算；
+   *  - nextTocUrl 只给下一页：从首页 HTML 分页栏（尾页/数字页码）识别尾页地址规律，
+   *    且模板必须能渲染出书源规则产出的真实第 2 页 URL（页首"最新章节"区块的假链接过不了这关），
+   *    直接跳取尾页，尾页还必须通过"再无 nextTocUrl"的终局校验；
+   *  - 任何一步证据不足或互相矛盾都回退全量遍历：宁慢勿错，绝不重蹈"短目录冒充长目录"的覆辙。
+   *  阅读器需要完整目录导航，仍走 getChapterList 全量路径，不在此优化范围内。
+   */
+  async probeChaptersForMeasurement(source: BookSource, book: Book, currentIndex: number,
+    currentTitle: string): Promise<MeasurementTocProbe> {
+    const probe = new MeasurementTocProbe();
+    AppStorage.setOrCreate('bookSourceStageLastError', '');
+    BookSourceMetadataSupport.applyBook(source, book, [book.bookUrl, book.tocUrl]);
+    if (BookSourceDataUrlSupport.isEncodedSource(book.tocUrl) ||
+      BookSourceDataUrlSupport.isEncodedSource(book.bookUrl)) {
+      const encodedAll = await this.getChapterList(source, book, 0, false, null, true);
+      return this.fillProbeFromFull(probe, encodedAll, currentIndex, currentTitle);
+    }
+    const tocRule = source.tocRule;
+    const tocUrl = this.resolveTocUrl(source, book);
+    const au = new AnalyzeUrl(source, this.http);
+    let firstResp: HttpResponse;
+    try {
+      firstResp = EncodedSourceUrl.canHandle(tocUrl) ?
+        await this.fetchEncodedDataUrl(tocUrl, source) : await au.fetch(tocUrl, undefined, null);
+    } catch (e) {
+      return probe;
+    }
+    if (!firstResp.success || !firstResp.body) {
+      AppStorage.setOrCreate('bookSourceStageLastError', `目录请求失败：${!firstResp.success ?
+        (firstResp.statusCode > 0 ? `HTTP ${firstResp.statusCode}` : (firstResp.error || '网络异常')) :
+        '接口返回空响应'}`);
+      return probe;
+    }
+    const tocApiFailure = this.apiFailureMessage(firstResp.body);
+    if (tocApiFailure) {
+      AppStorage.setOrCreate('bookSourceStageLastError', `目录接口返回失败：${tocApiFailure}`);
+      return probe;
+    }
+    const ctx = new RuleContext();
+    ctx.loadFromJson(book.variable);
+    this.seedBookVariables(ctx, book.bookUrl);
+    this.seedSourceVariables(ctx, source);
+    const page1Url = firstResp.url || tocUrl;
+    const baseUrl = BookUrlResolver.effectiveBase(firstResp, tocUrl, book.bookUrl || source.bookSourceUrl);
+    if (this.requestVerificationIfNeeded(source, page1Url, firstResp.body, firstResp.statusCode,
+      tocRule.chapterList)) {
+      return probe;
+    }
+    const head = await this.parseTocPage(source, book, firstResp.body, page1Url, baseUrl, ctx,
+      0, 0, null, true, true);
+    if (head.length === 0) return probe;
+    probe.totalCount = head.length;
+    probe.latestChapter = head[head.length - 1];
+    if (currentIndex >= 0 && currentIndex < head.length) {
+      probe.currentChapter = this.pickChapterInSlice(head, 0, currentTitle, currentIndex);
+    }
+    if (!tocRule.nextTocUrl) {
+      console.log('[WS] probeToc mode single-page chapters:', head.length);
+      return probe;
+    }
+    const nextUrls = await this.evaluateNextTocUrls(source, book, firstResp.body, baseUrl, ctx, null);
+    if (nextUrls.length === 0) {
+      console.log('[WS] probeToc mode single-page chapters:', head.length);
+      return probe;
+    }
+    // 列表规则可能把首页自身/重复 URL 一起带回：页码数学依赖"每页一个不重复 URL"，先去重过滤。
+    const page1Key = this.urlWithoutFragment(page1Url);
+    const seenPageKeys: Set<string> = new Set();
+    seenPageKeys.add(page1Key);
+    const pageUrls: string[] = [];
+    for (const candidateUrl of nextUrls) {
+      const pageKey = this.urlWithoutFragment(candidateUrl);
+      if (!pageKey || seenPageKeys.has(pageKey)) continue;
+      seenPageKeys.add(pageKey);
+      pageUrls.push(candidateUrl);
+    }
+    if (pageUrls.length === 0) {
+      console.log('[WS] probeToc mode single-page chapters:', head.length);
+      return probe;
+    }
+    try {
+      if (pageUrls.length >= 2) {
+        if (await this.probeEnumeratedPages(au, source, book, head, pageUrls,
+          currentIndex, currentTitle, probe)) {
+          console.log('[WS] probeToc mode sparse-enumerated pages:', pageUrls.length + 1,
+            'total:', probe.totalCount);
+          return probe;
+        }
+      } else {
+        const template = this.discoverLastPageTemplate(firstResp.body, baseUrl, pageUrls[0]);
+        if (template && await this.probeJumpPages(au, source, book, head, template,
+          currentIndex, currentTitle, probe)) {
+          console.log('[WS] probeToc mode sparse-jump page2Token:', template.page2Token,
+            'lastToken:', template.lastToken, 'total:', probe.totalCount);
+          return probe;
+        }
+      }
+    } catch (e) {
+      console.warn('[WS] probeToc sparse failed, fallback full:', e);
+    }
+    console.log('[WS] probeToc mode full-fallback');
+    const all = await this.getChapterList(source, book, 0, false, null, true);
+    return this.fillProbeFromFull(probe, all, currentIndex, currentTitle);
+  }
+
+  /** nextTocUrl 首页即枚举全部剩余页：pageUrls[0]=第2页 …… pageUrls[last]=尾页，顺序即页码顺序。 */
+  private async probeEnumeratedPages(au: AnalyzeUrl, source: BookSource, book: Book,
+    head: BookChapter[], pageUrls: string[], currentIndex: number, currentTitle: string,
+    probe: MeasurementTocProbe): Promise<boolean> {
+    const lastPage = await this.fetchLiteTocPage(au, source, book, pageUrls[pageUrls.length - 1]);
+    if (!lastPage) return false;
+    const pageSize = head.length;
+    // 中间页按首页页容估算（真实分页页容一致），尾页用实测条数校准总数。
+    probe.totalCount = head.length + (pageUrls.length - 1) * pageSize + lastPage.chapters.length;
+    probe.latestChapter = lastPage.chapters[lastPage.chapters.length - 1];
+    if (currentIndex >= 0 && currentIndex >= head.length) {
+      const pageNo = Math.floor(currentIndex / pageSize); // 0-based：0=首页
+      const urlIndex = pageNo - 1;                        // pageUrls 下标（其 0 = 第2页）
+      const sliceStart = pageNo * pageSize;
+      if (urlIndex > pageUrls.length - 1) {
+        probe.currentChapter = null; // 已在尾页之后：确定未收录
+        return true;
+      }
+      let items: BookChapter[];
+      if (urlIndex === pageUrls.length - 1) {
+        items = lastPage.chapters;
+      } else {
+        const middlePage = await this.fetchLiteTocPage(au, source, book, pageUrls[urlIndex]);
+        if (!middlePage) return false;
+        items = middlePage.chapters;
+      }
+      const offset = currentIndex - sliceStart;
+      if (offset >= items.length) {
+        if (urlIndex === pageUrls.length - 1) {
+          probe.currentChapter = null; // 尾页条数不足：确实未收录
+          return true;
+        }
+        return false; // 中间页页容与估算冲突：回退保真
+      }
+      probe.currentChapter = this.pickChapterInSlice(items, sliceStart, currentTitle, currentIndex);
+    }
+    return true;
+  }
+
+  /** 只发现"下一页"时按分页模板直接跳尾页，并按需补当前章所在页。 */
+  private async probeJumpPages(au: AnalyzeUrl, source: BookSource, book: Book,
+    head: BookChapter[], template: TocPageTemplate, currentIndex: number, currentTitle: string,
+    probe: MeasurementTocProbe): Promise<boolean> {
+    const lastPage = await this.fetchLiteTocPage(au, source, book, template.lastUrl);
+    if (!lastPage) return false;
+    // 尾页终局校验：书源自己的 nextTocUrl 在尾页必须无下一页，否则发现的"尾页"是分页栏的假链接。
+    const tailNextUrls = await this.evaluateNextTocUrls(source, book, lastPage.body,
+      lastPage.baseUrl, new RuleContext(), null);
+    if (tailNextUrls.length > 0) return false;
+    const pageSize = head.length;
+    probe.totalCount = head.length +
+      (template.lastToken - template.page2Token) * pageSize + lastPage.chapters.length;
+    probe.latestChapter = lastPage.chapters[lastPage.chapters.length - 1];
+    if (currentIndex >= 0 && currentIndex >= head.length) {
+      const pageNo = Math.floor(currentIndex / pageSize); // 0-based：0=首页，1=第2页
+      const token = template.page2Token + (pageNo - 1);
+      const sliceStart = pageNo * pageSize;
+      if (token > template.lastToken) {
+        probe.currentChapter = null; // 已在尾页之后：确定未收录
+        return true;
+      }
+      if (token < template.page2Token) return false;
+      let items: BookChapter[];
+      if (token === template.lastToken) {
+        items = lastPage.chapters;
+      } else {
+        const middlePage = await this.fetchLiteTocPage(au, source, book,
+          template.prefix + token + template.suffix);
+        if (!middlePage) return false;
+        items = middlePage.chapters;
+      }
+      const offset = currentIndex - sliceStart;
+      if (offset >= items.length) {
+        if (token === template.lastToken) {
+          probe.currentChapter = null; // 尾页条数不足：确实未收录
+          return true;
+        }
+        return false; // 中间页页容与估算冲突：回退保真
+      }
+      probe.currentChapter = this.pickChapterInSlice(items, sliceStart, currentTitle, currentIndex);
+    }
+    return true;
+  }
+
+  /** 抓取并按 lite 字段解析单个目录页（测量专用，throwaway 规则上下文，与 Legado 子页语义一致）。 */
+  private async fetchLiteTocPage(au: AnalyzeUrl, source: BookSource, book: Book,
+    url: string): Promise<LiteTocPage | null> {
+    const resp = await this.fetchTocPage(au, source, url, null);
+    if (!resp || !resp.success || !resp.body) return null;
+    if (this.requestVerificationIfNeeded(source, url, resp.body, resp.statusCode,
+      source.tocRule.chapterList)) {
+      return null;
+    }
+    const baseUrl = BookUrlResolver.effectiveBase(resp, url, book.bookUrl || source.bookSourceUrl);
+    const pageCtx = new RuleContext();
+    const pageChapters = await this.parseTocPage(source, book, resp.body, url, baseUrl, pageCtx,
+      0, 0, null, false, true);
+    if (pageChapters.length === 0) return null;
+    const page = new LiteTocPage();
+    page.body = resp.body;
+    page.baseUrl = baseUrl;
+    page.chapters = pageChapters;
+    return page;
+  }
+
+  /**
+   * 从首页 HTML 分页栏发现尾页 URL 模板。
+   * 数字页码按"只有一个数字段变化、其余段（书 id 等）恒定"聚合成模板，且必须能渲染出
+   * 书源 nextTocUrl 规则给出的真实第 2 页 URL 才采信——页首"最新章节"区块的链接过不了这关。
+   * 尾页优先取 尾页/末页/last 锚点，没有就用数字页码组的最大 token。
+   */
+  private discoverLastPageTemplate(body: string, baseUrl: string, page2Url: string): TocPageTemplate | null {
+    if (!body || body.indexOf('<a') < 0) return null;
+    const tailTextRe = /^(尾页|末页|最后一页|最后页|last)$/i;
+    let tailHref = '';
+    const groups: Map<string, TocPageAnchorGroup> = new Map();
+    const anchorRe = /<a\b[^>]*?\bhref\s*=\s*["']?([^"'\s>]+)["']?[^>]*>([\s\S]*?)<\/a>/gi;
+    let anchorMatch: RegExpExecArray | null = null;
+    let guard = 0;
+    while ((anchorMatch = anchorRe.exec(body)) !== null && guard < 20000) {
+      guard++;
+      const text = anchorMatch[2].replace(/<[^>]*>/g, '').replace(/\s+/g, '').trim();
+      if (!text) continue;
+      const href = BookUrlResolver.resolve(anchorMatch[1], baseUrl);
+      if (!href || !/^https?:\/\//i.test(href)) continue;
+      if (!tailHref && tailTextRe.test(text)) tailHref = href;
+      if (/^\d{1,6}$/.test(text)) this.collectPageAnchorGroup(groups, href);
+    }
+    const normalizedPage2 = this.normalizePageUrl(page2Url);
+    // 选用能渲染出真实第 2 页、成员数 >=2 的数字页码组。
+    const reconciled = new ReconciledPageTemplate();
+    groups.forEach((group: TocPageAnchorGroup): void => {
+      if (reconciled.group || group.tokens.length < 2) return;
+      for (const token of group.tokens) {
+        if (this.normalizePageUrl(group.prefix + token + group.suffix) === normalizedPage2) {
+          reconciled.group = group;
+          reconciled.token = token;
+          break;
+        }
+      }
+    });
+    if (reconciled.group) {
+      const matchedGroup = reconciled.group;
+      const matchedToken = reconciled.token;
+      let lastToken = 0;
+      let lastUrl = '';
+      if (tailHref) {
+        const tailToken = this.readTemplateToken(matchedGroup, tailHref);
+        if (tailToken !== null && tailToken > matchedToken) {
+          lastToken = tailToken;
+          lastUrl = tailHref;
+        }
+      }
+      if (!lastUrl) {
+        lastToken = matchedGroup.maxToken();
+        lastUrl = matchedGroup.prefix + lastToken + matchedGroup.suffix;
+      }
+      if (lastToken <= matchedToken) return null;
+      const tpl = new TocPageTemplate();
+      tpl.prefix = matchedGroup.prefix;
+      tpl.suffix = matchedGroup.suffix;
+      tpl.page2Token = matchedToken;
+      tpl.lastToken = lastToken;
+      tpl.lastUrl = lastUrl;
+      return tpl;
+    }
+    // 没有成组数字页码、只有"尾页"锚点：从真实第 2 页与尾页 URL 的公共前后缀夹出唯一差异数字段。
+    if (tailHref && this.normalizePageUrl(tailHref) !== normalizedPage2) {
+      return this.buildTemplateFromPagePair(page2Url, tailHref);
+    }
+    return null;
+  }
+
+  private collectPageAnchorGroup(groups: Map<string, TocPageAnchorGroup>, href: string): void {
+    const runRe = /\d+/g;
+    const starts: number[] = [];
+    const ends: number[] = [];
+    const values: number[] = [];
+    let runMatch: RegExpExecArray | null;
+    while ((runMatch = runRe.exec(href)) !== null) {
+      starts.push(runMatch.index);
+      ends.push(runMatch.index + runMatch[0].length);
+      values.push(Number(runMatch[0]));
+    }
+    // 枚举"仅该数字段变化"的签名：其余数字段被夹在 prefix/suffix 里，组键天然要求它们恒定。
+    for (let j = 0; j < values.length; j++) {
+      const prefix = href.substring(0, starts[j]);
+      const suffix = href.substring(ends[j]);
+      const key = `${prefix}\u0000${suffix}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = new TocPageAnchorGroup();
+        group.prefix = prefix;
+        group.suffix = suffix;
+        groups.set(key, group);
+      }
+      group.addToken(values[j]);
+    }
+  }
+
+  private readTemplateToken(group: TocPageAnchorGroup, url: string): number | null {
+    if (url.startsWith(group.prefix) && url.endsWith(group.suffix) &&
+      url.length >= group.prefix.length + group.suffix.length + 1) {
+      const middle = url.substring(group.prefix.length, url.length - group.suffix.length);
+      if (/^\d+$/.test(middle)) return Number(middle);
+    }
+    return null;
+  }
+
+  private buildTemplateFromPagePair(page2Url: string, tailUrl: string): TocPageTemplate | null {
+    let prefixLen = 0;
+    while (prefixLen < page2Url.length && prefixLen < tailUrl.length &&
+      page2Url.charAt(prefixLen) === tailUrl.charAt(prefixLen)) {
+      prefixLen++;
+    }
+    let end2 = page2Url.length;
+    let endTail = tailUrl.length;
+    while (end2 > prefixLen && endTail > prefixLen &&
+      page2Url.charAt(end2 - 1) === tailUrl.charAt(endTail - 1)) {
+      end2--;
+      endTail--;
+    }
+    const mid2 = page2Url.substring(prefixLen, end2);
+    const midTail = tailUrl.substring(prefixLen, endTail);
+    if (!/^\d+$/.test(mid2) || !/^\d+$/.test(midTail)) return null;
+    const page2Token = Number(mid2);
+    const lastToken = Number(midTail);
+    if (lastToken <= page2Token) return null;
+    const tpl = new TocPageTemplate();
+    tpl.prefix = page2Url.substring(0, prefixLen);
+    tpl.suffix = page2Url.substring(end2);
+    tpl.page2Token = page2Token;
+    tpl.lastToken = lastToken;
+    tpl.lastUrl = tailUrl;
+    return tpl;
+  }
+
+  private normalizePageUrl(url: string): string {
+    let value = (url || '').split('#')[0];
+    value = value.replace(/\/index\.(html?|shtml|jsp|php)$/i, '/');
+    if (value.length > 1) value = value.replace(/\/+$/, '');
+    return value;
+  }
+
+  /** 在单个目录页切片内定位当前阅读章节：先按标题就近匹配（兼容合章/拆章），否则按序号偏移取。 */
+  private pickChapterInSlice(items: BookChapter[], sliceStart: number,
+    title: string, targetIndex: number): BookChapter | null {
+    const wanted = (title || '').trim();
+    if (wanted) {
+      let best: BookChapter | null = null;
+      let bestDistance = Number.MAX_SAFE_INTEGER;
+      for (let i = 0; i < items.length; i++) {
+        const itemTitle = items[i].title;
+        if (itemTitle && itemTitle.trim() === wanted) {
+          const distance = Math.abs(sliceStart + i - targetIndex);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            best = items[i];
+          }
+        }
+      }
+      if (best) return best;
+    }
+    const offset = targetIndex - sliceStart;
+    return offset >= 0 && offset < items.length ? items[offset] : null;
+  }
+
+  private fillProbeFromFull(probe: MeasurementTocProbe, chapters: BookChapter[],
+    currentIndex: number, currentTitle: string): MeasurementTocProbe {
+    probe.totalCount = chapters.length;
+    probe.latestChapter = chapters.length > 0 ? chapters[chapters.length - 1] : null;
+    probe.currentChapter = null;
+    if (currentIndex >= 0 && currentIndex <= chapters.length - 1) {
+      probe.currentChapter = this.pickChapterInSlice(chapters, 0, currentTitle, currentIndex);
+    }
+    return probe;
+  }
+
+  /**
+   * Parse one catalog page. Native chapterList rules go through the synchronous rule engine;
+   * <js>/@js list scripts run through the stage runtime. Legado executes the same chapterList
+   * rule on every paginated page, so callers must invoke this per page instead of only once.
+   */
+  private async parseTocPage(source: BookSource, book: Book, pageBody: string, pageUrl: string,
+    baseUrl: string, ctx: RuleContext, startIndex: number, maxItems: number,
+    debugContext: BookSourceDebugContext | null, reportScriptDiagnostics: boolean,
+    liteFields: boolean = false): Promise<BookChapter[]> {
+    const tocRule = source.tocRule;
+    const stageCode = this.stageRuleCode(tocRule.chapterList || '');
+    if (stageCode) {
+      const runtimeInput = this.stageDataUrlInput(tocRule.chapterList, pageUrl, pageBody);
+      const stageBaseUrl = EncodedSourceUrl.decode(pageUrl) ? pageUrl : baseUrl;
+      const runtimeList = await this.runStageRule(source, book, tocRule.chapterList,
+        runtimeInput, stageBaseUrl, SourceRuntimeStage.TOC, null,
+        EncodedSourceUrl.scalarVariables(pageUrl), debugContext);
+      if (runtimeList) {
+        const runtimeChapters = await this.parseStageChapterList(source, book, runtimeList, baseUrl,
+          maxItems, debugContext);
+        if (runtimeChapters.length > 0) return runtimeChapters;
+        if (reportScriptDiagnostics) {
+          AppStorage.setOrCreate('bookSourceStageLastError',
+            `目录脚本已返回内容，但没有转换出章节（返回 ${runtimeList.length} 字符）`);
+        }
+        return [];
+      }
+      if (reportScriptDiagnostics) {
+        const lastError = AppStorage.get<string>('bookSourceStageLastError') || '';
+        if (!lastError) AppStorage.setOrCreate('bookSourceStageLastError', '目录脚本返回空结果');
+      }
+      return [];
+    }
+    return await this.parseChapterPage(source, book, pageBody, baseUrl, ctx,
+      startIndex, maxItems, debugContext, liteFields);
+  }
+
+  /** Fetch a later catalog page. Transport failures must not discard the chapters already
+   *  collected from earlier pages; return null so the pagination loop stops gracefully. */
+  private async fetchTocPage(au: AnalyzeUrl, source: BookSource, url: string,
+    debugContext: BookSourceDebugContext | null): Promise<HttpResponse | null> {
+    try {
+      return EncodedSourceUrl.canHandle(url) ?
+        await this.fetchEncodedDataUrl(url, source) :
+        await au.fetch(url, undefined, debugContext);
+    } catch (e) {
+      console.warn('[WS] getChapterList next page failed:', url, e);
+      return null;
+    }
+  }
+
+  /**
+   * Evaluate ruleToc.nextTocUrl as a URL list (Legado AnalyzeRule.getStringList(rule, isUrl=true)).
+   * One URL drives sequential paging; several URLs drive a concurrent fan-out over all remaining
+   * pages. Plain selectors usually yield one URL; whole-pager selectors and JS arrays yield many.
+   */
+  private async evaluateNextTocUrls(source: BookSource, book: Book, content: string,
+    baseUrl: string, ctx: RuleContext,
+    debugContext: BookSourceDebugContext | null): Promise<string[]> {
+    const rawRule = source.tocRule.nextTocUrl || '';
+    if (!rawRule) return [];
+    const request = new RuleBatchExecutionRequest();
+    request.source = source;
+    request.book = book;
+    request.chapter = null;
+    request.readerActionMode = false;
+    request.stage = SourceRuntimeStage.TOC;
+    request.ownerId = `toc_next_${Date.now()}_${book.bookUrl}`;
+    request.typedContents = [RuleValue.fromExternal(content)];
+    request.contents = [content];
+    request.baseUrl = baseUrl;
+    request.contextValues = ctx.toPersistentRecord();
+    // listResult returns JSON.stringify(getStringList(rule)); URL resolution is applied per item
+    // below because the list branch intentionally ignores field.resolveUrl.
+    request.fields = [new RuleFieldRequest('value', rawRule, false, true)];
+    request.timeoutMs = 15000;
+    request.debugContext = debugContext;
+    try {
+      const batch = await RuleExecutionService.get().executeBatch(request);
+      if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[0]);
+      if (batch.errors.length > 0) {
+        console.warn('[WS] toc next urls error:', source.bookSourceName, batch.errors.join('; '));
+      }
+      if (batch.values.length === 0) return [];
+      const raw = batch.values[0]['value'] || '';
+      if (!raw) return [];
+      const parsed = this.parseStringListValue(raw);
+      const items = parsed.length > 0 ? parsed :
+        raw.split(/\r?\n/).map((item: string): string => item.trim()).filter((item: string): boolean => !!item);
+      const resolved: string[] = [];
+      for (const item of items) {
+        const url = BookUrlResolver.resolve(item, baseUrl);
+        if (url && resolved.indexOf(url) < 0) resolved.push(url);
+      }
+      return resolved;
+    } finally {
+      RuleExecutionService.get().clearOwner(request.ownerId);
+    }
+  }
+
+  /**
+   * Fetch and parse every URL returned at once by nextTocUrl, in URL-enumeration order so chapter
+   * ordering stays stable. Bounded to 8 workers; the per-source rate limiter and the stage-runtime
+   * host pool still cap real downstream parallelism. Each page uses a throwaway rule context,
+   * matching Legado's mapAsync branch which never merges child-page script variables.
+   */
+  private async fetchTocPagesInParallel(au: AnalyzeUrl, source: BookSource, book: Book, urls: string[],
+    sharedCtx: RuleContext, debugContext: BookSourceDebugContext | null,
+    liteFields: boolean = false): Promise<BookChapter[][]> {
+    const results: BookChapter[][] = [];
+    for (let i = 0; i < urls.length; i++) results.push([]);
+    let cursor = 0;
+    const workerCount = Math.min(urls.length, 8);
+    const parseOne = async (index: number): Promise<void> => {
+      const url = urls[index];
+      const pageResp = await this.fetchTocPage(au, source, url, debugContext);
+      if (!pageResp || !pageResp.success || !pageResp.body) return;
+      if (this.requestVerificationIfNeeded(source, url, pageResp.body, pageResp.statusCode,
+        source.tocRule.chapterList)) {
+        return;
+      }
+      const baseUrl = BookUrlResolver.effectiveBase(pageResp, url, book.bookUrl || source.bookSourceUrl);
+      const pageCtx = new RuleContext();
+      pageCtx.loadFromJson(sharedCtx.toPersistentJson());
+      const pageChapters = await this.parseTocPage(source, book, pageResp.body, url,
+        baseUrl, pageCtx, 0, 0, debugContext, false, liteFields);
+      results[index] = pageChapters;
+    };
+    const worker = async (): Promise<void> => {
+      while (cursor < urls.length) {
+        const index = cursor;
+        cursor++;
+        try {
+          await parseOne(index);
+        } catch (e) {
+          console.warn('[WS] getChapterList parallel page failed:', urls[index], e);
+        }
+      }
+    };
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < workerCount; i++) workers.push(worker());
+    await Promise.all(workers);
+    return results;
   }
 
   /**
@@ -426,12 +1077,14 @@ export class WebBookService {
 
   private async parseChapterPage(source: BookSource, book: Book, body: string, baseUrl: string,
     ctx: RuleContext, startIndex: number, maxItems: number = 0,
-    debugContext: BookSourceDebugContext | null = null): Promise<BookChapter[]> {
+    debugContext: BookSourceDebugContext | null = null,
+    liteFields: boolean = false): Promise<BookChapter[]> {
     const tocRule = source.tocRule;
     // A complete list script has already been attempted through ArkWeb by getChapterList. Never
     // retry it synchronously when it returned no usable chapters.
     if (this.stageRuleCode(tocRule.chapterList || '')) return [];
-    const rule = new AnalyzeRule(body, baseUrl, ctx);
+    // 目录页允许解析到 12MB：长目录完整页普遍超过正文场景的 4MB 防护上限。
+    const rule = new AnalyzeRule(body, baseUrl, ctx, TOC_HTML_PARSE_LENGTH);
     const matchedValues = rule.execute(tocRule.chapterList || '', RuleExecutionTarget.ELEMENTS);
     const itemValues = maxItems > 0 ? matchedValues.slice(0, maxItems) : matchedValues;
     const matchedItems = matchedValues.map((item: RuleValue): string => item.asString());
@@ -449,7 +1102,12 @@ export class WebBookService {
     fieldRequest.contents = items;
     fieldRequest.baseUrl = baseUrl;
     fieldRequest.contextValues = ctx.toPersistentRecord();
-    fieldRequest.fields = [
+    // 字数测量链路只关心章节名与地址：跳过 isVip/isPay/updateTime 三个字段规则，
+    // 长目录多页时每页少跑 3×章节数 条规则（JS 字段规则还要排队 ArkWeb 宿主）。
+    fieldRequest.fields = liteFields ? [
+      new RuleFieldRequest('chapterName', tocRule.chapterName || ''),
+      new RuleFieldRequest('chapterUrl', tocRule.chapterUrl || '')
+    ] : [
       new RuleFieldRequest('chapterName', tocRule.chapterName || ''),
       new RuleFieldRequest('chapterUrl', tocRule.chapterUrl || ''),
       new RuleFieldRequest('isVip', tocRule.isVip || ''),
@@ -1590,36 +2248,6 @@ export class WebBookService {
       const message = error instanceof Error ? error.message : String(error || '');
       AppStorage.setOrCreate('bookSourceStageLastError', `${stage} 阶段：${message || '脚本执行失败'}`);
       return '';
-    }
-  }
-
-  private async executeSingleRuleField(source: BookSource, book: Book, chapter: BookChapter | null,
-    rawRule: string, content: string, baseUrl: string, stage: string, ctx: RuleContext,
-    resolveUrl: boolean = false, debugContext: BookSourceDebugContext | null = null): Promise<string> {
-    if (!rawRule) return '';
-    const request = new RuleBatchExecutionRequest();
-    request.source = source;
-    request.book = book;
-    request.chapter = chapter;
-    request.readerActionMode = stage === SourceRuntimeStage.CONTENT;
-    request.stage = stage;
-    request.ownerId = `${stage}_field_${Date.now()}_${book.bookUrl}`;
-    request.typedContents = [RuleValue.fromExternal(content)];
-    request.contents = [content];
-    request.baseUrl = baseUrl;
-    request.contextValues = ctx.toPersistentRecord();
-    request.fields = [new RuleFieldRequest('value', rawRule, resolveUrl)];
-    request.timeoutMs = 15000;
-    request.debugContext = debugContext;
-    try {
-      const batch = await RuleExecutionService.get().executeBatch(request);
-      if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[0]);
-      if (batch.errors.length > 0) {
-        console.warn('[WS] single field error:', source.bookSourceName, stage, batch.errors.join('; '));
-      }
-      return batch.values.length > 0 ? batch.values[0]['value'] || '' : '';
-    } finally {
-      RuleExecutionService.get().clearOwner(request.ownerId);
     }
   }
 

@@ -7,6 +7,7 @@ import { RuleContext } from '../rule/RuleContext';
 import { ScriptCompatibility } from '../rule/ScriptCompatibility';
 import { JsRuntime } from '../rule/JsRuntime';
 import { VerificationSupport } from '../http/VerificationSupport';
+import { RateLimitAcquireHooks } from '../http/BookSourceRateLimiter';
 import { EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { BookUrlResolver } from './BookUrlResolver';
@@ -19,6 +20,8 @@ import { BookSourceStageRuleSupport } from './BookSourceStageRuleSupport';
 import { RuleExecutionService } from '../rule/RuleExecutionService';
 import { RuleBatchExecutionRequest, RuleFieldRequest } from '../rule/RuleExecutionModels';
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
+import { AsyncSemaphore } from '../concurrency/AsyncSemaphore';
+import { MainThreadParseGate } from '../concurrency/MainThreadParseGate';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
 import { BookSourceDebugContext } from './BookSourceDebugModels';
@@ -32,6 +35,14 @@ export interface SearchProgress {
   deltaResults?: SearchBook[];
   finished: boolean;
   status: string;
+  /** 本轮搜索中因超时/网络波动/服务器临时错误等临时失败的书源数；这些源不是规则问题，
+   *  可以重试，调用方据此决定是否展示"继续搜索重试"入口。 */
+  temporaryErrorCount: number;
+  /** 临时错误书源的 URL 列表，供调用方精准重试。 */
+  temporaryErrorUrls: string[];
+  /** 因书源 concurrentRate 限流排队达上限、请求未真正发出的书源数；
+   *  这类源不建议立刻重试（仍在限流窗内），与临时错误分开统计。 */
+  rateLimitedCount: number;
   needVerification?: boolean;
   verificationUrl?: string;
   verificationTitle?: string;
@@ -49,7 +60,18 @@ const MAX_VALIDATION_CONCURRENCY = 1;
 // Batch source results so background searching does not continuously interrupt list gestures.
 const SEARCH_PROGRESS_EMIT_INTERVAL_MS = 500;
 /** 单书源整体超时：防止死/慢书源永久占据 worker 导致并发数衰减到 0。 */
-const PER_SOURCE_TIMEOUT_MS = 20000;
+const PER_SOURCE_TIMEOUT_MS = 60000;
+/** 等待书源 concurrentRate 令牌的累计上限：超时后记"限流等待"独立状态，
+ *  不归类为可立即重试的临时错误，避免续搜立刻再次撞进同一个限流窗。 */
+const RATE_LIMIT_MAX_WAIT_MS = 60000;
+/** 单轮搜索同时在飞的原生 HTTP 请求硬上限，与 worker（URL 解析/规则执行并发）解耦。
+ *  实际在飞数跟随用户设置的搜索并发数（worker 可达数百），这里只做弱网/低端机硬保护；
+ *  超过该数量的请求在信号量上排队等待，而不是瞬间打满 TCP/TLS 握手槽导致误超时。 */
+const MAX_INFLIGHT_HTTP = 128;
+/** worker 启动错峰步长/上限：平滑 100 worker 同时启动时的 QuickJS 求值与连接突发。
+ *  错峰发生在单源超时计时开始之前，不占用 60s 网络预算。 */
+const SEARCH_START_STAGGER_STEP_MS = 10;
+const SEARCH_START_STAGGER_MAX_MS = 300;
 const MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_VALIDATION_RESPONSE_BYTES = 512 * 1024;
 const MAX_VALIDATION_STAGE_RESPONSE_BYTES = 512 * 1024;
@@ -75,6 +97,8 @@ export interface SearchOptions {
   excludeSourceUrls?: string[];
   maxResultsPerSource?: number;
   maxTotalResults?: number;
+  /** 攒够该数量的结果后提前收工，不再搜剩余书源；传 0 表示关闭提前收工、搜完全部书源。
+   *  未传时回落到 maxTotalResults（保持既有行为）。 */
   stopAfterResults?: number;
   maxCandidatesPerSource?: number;
   debugContext?: BookSourceDebugContext;
@@ -95,6 +119,61 @@ class SearchTextMatch {
   quality: number = 0;
 }
 
+/**
+ * 单源网络超时计时器：等待书源 concurrentRate 令牌期间可暂停倒计时，
+ * 保证 PER_SOURCE_TIMEOUT_MS 只覆盖真正的网络/解析阶段，不覆盖限流排队时间。
+ */
+class SourceAttemptTimer {
+  private timerId: number = -1;
+  private deadline: number;
+  private waitStartedAt: number = 0;
+  private cancelled: boolean = false;
+  private readonly timeoutMs: number;
+  private readonly onTimeout: () => void;
+
+  constructor(timeoutMs: number, onTimeout: () => void) {
+    this.timeoutMs = timeoutMs;
+    this.onTimeout = onTimeout;
+    this.deadline = Date.now() + timeoutMs;
+    this.arm(timeoutMs);
+  }
+
+  /** 进入限流排队：挂起倒计时。 */
+  pause(): void {
+    if (this.cancelled || this.timerId < 0) return;
+    clearTimeout(this.timerId);
+    this.timerId = -1;
+    this.waitStartedAt = Date.now();
+  }
+
+  /** 离开限流排队：把排队耗时从截止时间中扣除后继续计时。 */
+  resume(): void {
+    if (this.cancelled) return;
+    if (this.waitStartedAt > 0) {
+      this.deadline += Date.now() - this.waitStartedAt;
+      this.waitStartedAt = 0;
+    }
+    if (this.timerId < 0) {
+      this.arm(Math.max(0, this.deadline - Date.now()));
+    }
+  }
+
+  cancel(): void {
+    this.cancelled = true;
+    if (this.timerId >= 0) {
+      clearTimeout(this.timerId);
+      this.timerId = -1;
+    }
+  }
+
+  private arm(delayMs: number): void {
+    this.timerId = setTimeout(() => {
+      this.timerId = -1;
+      if (!this.cancelled) this.onTimeout();
+    }, delayMs);
+  }
+}
+
 export class SearchCoordinator {
   private static stageRuntimeOwnerSerial: number = 0;
   private http: HttpClient;
@@ -102,6 +181,11 @@ export class SearchCoordinator {
   private cancelled: boolean = false;
   private stageRuntimeOwnerId: string = '';
   private lastFailureReason: string = '';
+  /** 当前轮次每个 worker 独立的 HTTP 客户端：单源超时时可精准中止该源在途请求，
+   *  不影响其他 worker；cancel() 时统一中止全部。 */
+  private activeAttemptClients: Set<HttpClient> = new Set<HttpClient>();
+  /** 当前轮次的在飞 HTTP 信号量，cancel() 时一并唤醒排队者。 */
+  private activeGate: AsyncSemaphore | null = null;
 
   getLastFailureReason(): string {
     return this.lastFailureReason;
@@ -115,6 +199,12 @@ export class SearchCoordinator {
   cancel(): void {
     this.cancelled = true;
     this.http.cancelAll();
+    this.activeAttemptClients.forEach((client: HttpClient): void => {
+      client.cancelAll();
+    });
+    if (this.activeGate) {
+      this.activeGate.cancelAllWaiters();
+    }
     if (this.stageRuntimeOwnerId) {
       RuleExecutionService.get().cancelOwner(this.stageRuntimeOwnerId);
     }
@@ -147,19 +237,36 @@ export class SearchCoordinator {
       groupedSources.filter((source: BookSource): boolean => !excludedSourceUrls.has(source.bookSourceUrl || '')) :
       groupedSources;
     if (sources.length === 0) {
-      safeCallback({ done: 0, total: 0, results: [], finished: true, status: '没有符合设置的启用书源' });
+      safeCallback({
+        done: 0,
+        total: 0,
+        results: [],
+        finished: true,
+        status: '没有符合设置的启用书源',
+        temporaryErrorCount: 0,
+        temporaryErrorUrls: [],
+        rateLimitedCount: 0
+      });
       return [];
     }
-    // 置顶书源优先：把用户置顶的书源排到最前面先搜索（配合 stopAfterResults，
-    // 常见的换源场景会在前几个 pinned 源内就找到目标结果）。
+    // 置顶书源优先：合并书源管理的数据库置顶（source.isPinned）与换源面板的 URL 置顶，
+    // 任一致顶的书源都排到最前面先搜索（配合 stopAfterResults，常见的换源场景
+    // 会在前几个 pinned 源内就找到目标结果）；组内保持数据库已排好的 isPinned DESC + customOrder ASC 顺序。
     const pinnedRaw = AppStorage.get<string>('changeSourcePinnedSourceUrls') || '';
-    const pinnedUrls = new Set<string>(pinnedRaw.split('\n').map((u: string) => u.trim()).filter((u: string) => !!u));
-    if (pinnedUrls.size > 0) {
+    const changeSourcePinnedUrls = new Set<string>(pinnedRaw.split('\n')
+      .map((u: string) => u.trim()).filter((u: string) => !!u));
+    if (changeSourcePinnedUrls.size > 0 || sources.some((s: BookSource): boolean => s.isPinned)) {
       sources.sort((left: BookSource, right: BookSource): number => {
-        const leftPinned = pinnedUrls.has(left.bookSourceUrl || '') ? 0 : 1;
-        const rightPinned = pinnedUrls.has(right.bookSourceUrl || '') ? 0 : 1;
+        const leftPinned = (left.isPinned || changeSourcePinnedUrls.has(left.bookSourceUrl || '')) ? 0 : 1;
+        const rightPinned = (right.isPinned || changeSourcePinnedUrls.has(right.bookSourceUrl || '')) ? 0 : 1;
         if (leftPinned !== rightPinned) return leftPinned - rightPinned;
-        return 0;
+        // 组内保持数据库排序：isPinned DESC 在前 → customOrder ASC
+        const leftDbPinned = left.isPinned ? 0 : 1;
+        const rightDbPinned = right.isPinned ? 0 : 1;
+        if (leftDbPinned !== rightDbPinned) return leftDbPinned - rightDbPinned;
+        const leftOrder = left.customOrder || 0;
+        const rightOrder = right.customOrder || 0;
+        return leftOrder - rightOrder;
       });
     }
     const runtimeOwnerId = `search_${Date.now()}_${++SearchCoordinator.stageRuntimeOwnerSerial}`;
@@ -172,13 +279,26 @@ export class SearchCoordinator {
     let lastProgressEmitAt = 0;
     let currentSourceLabel = '';
     let pendingDeltaResults: SearchBook[] = [];
+    let temporaryErrorCount = 0;
+    const temporaryErrorUrls: string[] = [];
+    let rateLimitedCount = 0;
     const validationOnly = options.validationOnly === true;
     const totalResultLimit = validationOnly ? 0 : this.normalizedLimit(options.maxTotalResults,
       MAX_TOTAL_SEARCH_RESULTS, 1, MAX_TOTAL_SEARCH_RESULTS);
-    const stopAfterResults = validationOnly ? 0 : this.normalizedLimit(options.stopAfterResults,
-      totalResultLimit, 1, totalResultLimit);
+    // 未显式传 stopAfterResults 时回落到 maxTotalResults，等于"结果攒够上限就提前收工"。
+    // 换源面板传 0 表示明确关闭提前收工：结果数仍受 totalResultLimit 限制，
+    // 但本轮会把全部启用书源搜完，done === total，"搜索完成"即彻底结束。
+    const stopAfterResults = validationOnly ? 0 :
+      (options.stopAfterResults === 0 ? 0 :
+        this.normalizedLimit(options.stopAfterResults, totalResultLimit, 1, totalResultLimit));
     const effectiveConcurrency = validationOnly ? Math.min(this.concurrency, MAX_VALIDATION_CONCURRENCY) : this.concurrency;
     const workerCount = Math.min(effectiveConcurrency, sources.length);
+    // 在飞 HTTP 信号量：解析 worker 可以很多（URL 模板/规则求值互相不抢网络），
+    // 在飞上限跟随用户设置的搜索并发数，仅用 MAX_INFLIGHT_HTTP 做硬夹取；弱网下握手/连接槽
+    // 仍有边界，而高并发设置（如 999）不再被此前硬编码的 32 人为压成 32 路。
+    const inflightLimit = Math.max(1, Math.min(effectiveConcurrency, MAX_INFLIGHT_HTTP));
+    const httpGate = new AsyncSemaphore(Math.min(inflightLimit, workerCount));
+    this.activeGate = httpGate;
 
     const emitProgress = (force: boolean = false): void => {
       const now = Date.now();
@@ -192,6 +312,9 @@ export class SearchCoordinator {
       pendingDeltaResults = [];
       const sortedResults = validationOnly ? [] : this.filterAndSortSearchResults(all, keyword, options);
       displayResultCount = sortedResults.length;
+      const sourceLabel = currentSourceLabel || '准备中';
+      const errorTag = temporaryErrorCount > 0 ? `，${temporaryErrorCount} 个源超时或失败` : '';
+      const rateLimitTag = rateLimitedCount > 0 ? `，${rateLimitedCount} 个源访问限流` : '';
       safeCallback({
         done: done, total: sources.length,
         results: finished ? sortedResults : [],
@@ -199,15 +322,25 @@ export class SearchCoordinator {
         deltaResults: validationOnly ? [] : deltaResults,
         finished: finished,
         status: verifyUrl ?
-          `已搜索 ${done}/${sources.length}，当前：${currentSourceLabel || '准备中'}，找到 ${displayResultCount} 本；有书源需要网页验证` :
-          `已搜索 ${done}/${sources.length}，当前：${currentSourceLabel || '准备中'}，找到 ${displayResultCount} 本`,
+          `已搜索 ${done}/${sources.length}，当前：${sourceLabel}，找到 ${displayResultCount} 本${errorTag}${rateLimitTag}；有书源需要网页验证` :
+          `已搜索 ${done}/${sources.length}，当前：${sourceLabel}，找到 ${displayResultCount} 本${errorTag}${rateLimitTag}`,
+        temporaryErrorCount: temporaryErrorCount,
+        temporaryErrorUrls: temporaryErrorUrls.slice(),
+        rateLimitedCount: rateLimitedCount,
         needVerification: verifyUrl.length > 0,
         verificationUrl: verifyUrl,
         verificationTitle: AppStorage.get<string>('pendingVerificationTitle') || '网页验证'
       });
     };
 
-    const runWorker = async (): Promise<void> => {
+    const runWorker = async (workerIndex: number): Promise<void> => {
+      // 启动错峰：避免上百 worker 同时做 URL 求值并瞬时尝试建连上百条连接。
+      // 错峰在单源超时计时之前完成，不消耗任何书源的 60s 网络预算。
+      const staggerMs = Math.min(workerIndex * SEARCH_START_STAGGER_STEP_MS, SEARCH_START_STAGGER_MAX_MS);
+      if (staggerMs > 0) {
+        await this.delay(staggerMs);
+        if (this.cancelled) return;
+      }
       while (!this.cancelled) {
         if (!validationOnly && stopAfterResults > 0 && all.length >= stopAfterResults) break;
         const sourceIndex = nextIndex;
@@ -217,7 +350,17 @@ export class SearchCoordinator {
         currentSourceLabel = sources[sourceIndex].bookSourceName || `书源 ${sourceIndex + 1}`;
         AppStorage.setOrCreate('searchLastSource', currentSourceLabel);
         AppStorage.setOrCreate('searchLastSourceIndex', sourceIndex + 1);
-        const sourceResult = await this.searchOneWithTimeout(sources[sourceIndex], keyword, options);
+        const sourceResult = await this.searchOneWithTimeout(sources[sourceIndex], keyword, options, httpGate);
+        if (sourceResult.validationStatus === BookSource.VALIDATION_TEMPORARY_ERROR) {
+          temporaryErrorCount++;
+          const url = sources[sourceIndex].bookSourceUrl || '';
+          if (url && !temporaryErrorUrls.includes(url)) {
+            temporaryErrorUrls.push(url);
+          }
+        } else if (sourceResult.validationStatus === BookSource.VALIDATION_RATE_LIMITED) {
+          // 限流源本轮算"已处理"，不进临时错误列表：立刻续搜只会再次撞进同一限流窗。
+          rateLimitedCount++;
+        }
         if (sourceResult.books.length === 0 && sourceResult.reason && sourceResult.reason !== '未搜索到结果') {
           this.lastFailureReason = `${sources[sourceIndex].bookSourceName || '书源'}：${sourceResult.reason}`;
         }
@@ -245,7 +388,7 @@ export class SearchCoordinator {
 
     const workers: Promise<void>[] = [];
     for (let i = 0; i < workerCount; i++) {
-      workers.push(runWorker());
+      workers.push(runWorker(i));
     }
     try {
       await Promise.all(workers);
@@ -257,10 +400,12 @@ export class SearchCoordinator {
       VerificationSupport.clearVerification();
       RuleExecutionService.get().clearOwner(runtimeOwnerId);
       if (this.stageRuntimeOwnerId === runtimeOwnerId) this.stageRuntimeOwnerId = '';
+      if (this.activeGate === httpGate) this.activeGate = null;
     }
   }
 
-  private async searchOne(source: BookSource, keyword: string, options: SearchOptions): Promise<SearchSourceResult> {
+  private async searchOne(source: BookSource, keyword: string, options: SearchOptions,
+    attemptHttp: HttpClient, rateLimitHooks: RateLimitAcquireHooks): Promise<SearchSourceResult> {
     const debugContext = options.debugContext;
     if (debugContext) debugContext.beginStep(SourceRuntimeStage.SEARCH, `搜索：${keyword}`);
     let debugPassed = false;
@@ -304,19 +449,24 @@ export class SearchCoordinator {
       js.setVar('searchKeyRaw', keyword);
       js.setVar('page', '1');
 
-      const au = new AnalyzeUrl(source, this.http).setCancelCheck(() => this.cancelled);
+      const au = new AnalyzeUrl(source, attemptHttp).setCancelCheck(() => this.cancelled)
+        .setRateLimitHooks(rateLimitHooks);
       let urlTemplate = await this.evalAndBuild(js, source, keyword, responseLimit,
-        options.validationOnly === true, debugContext || null);
+        options.validationOnly === true, debugContext || null, attemptHttp);
       if (!urlTemplate) {
         return this.sourceResult([], BookSource.VALIDATION_FAILED, '搜索地址无法解析');
       }
       if (ENABLE_SEARCH_DEBUG_LOG) {
         console.log('[SC] search source:', source.bookSourceName);
       }
-      const resp = EncodedSourceUrl.canHandle(urlTemplate) ?
-        await this.fetchEncodedDataUrl(urlTemplate, source, responseLimit) :
+      const resp: HttpResponse = EncodedSourceUrl.canHandle(urlTemplate) ?
+        await this.fetchEncodedDataUrl(urlTemplate, source, responseLimit, attemptHttp) :
           await au.fetch(urlTemplate, responseLimit, debugContext || null);
       if (debugContext) debugContext.setOutput('searchUrl', urlTemplate);
+      if (resp.rateLimited === true) {
+        return this.sourceResult([], BookSource.VALIDATION_RATE_LIMITED,
+          '书源访问频率受限（concurrentRate），请稍后再试');
+      }
       if (this.cancelled) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
@@ -339,6 +489,15 @@ export class SearchCoordinator {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '服务器返回空响应');
       }
 
+      // 主线程解析准入：网络并发可达上百路，但列表抽取/字段规则解析/结果装配都在唯一的 JS
+      // 主线程执行。响应突发到达时若所有 worker 同时解析，各自的 setTimeout 让步会被原生
+      // 事件循环合并进同一个 uv_timer_task，形成连续 6s+ 的微任务链触发 appfreeze。只放行
+      // 固定数量的解析流水线，许可交接强制跨帧，给 vsync/输入/IO 留出可观察空档。
+      const parseGranted = await MainThreadParseGate.get().acquire((): boolean => this.cancelled);
+      if (!parseGranted || this.cancelled) {
+        return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
+      }
+      try {
       const baseUrl = BookUrlResolver.effectiveBase(resp, urlTemplate, source.bookSourceUrl);
       const rule = new AnalyzeRule(resp.body, baseUrl);
       this.seedSourceVariables(rule.getContext(), source);
@@ -547,6 +706,9 @@ export class SearchCoordinator {
         return this.sourceResult([], BookSource.VALIDATION_FAILED, '搜索规则未能解析出有效书名和详情地址');
       }
       return this.sourceResult([], BookSource.VALIDATION_NO_RESULTS, '未搜索到结果');
+      } finally {
+        MainThreadParseGate.get().release();
+      }
     } catch (e) {
       if (ENABLE_SEARCH_DEBUG_LOG) {
         console.error('[SC] search failed:', source.bookSourceName, e);
@@ -569,26 +731,57 @@ export class SearchCoordinator {
     };
   }
 
-  /** 给 searchOne 包一层整体超时，防止死/慢书源永久占据 worker 导致并发数衰减到 0。 */
+  /** 给 searchOne 包一层整体超时，防止死/慢书源永久占据 worker 导致并发数衰减到 0。
+   *  每个源使用独立 HttpClient：超时后只中止当前源的在途原生请求，不影响同轮其他 worker；
+   *  等待书源 concurrentRate 令牌的时间通过 hooks 暂停计时，不计入 60s 网络预算。 */
   private async searchOneWithTimeout(source: BookSource, keyword: string,
-    options: SearchOptions): Promise<SearchSourceResult> {
-    let timerId = -1;
+    options: SearchOptions, httpGate: AsyncSemaphore): Promise<SearchSourceResult> {
     let timedOut = false;
+    let attemptFinished = false;
+    // abortCheck 保证排队等信号量/刚拿到许可时若已取消或超时，不再发出新请求。
+    const attemptHttp = new HttpClient(8000, httpGate, () => this.cancelled || attemptFinished);
+    this.activeAttemptClients.add(attemptHttp);
+    let timer: SourceAttemptTimer | null = null;
+    const rateLimitHooks: RateLimitAcquireHooks = {
+      maxWaitMs: RATE_LIMIT_MAX_WAIT_MS,
+      onWaitingChange: (waiting: boolean): void => {
+        if (!timer) return;
+        if (waiting) {
+          timer.pause();
+        } else {
+          timer.resume();
+        }
+      }
+    };
     const timeout = new Promise<SearchSourceResult>((resolve) => {
-      timerId = setTimeout(() => {
+      timer = new SourceAttemptTimer(PER_SOURCE_TIMEOUT_MS, () => {
         timedOut = true;
+        attemptFinished = true;
+        // 立刻销毁该源在途原生请求释放连接槽；仍在信号量排队的请求由 abortCheck 直接放行取消。
+        attemptHttp.cancelAll();
         resolve(this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '搜索超时'));
-      }, PER_SOURCE_TIMEOUT_MS);
+      });
     });
     try {
-      const result = await Promise.race([this.searchOne(source, keyword, options), timeout]);
+      const result = await Promise.race([
+        this.searchOne(source, keyword, options, attemptHttp, rateLimitHooks),
+        timeout
+      ]);
       if (timedOut) {
-        console.warn('[SC] source timed out, releasing worker:', source.bookSourceName);
+        console.warn('[SC] source timed out, in-flight requests aborted:', source.bookSourceName);
       }
       return result;
     } finally {
-      if (timerId >= 0) clearTimeout(timerId);
+      attemptFinished = true;
+      if (timer) timer.cancel();
+      this.activeAttemptClients.delete(attemptHttp);
     }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise<void>((resolve): void => {
+      setTimeout(resolve, ms);
+    });
   }
 
   private validationHttpFailure(response: HttpResponse): SearchSourceResult {
@@ -1101,7 +1294,7 @@ export class SearchCoordinator {
 
   private async evalAndBuild(js: JsRuntime, source: BookSource, keyword: string,
     maxResponseBytes: number, validationOnly: boolean,
-    debugContext: BookSourceDebugContext | null = null): Promise<string> {
+    debugContext: BookSourceDebugContext | null, attemptHttp: HttpClient): Promise<string> {
     const searchUrl = source.searchUrl;
     const baseUrl = source.bookSourceUrl;
     if (!searchUrl) return `${baseUrl}/search?q={{key}}`;
@@ -1121,7 +1314,8 @@ export class SearchCoordinator {
       (searchUrl.includes('{{') && searchRuntimeDecision.runtime === 'arkweb');
     const stageUrl = await this.tryBuildStageRuntimeSearchUrl(source, keyword, validationOnly, debugContext);
     if (stageUrl) return stageUrl;
-    const scriptedFormUrl = await this.tryBuildScriptedFormSearchUrl(source, keyword, maxResponseBytes);
+    const scriptedFormUrl = await this.tryBuildScriptedFormSearchUrl(source, keyword,
+      maxResponseBytes, attemptHttp);
     if (scriptedFormUrl) return scriptedFormUrl;
     const buildRequestUrl = BookSourceDataUrlSupport.buildRequestUrl(source, searchUrl, '1', keyword);
     if (buildRequestUrl) return buildRequestUrl;
@@ -1293,7 +1487,7 @@ export class SearchCoordinator {
   }
 
   private async tryBuildScriptedFormSearchUrl(source: BookSource, keyword: string,
-    maxResponseBytes: number): Promise<string> {
+    maxResponseBytes: number, attemptHttp: HttpClient): Promise<string> {
     const script = source.searchUrl || '';
     if (!script.startsWith('@js:') || !script.includes('java.ajax') || !script.includes('input[name=act]')) {
       return '';
@@ -1303,7 +1497,7 @@ export class SearchCoordinator {
     const appendPath = this.extractAppendedPath(script);
     if (!formBaseUrl || !appendPath) return '';
 
-    const resp = await this.http.execute({
+    const resp = await attemptHttp.execute({
       url: formBaseUrl,
       method: 'GET',
       headers: this.parseSourceHeaders(source.header),
@@ -1364,8 +1558,8 @@ export class SearchCoordinator {
   }
 
   private async fetchEncodedDataUrl(url: string, source: BookSource,
-    maxResponseBytes: number): Promise<{ url: string, statusCode: number, headers: Record<string, string>, body: string, success: boolean, error?: string }> {
-    const root = await EncodedSourceUrl.requestJsonForDataUrl(this.http, url, source, maxResponseBytes);
+    maxResponseBytes: number, attemptHttp: HttpClient): Promise<HttpResponse> {
+    const root = await EncodedSourceUrl.requestJsonForDataUrl(attemptHttp, url, source, maxResponseBytes);
     if (!root) {
       return { url: url, statusCode: 0, headers: {}, body: '', success: false, error: 'encoded data url request failed' };
     }

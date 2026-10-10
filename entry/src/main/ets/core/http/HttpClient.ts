@@ -4,6 +4,7 @@ import { CookieStore } from './CookieStore';
 import { TlsTrustStore } from './TlsTrustStore';
 import { WebBookFetchRuntime } from '../book/WebBookFetchRuntime';
 import { BookSourceDebugContext, BookSourceDebugNetworkTrace } from '../book/BookSourceDebugModels';
+import { AsyncSemaphore } from '../concurrency/AsyncSemaphore';
 
 export interface HttpRequest {
   url: string;
@@ -32,6 +33,8 @@ export interface HttpResponse {
   body: string;
   success: boolean;
   error?: string;
+  /** 请求因书源 concurrentRate 限流、等待达上限而未真正发出。 */
+  rateLimited?: boolean;
 }
 
 export interface HttpBinaryResponse {
@@ -46,6 +49,10 @@ export interface HttpBinaryResponse {
 export class HttpClient {
   private timeout: number;
   private activeClients: Set<http.HttpRequest> = new Set<http.HttpRequest>();
+  /** 可选的在飞请求信号量：搜索场景下把"解析 worker 数"与"实际在飞 HTTP 数"解耦。 */
+  private gate: AsyncSemaphore | null;
+  /** 排队期间/拿到许可瞬间的取消检查，避免取消或超时后仍发出新请求。 */
+  private abortCheck: (() => boolean) | null;
   private defaultHeaders: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': '*/*',
@@ -53,11 +60,43 @@ export class HttpClient {
     'Connection': 'keep-alive'
   };
 
-  constructor(timeout: number = 8000) {
+  constructor(timeout: number = 8000, gate?: AsyncSemaphore, abortCheck?: () => boolean) {
     this.timeout = timeout;
+    this.gate = gate || null;
+    this.abortCheck = abortCheck || null;
   }
 
   async execute(req: HttpRequest): Promise<HttpResponse> {
+    // 信号量只在请求真正发出前排队：100 个解析 worker 最多有 gate.maxPermits 个请求同时在飞，
+    // 弱网/高并发下不会一次性压出上百条 TCP/TLS 握手。
+    if (this.gate) {
+      const gate = this.gate;
+      const acquired = await gate.acquire(this.abortCheck || undefined);
+      if (!acquired || (this.abortCheck && this.abortCheck())) {
+        if (acquired) gate.release();
+        return this.cancelledResponse(req);
+      }
+      try {
+        return await this.executeTracked(req);
+      } finally {
+        gate.release();
+      }
+    }
+    return await this.executeTracked(req);
+  }
+
+  private cancelledResponse(req: HttpRequest): HttpResponse {
+    return {
+      url: req.url || '',
+      statusCode: 0,
+      headers: {},
+      body: '',
+      success: false,
+      error: '请求已取消'
+    };
+  }
+
+  private async executeTracked(req: HttpRequest): Promise<HttpResponse> {
     const startedAt = Date.now();
     let response: HttpResponse;
     try {
@@ -110,8 +149,8 @@ export class HttpClient {
       return await this.executeWithProtocol(req, true);
     }
     if (!response.success && !req.noTimeoutRetry && this.shouldRetryTimeout(req, response.error || '')) {
-      // 幂等重试天花板缩到 15s：配合 SearchCoordinator 的 per-source 20s 超时，
-      // 避免单个搜索 worker 在死源上被阻塞超过 35s。
+      // 幂等重试天花板缩到 15s：配合 SearchCoordinator 的 per-source 60s 超时，
+      // 避免单个搜索 worker 在死源上被阻塞超过 75s（限流排队时间不计入该预算）。
       const retryTimeout = Math.min(15000, Math.max(this.timeout * 2, 10000));
       console.info('[HttpClient] idempotent request timed out; retrying once:', this.hostForLog(req.url));
       return await this.executeWithProtocol({

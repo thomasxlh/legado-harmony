@@ -9,7 +9,15 @@ import { BookUrlResolver } from '../book/BookUrlResolver';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 import { RuleExecutionTarget, RuleValue, RuleValueKind } from './RuleValue';
 
+/** 普通规则（正文/详情等）解析大 HTML 的 OOM 防护上限。 */
 const MAX_HTML_PARSE_LENGTH = 4 * 1024 * 1024;
+/**
+ * 目录页解析上限：完整长目录（800-2000 章 + 站点脚本/样式/推荐位）实测可达 5-9MB。
+ * Legado(Jsoup) 对目录体积没有限制；若沿用 4MB 上限，chapterList 会静默匹配 0 条，
+ * 随后 getChapterList 走通用链接兜底，抓出来的恰恰是详情页上的"最新 20-30 章"。
+ * 目录入口明确知道自己在解析目录，使用更宽的 12MB 上限。
+ */
+export const TOC_HTML_PARSE_LENGTH = 12 * 1024 * 1024;
 
 export class AnalyzeRule {
   private content: string = '';
@@ -17,11 +25,14 @@ export class AnalyzeRule {
   private ctx: RuleContext;
   private js: JsRuntime;
   private scriptEngine: ScriptEngine;
+  private readonly maxParseLength: number;
 
-  constructor(content: string = '', baseUrl: string = '', ctx?: RuleContext) {
+  constructor(content: string = '', baseUrl: string = '', ctx?: RuleContext,
+    maxParseLength: number = 0) {
     this.content = content;
     this.baseUrl = baseUrl;
     this.ctx = ctx || new RuleContext();
+    this.maxParseLength = maxParseLength > 0 ? maxParseLength : MAX_HTML_PARSE_LENGTH;
     this.js = new JsRuntime();
     this.js.setVar('baseUrl', baseUrl);
     this.scriptEngine = new ScriptEngine(this.js);
@@ -106,7 +117,13 @@ export class AnalyzeRule {
     const reverse = elementRule.startsWith('-') && elementRule.length > 1;
     if (reverse) elementRule = elementRule.substring(1).trim();
     // 防止超大 HTML 进入正则/CSS 解析，但 JSON 接口列表仍需要正常走 JSONPath。
-    if (this.content.length > MAX_HTML_PARSE_LENGTH && !this.isJsonPathLikeRule(elementRule)) return [];
+    // 命中上限时必须告警：静默返回 [] 会让调用方误以为"规则没匹配到"，目录场景会进一步
+    // 退化成通用链接兜底（只剩页面上的最新 20-30 章），极难排查。
+    if (this.content.length > this.maxParseLength && !this.isJsonPathLikeRule(elementRule)) {
+      console.warn('[AnalyzeRule] skip parsing: content length', this.content.length,
+        'exceeds limit', this.maxParseLength, 'rule:', elementRule.substring(0, 120));
+      return [];
+    }
     const jsElements = this.evalJsElementsRule(elementRule)
       .map((item: string): RuleValue => this.classifyValue(item, RuleValueKind.JS_VALUE));
     if (jsElements.length > 0) return reverse ? jsElements.reverse() : jsElements;
@@ -1627,9 +1644,12 @@ export class AnalyzeRule {
   }
 
   private matchElements(sel: string): string[] {
-    // 防止大内容导致 OOM
-    const MAX_LEN = MAX_HTML_PARSE_LENGTH;
-    if (this.content.length > MAX_LEN) return [];
+    // 防止大内容导致 OOM（目录入口可通过构造参数放宽到 TOC_HTML_PARSE_LENGTH）
+    if (this.content.length > this.maxParseLength) {
+      console.warn('[AnalyzeRule] skip CSS match: content length', this.content.length,
+        'exceeds limit', this.maxParseLength, 'selector:', sel.substring(0, 120));
+      return [];
+    }
 
     sel = this.normalizeCssSelector(this.stripJsWrapper(sel).trim());
     const groups = this.splitSelectorGroups(sel);

@@ -9,6 +9,7 @@ import { CoverUrlNormalizer } from './CoverUrlNormalizer';
 import { BookFieldSanitizer } from './BookFieldSanitizer';
 import { SearchExplorePendingBook } from './SearchExplorePendingBook';
 import { AppThemeSettingsStore } from './AppThemeSettingsStore';
+import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { HdsFeedback } from './HdsFeedback';
 
@@ -60,11 +61,12 @@ export class SearchBookShelfHelper {
   }
 
   static buttonColor(book: SearchBook, shelfBookKeys: string[], busyBookKeys: string[]): string {
+    const darkMode = AppStorage.get<boolean>('appDarkMode') || false;
     if (SearchBookShelfHelper.isBusy(book, busyBookKeys)) {
       return '#8A8F98';
     }
-    return SearchBookShelfHelper.isInShelf(book, shelfBookKeys) ? '#E53935' :
-      AppThemeSettingsStore.buttonColor(AppStorage.get<boolean>('appDarkMode') || false);
+    return SearchBookShelfHelper.isInShelf(book, shelfBookKeys) ? ThemeRuntime.dangerColor(darkMode) :
+      AppThemeSettingsStore.buttonColor(darkMode);
   }
 
   static withAddedKey(keys: string[], key: string): string[] {

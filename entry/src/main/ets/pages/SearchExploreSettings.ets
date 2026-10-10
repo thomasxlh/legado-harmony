@@ -16,6 +16,8 @@ struct SearchExploreSettingsPage {
   @StorageLink('searchExploreExactSearchMatchAuthor') searchExploreExactSearchMatchAuthor: boolean = true;
   @StorageLink('searchExploreShowSearchProgress') searchExploreShowSearchProgress: boolean = true;
   @StorageLink('searchExploreSearchConcurrency') searchExploreSearchConcurrency: number = 100;
+  /** 攒够该数量的搜索结果就提前收工；0 表示搜完全部书源。 */
+  @StorageLink('searchExploreStopAfterResults') searchExploreStopAfterResults: number = 0;
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
@@ -100,8 +102,13 @@ struct SearchExploreSettingsPage {
               this.onSettingChanged();
             })
           this.numberSettingItem('搜索并发数', '控制书籍检索、书源校验和换源同时并发请求的数量',
-            1, (value: number) => {
+            this.searchExploreSearchConcurrency, 1, 999, (value: number) => {
               this.searchExploreSearchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(value);
+              this.onSettingChanged();
+            })
+          this.numberSettingItem('提前结束搜索', '搜到该数量的结果后不再搜索剩余书源，加快换源与搜索；0 表示搜完全部书源',
+            this.searchExploreStopAfterResults, 0, 300, (value: number) => {
+              this.searchExploreStopAfterResults = SearchExploreSettingsStore.normalizeStopAfterResults(value);
               this.onSettingChanged();
             })
           }
@@ -140,6 +147,7 @@ struct SearchExploreSettingsPage {
       this.searchExploreExactSearchMatchAuthor = settings.exactSearchMatchAuthor;
       this.searchExploreShowSearchProgress = settings.showSearchProgress;
       this.searchExploreSearchConcurrency = settings.searchConcurrency;
+      this.searchExploreStopAfterResults = settings.stopAfterResults;
     } catch (e) {
       console.warn('重新加载搜索/发现配置失败:', e);
     }
@@ -156,6 +164,7 @@ struct SearchExploreSettingsPage {
       settings.exactSearchMatchAuthor = this.searchExploreExactSearchMatchAuthor;
       settings.showSearchProgress = this.searchExploreShowSearchProgress;
       settings.searchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(this.searchExploreSearchConcurrency);
+      settings.stopAfterResults = SearchExploreSettingsStore.normalizeStopAfterResults(this.searchExploreStopAfterResults);
       SearchExploreSettingsStore.applyToStorage(settings);
       return SearchExploreSettingsStore.save(getContext(this), settings);
     }).catch((e: Error) => {
@@ -247,7 +256,8 @@ struct SearchExploreSettingsPage {
   }
 
   @Builder
-  numberSettingItem(title: string, desc: string, minValue: number, onChange: (value: number) => void) {
+  numberSettingItem(title: string, desc: string, value: number, minValue: number, maxValue: number,
+    onChange: (value: number) => void) {
     Row() {
       Column() {
         Text(title)
@@ -269,11 +279,11 @@ struct SearchExploreSettingsPage {
           .height(30)
           .textAlign(TextAlign.Center)
           .onClick(() => {
-            onChange(Math.max(minValue, this.searchExploreSearchConcurrency - 1));
+            onChange(Math.max(minValue, value - 1));
           })
 
         TextInput({
-          text: `${this.searchExploreSearchConcurrency}`,
+          text: `${value}`,
         })
           .type(InputType.Number)
           .width(56)
@@ -285,10 +295,11 @@ struct SearchExploreSettingsPage {
           .backgroundColor(this.appDarkMode ? '#24FFFFFF' : '#14000000')
           .borderRadius(8)
           .padding({ left: 4, right: 4 })
-          .onChange((value: string) => {
-            const parsed = Number.parseInt(value, 10);
+          .onChange((text: string) => {
+            // 允许清空输入框再输入：空串按 0 处理（提前收工阈值 0 是合法值）。
+            const parsed = text.trim() === '' ? 0 : Number.parseInt(text, 10);
             if (!Number.isNaN(parsed)) {
-              onChange(parsed);
+              onChange(Math.min(maxValue, Math.max(minValue, parsed)));
             }
           })
 
@@ -299,7 +310,7 @@ struct SearchExploreSettingsPage {
           .height(30)
           .textAlign(TextAlign.Center)
           .onClick(() => {
-            onChange(this.searchExploreSearchConcurrency + 1);
+            onChange(Math.min(maxValue, value + 1));
           })
       }
       .height(32)

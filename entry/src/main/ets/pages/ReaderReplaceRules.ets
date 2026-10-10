@@ -712,7 +712,7 @@ struct ReaderReplaceRulesPage {
       Column() {
         Text(rule.enabled ? '已启用' : '已禁用')
           .fontSize(12)
-          .fontColor(rule.enabled ? '#1E8E3E' : this.subTextColor())
+          .fontColor(rule.enabled ? this.successColor() : this.subTextColor())
       }
       .alignItems(HorizontalAlign.End)
       .margin({ left: 12 })
@@ -758,7 +758,7 @@ struct ReaderReplaceRulesPage {
         .alignItems(HorizontalAlign.Start)
         Text(this.previewSummaryText())
           .fontSize(12)
-          .fontColor(this.previewEffectiveCount() > 0 ? '#1E8E3E' : this.subTextColor())
+          .fontColor(this.previewEffectiveCount() > 0 ? this.successColor() : this.subTextColor())
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -848,9 +848,9 @@ struct ReaderReplaceRulesPage {
 
   ruleEffectColor(rule: ReaderReplaceRule): string {
     const state = this.ruleEffectCheck(rule).state;
-    if (state === 'effective') return '#1E8E3E';
-    if (state === 'invalid') return '#E53935';
-    if (state === 'matched') return '#D17A00';
+    if (state === 'effective') return this.successColor();
+    if (state === 'invalid') return this.dangerColor();
+    if (state === 'matched') return this.warningColor();
     return this.subTextColor();
   }
 
@@ -943,7 +943,7 @@ struct ReaderReplaceRulesPage {
         .height(42)
         .margin({ left: 8 })
         .enabled(this.selectedRuleIds.length > 0 && !this.isBatchOperating)
-        .backgroundColor('#E53935')
+        .backgroundColor(this.dangerColor())
         .fontColor('#FFFFFF')
         .onClick(() => this.batchDeleteRules())
       Button('更多')
@@ -1238,7 +1238,7 @@ struct ReaderReplaceRulesPage {
           this.closeRuleActions();
           if (rule) this.enterRuleSelectionMode(rule.id);
         })
-        this.contextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+        this.contextActionItem($r('sys.symbol.trash'), '删除', this.dangerColor(), () => {
           const rule = this.actionRule();
           this.closeRuleActions();
           if (rule) this.confirmDelete(rule);
@@ -1382,7 +1382,7 @@ struct ReaderReplaceRulesPage {
     const result = await promptAction.showDialog({
       title: '删除规则',
       message: `确定删除已选择的 ${count} 条规则吗？`,
-      buttons: [{ text: '取消', color: this.secondaryTextColor() }, { text: '删除', color: '#E53935' }]
+      buttons: [{ text: '取消', color: this.secondaryTextColor() }, { text: '删除', color: this.dangerColor() }]
     });
     if (result.index !== 1) return;
     this.isBatchOperating = true;
@@ -1691,7 +1691,7 @@ struct ReaderReplaceRulesPage {
     const result = await promptAction.showDialog({
       title: '删除规则',
       message: `确定删除“${rule.name || '未命名规则'}”吗？`,
-      buttons: [{ text: '取消', color: this.secondaryTextColor() }, { text: '删除', color: '#E53935' }]
+      buttons: [{ text: '取消', color: this.secondaryTextColor() }, { text: '删除', color: this.dangerColor() }]
     });
     if (result.index !== 1) return;
     const next = this.rules.filter((item: ReaderReplaceRule) => item.id !== rule.id);
@@ -1711,4 +1711,13 @@ struct ReaderReplaceRulesPage {
   subTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }
   accentColor(): string { return ThemeRuntime.accentColor(this.appDarkMode); }
   buttonColor(): string { return ThemeRuntime.buttonColor(this.appDarkMode); }
+
+  /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string { return ThemeRuntime.dangerColor(this.appDarkMode); }
+
+  /** 成功/生效态语义色（替换规则命中）。 */
+  successColor(): string { return ThemeRuntime.successColor(this.appDarkMode); }
+
+  /** 警示/待确认态语义色（规则部分匹配）。 */
+  warningColor(): string { return ThemeRuntime.warningColor(this.appDarkMode); }
 }

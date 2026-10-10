@@ -274,6 +274,8 @@ export class BookSource {
   static readonly VALIDATION_NO_RESULTS: number = 3;
   static readonly VALIDATION_NEEDS_VERIFICATION: number = 4;
   static readonly VALIDATION_TEMPORARY_ERROR: number = 5;
+  /** 请求因书源 concurrentRate 限流排队达上限而未发出；源未必坏，区别于可立即重试的临时错误。 */
+  static readonly VALIDATION_RATE_LIMITED: number = 6;
 
   bookSourceUrl: string = '';
   bookSourceName: string = '';

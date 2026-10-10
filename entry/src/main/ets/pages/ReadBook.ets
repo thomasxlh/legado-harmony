@@ -4469,6 +4469,10 @@ struct ReadBookPage {
       HdsFeedback.showToast('当前书籍信息不完整');
       return;
     }
+    // 换源要按"当前阅读章节"实测各源字数：先刷新阅读进度，
+    // 否则翻页后 350ms 的节流保存还没跑，面板会拿旧 durChapterIndex 去测。
+    // durChapterIndex 在首个 await 之前就已同步写入，无需等落库完成。
+    this.saveReadingProgress();
     this.showMenu = false;
     this.showToc = false;
     this.showSettings = false;
@@ -4505,7 +4509,7 @@ struct ReadBookPage {
       }, this.fullTextCaching || this.readerCacheRangeCaching)
       this.readerCacheActionItem('清除已缓存章节', () => {
         this.clearReaderCachedChapters();
-      }, this.fullTextCaching || this.readerCacheRangeCaching, '#E53935')
+      }, this.fullTextCaching || this.readerCacheRangeCaching, this.dangerColor())
 
       Button('取消')
         .width('100%')
@@ -5619,7 +5623,7 @@ struct ReadBookPage {
             this.enterBookmarkMultiSelect(bookmarkId);
           }
         })
-        this.bookmarkContextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+        this.bookmarkContextActionItem($r('sys.symbol.trash'), '删除', this.dangerColor(), () => {
           if (this.pendingBookmarkAction) {
             const bookmark = this.pendingBookmarkAction;
             this.closeBookmarkActionMenu();
@@ -8559,6 +8563,11 @@ struct ReadBookPage {
 
   buttonColor(): string {
     return ThemeRuntime.buttonColor(this.appDarkMode);
+  }
+
+  /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string {
+    return ThemeRuntime.dangerColor(this.appDarkMode);
   }
 
   tocSelectedBackgroundColor(): string {
@@ -11691,7 +11700,7 @@ struct ReadBookPage {
       Button(this.isTtsSpeaking ? '停止朗读' : '开始朗读')
         .width('100%')
         .height(40)
-        .backgroundColor(this.isTtsSpeaking ? '#E53935' : this.buttonColor())
+        .backgroundColor(this.isTtsSpeaking ? this.dangerColor() : this.buttonColor())
         .fontColor('#FFFFFF')
         .onClick(() => {
           this.toggleTtsReading();
@@ -14621,6 +14630,8 @@ struct ReadBookPage {
   getTtsCoverPlaceholderColor(): string {
     const name = this.book?.name || '';
     if (!name) return '#007DFF';
+    // 书名哈希标识色：色值参与哈希取模，改动会让同一本书颜色跳变。
+    // 属于调色板而非语义危险色，不要替换成 ThemeRuntime.dangerColor。
     const colors: string[] = ['#007DFF', '#E53935', '#43A047', '#EF6C00',
       '#8E24AA', '#00ACC1', '#D81B60', '#5E35B1'];
     let hash = 0;

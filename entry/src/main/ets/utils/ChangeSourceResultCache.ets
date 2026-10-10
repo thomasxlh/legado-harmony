@@ -16,6 +16,8 @@ class ChangeSourceCacheEntry {
   results: SearchBook[] = [];
   searchedSourceUrls: string[] = [];
   partial: boolean = false;
+  /** 上次落盘时目标书的阅读章节序号；-1 表示旧数据（无此字段）。 */
+  chapterIndex: number = -1;
 }
 
 class ChangeSourceCacheIndexEntry {
@@ -52,14 +54,26 @@ export class ChangeSourceResultCache {
     ChangeSourceResultCache.cachedStoreContext = null;
   }
 
-  static async load(context: Context, bookName: string, bookAuthor: string = ''): Promise<ChangeSourceCacheData | null> {
+  /** 读取历史结果。chapterIndex 为目标书当前阅读章节：与落盘时不一致说明"当前章节字数"
+   *  是旧进度下测的，必须作废（重置为未测量），否则会把上一章的字数显示在最新章节位置上。 */
+  static async load(context: Context, bookName: string, bookAuthor: string = '',
+    chapterIndex: number = -1): Promise<ChangeSourceCacheData | null> {
     const store = await ChangeSourceResultCache.ensureStore(context);
     const key = ChangeSourceResultCache.buildBookKey(bookName, bookAuthor);
     const raw = await store.get(ChangeSourceResultCache.entryPreferenceKey(key), '');
     const entry = ChangeSourceResultCache.parseEntry(typeof raw === 'string' ? raw : '');
     if (entry && Date.now() - entry.updatedAt <= ChangeSourceResultCache.MAX_AGE_MS) {
+      const positionChanged = entry.chapterIndex !== chapterIndex;
       const data = new ChangeSourceCacheData();
-      data.results = entry.results.map((item: SearchBook) => ChangeSourceResultCache.cloneSearchBook(item));
+      data.results = entry.results.map((item: SearchBook) => {
+        const cloned = ChangeSourceResultCache.cloneSearchBook(item);
+        if (positionChanged) {
+          // 阅读进度变了：当前章节字数与"是否收录"都不可信，留待按新进度重测。
+          cloned.currentChapterWordCount = -1;
+          cloned.currentChapterReached = true;
+        }
+        return cloned;
+      });
       data.searchedSourceUrls = entry.searchedSourceUrls.slice();
       data.partial = entry.partial;
       return data;
@@ -68,9 +82,9 @@ export class ChangeSourceResultCache {
   }
 
   static save(context: Context, bookName: string, results: SearchBook[], bookAuthor: string = '',
-    searchedSourceUrls: string[] = [], partial: boolean = false): Promise<void> {
+    searchedSourceUrls: string[] = [], partial: boolean = false, chapterIndex: number = -1): Promise<void> {
     return ChangeSourceResultCache.enqueueWrite((): Promise<void> =>
-      ChangeSourceResultCache.performSave(context, bookName, results, bookAuthor, searchedSourceUrls, partial));
+      ChangeSourceResultCache.performSave(context, bookName, results, bookAuthor, searchedSourceUrls, partial, chapterIndex));
   }
 
   private static enqueueWrite(task: () => Promise<void>): Promise<void> {
@@ -82,7 +96,7 @@ export class ChangeSourceResultCache {
   }
 
   private static async performSave(context: Context, bookName: string, results: SearchBook[],
-    bookAuthor: string, searchedSourceUrls: string[], partial: boolean): Promise<void> {
+    bookAuthor: string, searchedSourceUrls: string[], partial: boolean, chapterIndex: number): Promise<void> {
     const key = ChangeSourceResultCache.buildBookKey(bookName, bookAuthor);
     if (!key) {
       return;
@@ -91,6 +105,7 @@ export class ChangeSourceResultCache {
     entry.schemaVersion = ChangeSourceResultCache.SCHEMA_VERSION;
     entry.key = key;
     entry.updatedAt = Date.now();
+    entry.chapterIndex = chapterIndex;
     entry.results = results.slice(0, ChangeSourceResultCache.MAX_RESULTS_PER_BOOK)
       .map((item: SearchBook) => ChangeSourceResultCache.cloneSearchBook(item));
     entry.searchedSourceUrls = searchedSourceUrls
@@ -175,6 +190,8 @@ export class ChangeSourceResultCache {
       }
       parsed.results = results;
       parsed.partial = parsed.partial === true;
+      const storedIndex = Number(parsed.chapterIndex);
+      parsed.chapterIndex = Number.isFinite(storedIndex) ? storedIndex : -1;
       return parsed;
     } catch (_) {
       return null;

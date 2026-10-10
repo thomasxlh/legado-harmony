@@ -1,4 +1,4 @@
-import { Book, BookChapter, BookSource, SearchBook } from '../../model/data/Book';
+import { Book, BookSource, SearchBook } from '../../model/data/Book';
 import { AppDatabase } from '../../model/data/AppDatabase';
 import { WebBookService } from './WebBookService';
 
@@ -9,9 +9,10 @@ export class ChapterMeasureTarget {
 }
 
 /**
- * 实测搜索结果的章节正文字数：默认取目录最后一章（并顺带回填最新章节标题），
+ * 实测搜索结果的章节正文字数：取探测到的目录最后一章（并顺带回填最新章节标题），
  * 传入 currentChapter 时同时测量指定章节（换源场景即当前阅读章节）。
- * 换源面板与搜索页共用；单条最多 4 次网络请求，由调用方控制并发、超时与会话取消。
+ * 目录通过 WebBookService.probeChaptersForMeasurement 稀疏探测（首页+尾页+当前章页），
+ * 长目录不再逐页遍历；换源面板与搜索页共用，由调用方控制并发、超时与会话取消。
  */
 export class ChapterWordCountMeasurer {
   static async measureOne(
@@ -45,15 +46,18 @@ export class ChapterWordCountMeasurer {
         if (shouldAbort()) return false;
         if (info && info.tocUrl) book.tocUrl = info.tocUrl;
       }
-      const chapters = await service.getChapterList(source, book, 0, false);
+      // 稀疏探测：只拿最新章与当前阅读章，长目录直接跳尾页，拿不到尾页线索时服务内部自行回退全量遍历。
+      const probe = await service.probeChaptersForMeasurement(source, book,
+        currentChapter ? currentChapter.index : -1,
+        currentChapter ? currentChapter.title : '');
       if (shouldAbort()) return false;
-      if (chapters.length === 0) {
+      if (probe.totalCount === 0 || !probe.latestChapter) {
         candidate.chapterWordCount = 0;
         candidate.currentChapterWordCount = 0;
         return before !== 0 || beforeCurrent !== 0;
       }
-      const chapter = chapters[chapters.length - 1];
-      candidate.latestChapterIndex = chapters.length - 1;
+      const chapter = probe.latestChapter;
+      candidate.latestChapterIndex = probe.totalCount - 1;
       const content = await service.getContent(source, book, chapter);
       if (shouldAbort()) return false;
       const length = (content || '').length;
@@ -62,10 +66,12 @@ export class ChapterWordCountMeasurer {
       if (currentChapter) {
         // 当前章节测量失败不影响已测得的最新章节字数，单独捕获。
         try {
-          const target = ChapterWordCountMeasurer.pickCurrentChapter(chapters, currentChapter);
+          // reached 由稀疏探测的证据直接给出（null=目录确实未收录阅读进度）：
+          // 中途 abort 直接 return，绝不能把上一轮/缓存里的旧字数留在"已收录"状态。
+          const target = probe.currentChapter;
+          candidate.currentChapterReached = !!target;
           if (!target) {
             // 目录未收录当前阅读章节（最新章都在阅读进度之前）：无需再拉正文，直接标记未收录。
-            candidate.currentChapterReached = false;
             candidate.currentChapterWordCount = 0;
           } else if (target === chapter) {
             // 与最新一章相同（连载追平或只差序章）：复用已测结果，省一次请求。
@@ -79,6 +85,7 @@ export class ChapterWordCountMeasurer {
         } catch (e) {
           if (shouldAbort()) return false;
           console.warn('测量当前章节字数失败:', e);
+          // reached 已确认为 true 后正文请求才失败：保留 true，让徽标显示"获取失败"而非"未收录"。
           candidate.currentChapterWordCount = 0;
         }
       }
@@ -90,25 +97,5 @@ export class ChapterWordCountMeasurer {
       candidate.currentChapterWordCount = 0;
       return before !== 0 || beforeCurrent !== 0;
     }
-  }
-
-  /** 定位当前阅读章节：先按标题精确匹配（各源目录章节命名有差异），
-   *  匹配不到且目录长度未到阅读进度（index 超界）时返回 null 表示未收录。 */
-  private static pickCurrentChapter(
-    chapters: BookChapter[],
-    target: ChapterMeasureTarget
-  ): BookChapter | null {
-    const title = (target.title || '').trim();
-    if (title) {
-      for (const chapter of chapters) {
-        if (chapter.title && chapter.title.trim() === title) {
-          return chapter;
-        }
-      }
-    }
-    if (target.index > chapters.length - 1) {
-      return null;
-    }
-    return chapters[Math.max(0, target.index)];
   }
 }

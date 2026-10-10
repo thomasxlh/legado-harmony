@@ -303,10 +303,10 @@ struct DataSyncPage {
       return this.subTextColor();
     }
     if (this.syncStatus === CloudSyncService.STATUS_ERROR) {
-      return '#E5484D';
+      return this.dangerColor();
     }
     if (this.syncStatus === CloudSyncService.STATUS_PENDING) {
-      return '#E6A23C';
+      return this.warningColor();
     }
     return this.accentColor();
   }
@@ -340,10 +340,10 @@ struct DataSyncPage {
 
   statusColor(): string {
     if (this.syncStatus === CloudSyncService.STATUS_ERROR) {
-      return '#E5484D';
+      return this.dangerColor();
     }
     if (this.syncStatus === CloudSyncService.STATUS_PENDING) {
-      return '#E6A23C';
+      return this.warningColor();
     }
     if (this.syncStatus === CloudSyncService.STATUS_UNSUPPORTED) {
       return this.subTextColor();
@@ -373,6 +373,16 @@ struct DataSyncPage {
 
   accentColor(): string {
     return ThemeRuntime.accentColor(this.appDarkMode);
+  }
+
+  /** 错误/失败态：统一走主题 dangerColor，跟随深色模式与用户自定义主题。 */
+  dangerColor(): string {
+    return ThemeRuntime.dangerColor(this.appDarkMode);
+  }
+
+  /** 进行中/待确认态：跟随主题的中性警示色。 */
+  warningColor(): string {
+    return ThemeRuntime.warningColor(this.appDarkMode);
   }
 
   dividerColor(): string {

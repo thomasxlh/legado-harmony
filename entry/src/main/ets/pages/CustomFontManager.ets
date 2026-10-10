@@ -535,6 +535,10 @@ struct CustomFontManagerPage {
   subTextColor(): string {
     return ThemeRuntime.subTextColor(this.appDarkMode);
   }
+  /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string {
+    return ThemeRuntime.dangerColor(this.appDarkMode);
+  }
 
   inputColor(): string {
     return ThemeRuntime.inputColor(this.appDarkMode);
@@ -655,7 +659,7 @@ struct CustomFontManagerPage {
         .width(54)
         .height(32)
         .borderRadius(16)
-        .backgroundColor('#E53935')
+        .backgroundColor(this.dangerColor())
         .onClick(() => {
           this.deleteCustomFont(item);
         })

@@ -3,6 +3,7 @@ import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { BookDisplayHelper } from '../../utils/BookDisplayHelper';
 import { CoverGallerySettings } from '../../utils/CoverGallerySettings';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
+import { WordCountFormatter } from '../../utils/WordCountFormatter';
 import deviceInfo from '@ohos.deviceInfo';
 import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
@@ -414,10 +415,12 @@ export struct SearchBookResultList {
     if (this.safeText(book.wordCount, '')) parts.push(`总字数：${this.safeText(book.wordCount, '')}`);
     const latestTitle = this.safeText(book.latestChapterTitle, '');
     if (book.chapterWordCount > 0) {
+      // 与换源面板共用同一套字数格式，避免同一个数字在两个界面呈现成两种形态。
+      const wordText = WordCountFormatter.formatWithUnit(book.chapterWordCount);
       if (latestTitle) {
-        parts.push(`最新：${latestTitle}（${book.chapterWordCount} 字）`);
+        parts.push(`最新：${latestTitle}（${wordText}）`);
       } else {
-        parts.push(`最新章节：${book.chapterWordCount} 字`);
+        parts.push(`最新章节：${wordText}`);
       }
     } else if (latestTitle) {
       parts.push(`最新：${latestTitle}`);

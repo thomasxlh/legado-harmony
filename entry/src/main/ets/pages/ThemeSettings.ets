@@ -459,6 +459,10 @@ struct ThemeSettingsPage {
   subTextColor(): string {
     return ThemeRuntime.subTextColor(this.appDarkMode);
   }
+  /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
+  dangerColor(): string {
+    return ThemeRuntime.dangerColor(this.appDarkMode);
+  }
 
   accentColor(): string {
     return ThemeRuntime.accentColor(this.appDarkMode);
@@ -859,7 +863,7 @@ struct ThemeSettingsPage {
           this.showCustomThemeActionMenu = false;
           this.showRenameCustomThemeDialog = true;
         })
-        this.contextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+        this.contextActionItem($r('sys.symbol.trash'), '删除', this.dangerColor(), () => {
           this.showCustomThemeActionMenu = false;
           this.requestDeleteCustomTheme(this.actionCustomSchemeId);
         })
@@ -993,7 +997,7 @@ struct ThemeSettingsPage {
             .layoutWeight(1)
             .height(42)
             .borderRadius(10)
-            .backgroundColor('#E53935')
+            .backgroundColor(this.dangerColor())
             .fontColor('#FFFFFF')
             .onClick(() => this.confirmDeleteCustomTheme())
         }
