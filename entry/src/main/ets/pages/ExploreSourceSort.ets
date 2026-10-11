@@ -4,6 +4,7 @@ import { AppDatabase } from '../model/data/AppDatabase';
 import { SearchExploreSettings, SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
@@ -76,131 +77,136 @@ struct ExploreSourceSortPage {
   }
 
   build() {
-    Column() {
-      this.titleBar()
+    Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
+      Column() {
+        this.titleBar()
 
-      if (this.isLoading) {
-        Column() {
-          LoadingProgress()
-            .width(40)
-            .height(40)
-          Text('加载中...')
-            .fontSize(14)
-            .fontColor(this.subTextColor())
-            .margin({ top: 8 })
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-      } else if (this.sources.length === 0) {
-        Column() {
-          Text('暂无启用发现的书源')
-            .fontSize(16)
-            .fontColor(this.subTextColor())
-          Text('请先在书源管理中启用发现')
-            .fontSize(14)
-            .fontColor(this.subTextColor())
-            .margin({ top: 8 })
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-      } else {
-        List({ space: 8 }) {
-          ForEach(this.sources, (source: BookSource, index: number) => {
-            ListItem() {
-              Row() {
-                Text('☰')
-                  .fontSize(18)
-                  .fontColor(this.subTextColor())
-                  .width(24)
-                  .textAlign(TextAlign.Center)
-                  .margin({ right: 4 })
-
-                Text(`${index + 1}`)
-                  .fontSize(13)
-                  .fontColor(this.subTextColor())
-                  .width(28)
-                  .textAlign(TextAlign.Center)
-
-                Column() {
-                  Text(source.bookSourceName || '未命名书源')
-                    .fontSize(16)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor(this.primaryTextColor())
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  Text(source.bookSourceUrl)
-                    .fontSize(12)
+        if (this.isLoading) {
+          Column() {
+            LoadingProgress()
+              .width(40)
+              .height(40)
+            Text('加载中...')
+              .fontSize(14)
+              .fontColor(this.subTextColor())
+              .margin({ top: 8 })
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+        } else if (this.sources.length === 0) {
+          Column() {
+            Text('暂无启用发现的书源')
+              .fontSize(16)
+              .fontColor(this.subTextColor())
+            Text('请先在书源管理中启用发现')
+              .fontSize(14)
+              .fontColor(this.subTextColor())
+              .margin({ top: 8 })
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+        } else {
+          List({ space: 8 }) {
+            ForEach(this.sources, (source: BookSource, index: number) => {
+              ListItem() {
+                Row() {
+                  Text('☰')
+                    .fontSize(18)
                     .fontColor(this.subTextColor())
-                    .margin({ top: 4 })
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .width(24)
+                    .textAlign(TextAlign.Center)
+                    .margin({ right: 4 })
+
+                  Text(`${index + 1}`)
+                    .fontSize(13)
+                    .fontColor(this.subTextColor())
+                    .width(28)
+                    .textAlign(TextAlign.Center)
+
+                  Column() {
+                    Text(source.bookSourceName || '未命名书源')
+                      .fontSize(16)
+                      .fontWeight(FontWeight.Bold)
+                      .fontColor(this.primaryTextColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(source.bookSourceUrl)
+                      .fontSize(12)
+                      .fontColor(this.subTextColor())
+                      .margin({ top: 4 })
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }
+                  .layoutWeight(1)
+                  .alignItems(HorizontalAlign.Start)
+
+                  Text('↑')
+                    .width(36)
+                    .height(32)
+                    .fontSize(18)
+                    .fontColor(index > 0 ? this.primaryTextColor() : this.disabledTextColor())
+                    .textAlign(TextAlign.Center)
+                    .backgroundColor(index > 0 ? this.inputColor() : this.disabledButtonColor())
+                    .borderRadius(16)
+                    .onClick(() => {
+                      if (index > 0) {
+                        this.moveSource(index, -1);
+                      }
+                    })
+
+                  Text('↓')
+                    .width(36)
+                    .height(32)
+                    .fontSize(18)
+                    .margin({ left: 6 })
+                    .fontColor(index < this.sources.length - 1 ? this.primaryTextColor() : this.disabledTextColor())
+                    .textAlign(TextAlign.Center)
+                    .backgroundColor(index < this.sources.length - 1 ? this.inputColor() : this.disabledButtonColor())
+                    .borderRadius(16)
+                    .onClick(() => {
+                      if (index < this.sources.length - 1) {
+                        this.moveSource(index, 1);
+                      }
+                    })
                 }
-                .layoutWeight(1)
-                .alignItems(HorizontalAlign.Start)
-
-                Text('↑')
-                  .width(36)
-                  .height(32)
-                  .fontSize(18)
-                  .fontColor(index > 0 ? this.primaryTextColor() : this.disabledTextColor())
-                  .textAlign(TextAlign.Center)
-                  .backgroundColor(index > 0 ? this.inputColor() : this.disabledButtonColor())
-                  .borderRadius(16)
-                  .onClick(() => {
-                    if (index > 0) {
-                      this.moveSource(index, -1);
-                    }
-                  })
-
-                Text('↓')
-                  .width(36)
-                  .height(32)
-                  .fontSize(18)
-                  .margin({ left: 6 })
-                  .fontColor(index < this.sources.length - 1 ? this.primaryTextColor() : this.disabledTextColor())
-                  .textAlign(TextAlign.Center)
-                  .backgroundColor(index < this.sources.length - 1 ? this.inputColor() : this.disabledButtonColor())
-                  .borderRadius(16)
-                  .onClick(() => {
-                    if (index < this.sources.length - 1) {
-                      this.moveSource(index, 1);
-                    }
-                  })
+                .width('100%')
+                .padding(12)
+                .backgroundColor(this.cardColor())
+                .borderRadius(8)
               }
-              .width('100%')
-              .padding(12)
-              .backgroundColor(this.cardColor())
-              .borderRadius(8)
-            }
-          }, (source: BookSource) => source.bookSourceUrl)
+            }, (source: BookSource) => source.bookSourceUrl)
 
-          ListItem() {
-            Row()
-              .height(Math.max(20, this.navBarHeight + 12))
+            ListItem() {
+              Row()
+                .height(Math.max(20, this.navBarHeight + 12))
+            }
           }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .width('100%')
+          .layoutWeight(1)
+          .padding({ left: 16, right: 16, top: 12, bottom: 16 })
+          .onItemDragStart((event: ItemDragInfo, itemIndex: number) => {
+            this.draggingIndex = itemIndex;
+            return this.sourceDragPreview;
+          })
+          .onItemDrop((event: ItemDragInfo, itemIndex: number, insertIndex: number, isSuccess: boolean) => {
+            if (isSuccess) {
+              this.moveSourceTo(itemIndex, insertIndex);
+            }
+            this.draggingIndex = -1;
+          })
         }
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .width('100%')
-        .layoutWeight(1)
-        .padding({ left: 16, right: 16, top: 12, bottom: 16 })
-        .onItemDragStart((event: ItemDragInfo, itemIndex: number) => {
-          this.draggingIndex = itemIndex;
-          return this.sourceDragPreview;
-        })
-        .onItemDrop((event: ItemDragInfo, itemIndex: number, insertIndex: number, isSuccess: boolean) => {
-          if (isSuccess) {
-            this.moveSourceTo(itemIndex, insertIndex);
-          }
-          this.draggingIndex = -1;
-        })
       }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(this.pageColorBehind())
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   moveSource(index: number, direction: number): void {
@@ -253,8 +259,13 @@ struct ExploreSourceSortPage {
     return ThemeRuntime.pageColor(this.appDarkMode);
   }
 
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   inputColor(): string {

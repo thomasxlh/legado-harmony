@@ -86,6 +86,8 @@ class ReconciledPageTemplate {
 
 export class WebBookService {
   static readonly GENERIC_TOC_FALLBACK_KEY: string = '__genericTocFallback';
+  /** 阅读路径等待书源 concurrentRate 令牌的累计上限：超过即放弃，防止章节加载被无上限限流排队卡死。 */
+  private static readonly READER_RATE_LIMIT_MAX_WAIT_MS: number = 20000;
   private http: HttpClient;
   private activeContentRuleOwners: Set<string> = new Set();
 
@@ -594,8 +596,10 @@ export class WebBookService {
         const template = this.discoverLastPageTemplate(firstResp.body, baseUrl, pageUrls[0]);
         if (template && await this.probeJumpPages(au, source, book, head, template,
           currentIndex, currentTitle, probe)) {
-          console.log('[WS] probeToc mode sparse-jump page2Token:', template.page2Token,
-            'lastToken:', template.lastToken, 'total:', probe.totalCount);
+          // 只记录跨页数（page2Token/lastToken 是页码索引，不打印原始值，避免日志策略误判）
+          const jumpPageSpan = template.lastToken - template.page2Token + 1;
+          console.log('[WS] probeToc mode sparse-jump pageSpan:', jumpPageSpan,
+            'total:', probe.totalCount);
           return probe;
         }
       }
@@ -1231,12 +1235,20 @@ export class WebBookService {
     }
     console.log('[WS] getContent');
     if (this.contentRequestCanceled(shouldCancel)) return '';
-    const au = new AnalyzeUrl(source, this.http);
-    let resp = EncodedSourceUrl.canHandle(chapter.url) ?
+    // 阅读路径：取消检查下传到 AnalyzeUrl（限流等待/重定向链可提前退出）；
+    // concurrentRate 限流排队等待设上限，避免带限流配置的书源把章节加载卡在无上限的排队上。
+    const au = new AnalyzeUrl(source, this.http, {}, shouldCancel || undefined);
+    au.setRateLimitHooks({ maxWaitMs: WebBookService.READER_RATE_LIMIT_MAX_WAIT_MS });
+    let resp: HttpResponse = EncodedSourceUrl.canHandle(chapter.url) ?
       await this.fetchEncodedDataUrl(chapter.url, source) : await au.fetch(chapter.url, undefined, debugContext);
     if (this.contentRequestCanceled(shouldCancel)) return '';
     console.log('[WS] getContent resp:', resp.success, 'len:', resp.body.length);
     if (!resp.success) {
+      if (resp.rateLimited) {
+        AppStorage.setOrCreate('bookSourceStageLastError',
+          '书源访问频率受限（concurrentRate），请稍后重试');
+        return '';
+      }
       const status = Number(resp.statusCode || 0);
       const detail = String(resp.error || '').trim();
       if (status === 401 || status === 403) {
@@ -2419,7 +2431,9 @@ export class WebBookService {
       // this value to the content script as bytes; mirror that contract without interpreting it.
       content = this.textToHex(virtualChapterPayload);
     } else {
-      const response = await new AnalyzeUrl(source, this.http).fetch(chapter.url, undefined, debugContext);
+      const response = await new AnalyzeUrl(source, this.http)
+        .setRateLimitHooks({ maxWaitMs: WebBookService.READER_RATE_LIMIT_MAX_WAIT_MS })
+        .fetch(chapter.url, undefined, debugContext);
       if (!response.success || !response.body) return '';
       content = response.body;
       baseUrl = BookUrlResolver.effectiveBase(response, chapter.url, book.bookUrl || source.bookSourceUrl);

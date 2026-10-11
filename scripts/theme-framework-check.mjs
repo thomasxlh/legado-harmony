@@ -16,32 +16,6 @@ function assert(condition, message) {
   }
 }
 
-function jpegDimensions(filePath) {
-  const data = fs.readFileSync(filePath);
-  assert(data.length >= 4 && data[0] === 0xff && data[1] === 0xd8, `Invalid JPEG: ${filePath}`);
-  const sofMarkers = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
-  let offset = 2;
-  while (offset + 9 < data.length) {
-    if (data[offset] !== 0xff) {
-      offset++;
-      continue;
-    }
-    const marker = data[offset + 1];
-    offset += 2;
-    if (marker === 0xd8 || marker === 0xd9 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
-      continue;
-    }
-    if (offset + 2 > data.length) break;
-    const length = data.readUInt16BE(offset);
-    if (sofMarkers.has(marker) && offset + 7 <= data.length) {
-      return { width: data.readUInt16BE(offset + 5), height: data.readUInt16BE(offset + 3) };
-    }
-    if (length < 2) break;
-    offset += length;
-  }
-  throw new Error(`JPEG dimensions are unreadable: ${filePath}`);
-}
-
 const models = read('entry/src/main/ets/theme/ThemeModels.ets');
 const registry = read('entry/src/main/ets/theme/BuiltinThemeRegistry.ets');
 const runtime = read('entry/src/main/ets/theme/ThemeRuntime.ets');
@@ -62,50 +36,25 @@ const moduleConfig = read('entry/src/main/module.json5');
 const bookshelfSortHelper = read('entry/src/main/ets/utils/BookshelfSortHelper.ets');
 const recentReadCardData = read('entry/src/main/ets/utils/RecentReadCardData.ets');
 const themeColorPage = read('entry/src/main/ets/pages/ThemeColorSettings.ets');
+const customSchemeStore = read('entry/src/main/ets/utils/CustomThemeSchemeStore.ets');
 const otherSettingsPage = read('entry/src/main/ets/pages/OtherSettings.ets');
 const bookSourcePage = read('entry/src/main/ets/pages/BookSource.ets');
 const searchCoordinator = read('entry/src/main/ets/core/book/SearchCoordinator.ts');
 const appIconManager = read('entry/src/main/ets/utils/AppIconManager.ets');
 const fontBootstrap = read('entry/src/main/ets/utils/ReaderFontBootstrap.ets');
 const entryAbility = read('entry/src/main/ets/entryability/EntryAbility.ets');
-const serverIndex = read('server/src/index.ts');
-const serverThemeCatalog = read('server/migrations/011_theme_catalog.sql') + '\n' +
-  read('server/migrations/012_qingluan_water_theme.sql') + '\n' +
-  read('server/migrations/013_cat_pipi_theme.sql');
 const pages = JSON.parse(read('entry/src/main/resources/base/profile/main_pages.json'));
 
-const expectedThemes = [
-  'classic-blue', 'warm-paper', 'forest-mist', 'ink-wash', 'neon-night', 'sword-frost',
-  'qingluan-water', 'cat-pipi'
-];
+const expectedThemes = ['plain-default'];
 for (const themeId of expectedThemes) {
   assert(models.includes(`'${themeId}'`), `Theme id is missing from ThemeModels: ${themeId}`);
   assert(registry.includes(`ThemeIds.`), 'Builtin registry is not using stable ThemeIds');
 }
-const redeemableThemeIds = [
-  'classic-blue', 'warm-paper', 'forest-mist', 'ink-wash', 'neon-night',
-  'strawberry-cream', 'crimson-archive', 'plum-tea', 'rose-letter', 'moon-crane', 'sword-frost',
-  'qingluan-water', 'cat-pipi'
-];
-for (const themeId of redeemableThemeIds) {
-  assert(serverThemeCatalog.includes(`('${themeId}'`), `Database theme catalog is missing: ${themeId}`);
-}
-assert(serverIndex.includes('findRedeemableTheme(client, themeId)'),
-  'Theme redemption must use the database catalog');
+assert(models.includes("static readonly CUSTOM: string = 'custom'"), 'Custom theme id is missing');
+assert(models.includes("static readonly CUSTOM: string = 'custom'"), 'Custom theme id is missing');
 assert((registry.match(/themes\.push\(/g) || []).length >= expectedThemes.length,
   `Builtin registry must publish at least ${expectedThemes.length} themes`);
 assert(registry.includes('static register(theme: ThemePack)'), 'Compiled theme registration API is missing');
-
-const expectedBackgrounds = [
-  'paper-light', 'paper-dark', 'forest-light', 'forest-dark',
-  'ink-light', 'ink-dark', 'neon-light', 'neon-dark',
-  'sword-frost-light', 'sword-frost-dark', 'qingluan-water-light', 'qingluan-water-dark',
-  'cat-pipi-light', 'cat-pipi-dark'
-];
-for (const assetId of expectedBackgrounds) {
-  assert(assets.includes(`'${assetId}'`), `Background asset id is not mapped: ${assetId}`);
-  assert(registry.includes(`'${assetId}'`), `No builtin theme uses background asset: ${assetId}`);
-}
 
 const resourceNames = [...assets.matchAll(/\$r\('app\.media\.([^']+)'\)/g)].map(match => match[1]);
 for (const resourceName of resourceNames) {
@@ -113,126 +62,85 @@ for (const resourceName of resourceNames) {
   assert(found, `ThemeAssetRegistry references a missing resource: ${resourceName}`);
 }
 
-const backgroundFiles = fs.readdirSync(mediaRoot).filter(fileName => /^reader_bg_.*\.svg$/.test(fileName));
-assert(backgroundFiles.length >= 8, 'At least eight light/dark reader background SVGs are required');
-for (const fileName of backgroundFiles) {
-  const source = fs.readFileSync(path.join(mediaRoot, fileName), 'utf8');
-  assert(/viewBox="0 0 1080 1920"/.test(source), `Invalid reader background viewBox: ${fileName}`);
-  assert(/width="1080"/.test(source) && /height="1920"/.test(source),
-    `Invalid reader background dimensions: ${fileName}`);
-  assert(!/(<script|<image|<use|href=|url\(|<filter)/i.test(source), `Unsafe SVG feature in ${fileName}`);
-}
+// Cold start must not flash the launcher icon before the custom startup cover.
+// startWindowIcon cannot be omitted, so it points at a fully transparent image.
+assert(moduleConfig.includes('"startWindowIcon": "$media:start_window_blank"'),
+  'Start window icon must use the transparent placeholder');
+assert(!/"startWindowIcon": "\$media:icon"/.test(moduleConfig),
+  'Start window must not reuse the launcher icon');
+assert(fs.existsSync(path.join(mediaRoot, 'start_window_blank.png')),
+  'Transparent start window icon resource is missing');
+assert(entryAbility.includes('customStartupText'),
+  'Cold start must skip the startup page when neither cover nor text is configured');
 
-const readerDecorationFiles = fs.readdirSync(mediaRoot).filter(fileName => /^reader_decor_.*\.svg$/.test(fileName));
-assert(readerDecorationFiles.length >= 18, 'Every light/dark builtin reader background needs a responsive ornament');
-for (const fileName of readerDecorationFiles) {
-  const source = fs.readFileSync(path.join(mediaRoot, fileName), 'utf8');
-  assert(/viewBox="0 0 480 480"/.test(source), `Invalid reader decoration viewBox: ${fileName}`);
-  assert(/width="480"/.test(source) && /height="480"/.test(source),
-    `Invalid reader decoration dimensions: ${fileName}`);
-  assert(!/(<script|<image|<use|href=|url\(|<filter)/i.test(source), `Unsafe SVG feature in ${fileName}`);
-}
+// Startup cover text is opt-in: the legacy forced default title must be gone.
+assert(!themeStore.includes("customLightStartupTitle: string = '开源读书'"),
+  'Startup cover title must default to empty');
+assert(themeStore.includes('migrateStartupText'), 'Legacy startup title migration is missing');
+assert(themeColorPage.includes('setSchemeName'), 'Custom theme name editing is missing');
 
-const themedIconFiles = fs.readdirSync(mediaRoot).filter(fileName => /^ic_theme_.*\.svg$/.test(fileName));
-assert(themedIconFiles.length >= 8, 'Rounded and ink icon packs must each contain four icons');
-for (const fileName of themedIconFiles) {
-  const source = fs.readFileSync(path.join(mediaRoot, fileName), 'utf8');
-  assert(/viewBox="0 0 24 24"/.test(source), `Invalid themed icon viewBox: ${fileName}`);
-  assert(!/(<script|<image|<use|href=|url\(|<filter)/i.test(source), `Unsafe SVG feature in ${fileName}`);
-}
+// Main page background follows the custom theme scheme, light and dark separately.
+assert(themeStore.includes('customLightMainBackgroundImagePath') &&
+  themeStore.includes('customDarkMainBackgroundImagePath') &&
+  themeStore.includes('KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_OPACITY') &&
+  themeStore.includes('normalizeMainBackgroundOpacity'),
+  'Main background settings are missing from the custom theme scheme');
+assert(!entryAbility.includes('MainBackgroundStore') &&
+  !fs.existsSync('entry/src/main/ets/utils/MainBackgroundStore.ets'),
+  'The global main background store must stay removed');
+assert(indexPage.includes("AppBackgroundLayer({ always: true })") &&
+  indexPage.includes('ThemeRuntime.mainPageColor(this.appDarkMode)'),
+  'Main page must render the scheme background behind transparent page surfaces');
+assert(runtime.includes('static mainPageColor(darkMode: boolean =') &&
+  runtime.includes('static mainBackgroundImagePath(darkMode: boolean =') &&
+  runtime.includes('static pageColorBehind(darkMode: boolean =') &&
+  runtime.includes('static cardColorBehind(darkMode: boolean =') &&
+  runtime.includes('static mainBackgroundCardOpacity()') &&
+  runtime.includes('static usesGlobalBackground(darkMode: boolean =') &&
+  runtime.includes('ThemeRuntime.currentThemeId() !== ThemeIds.CUSTOM'),
+  'Theme runtime main background helpers must be scheme aware');
+assert(themeColorPage.includes('mainBackgroundOptions()') &&
+  themeColorPage.includes('pickAndSaveMainBackground(') &&
+  themeColorPage.includes('setCurrentMainBackgroundOpacity') &&
+  themeColorPage.includes('setMainBackgroundGlobal') &&
+  themeColorPage.includes('setMainBackgroundCardOpacity') &&
+  themeColorPage.includes('AdaptiveSwitch({ isOn: this.mainBackgroundGlobal'),
+  'Custom theme editor must expose the per-mode main background editor and its global switch');
+assert(customSchemeStore.includes('customLightMainBackgroundImagePath'),
+  'Cloud sync must keep the device-local main background binding');
+assert(themeStore.includes('KEY_MAIN_BACKGROUND_GLOBAL') &&
+  themeStore.includes('mainBackgroundGlobal') &&
+  themeStore.includes('KEY_MAIN_BACKGROUND_CARD_OPACITY') &&
+  themeStore.includes('normalizeMainBackgroundCardOpacity'),
+  'The global background switch and card opacity are missing from the custom theme scheme');
 
+// Cards and list items must let the wallpaper through instead of staying opaque,
+// otherwise the global background looks like a border around a black panel.
+const cardColoredPages = ['Index.ets', 'SearchResultGroup.ets', 'Settings.ets'];
+for (const fileName of cardColoredPages) {
+  const source = read(`entry/src/main/ets/pages/${fileName}`);
+  assert(source.includes('ThemeRuntime.cardColorBehind('),
+    `Page cards must use the translucent card color: ${fileName}`);
+}
+const indexTabSurfaces = (indexPage.match(/return ThemeRuntime\.mainPageColor\(this\.appDarkMode\);/g) || []);
+assert(indexTabSurfaces.length >= 4,
+  'Bookshelf, explore, search and mine tabs must let the background through');
+
+// Only the default theme and the custom theme keep a logo; every builtin
+// theme pack was removed with the theme store.
+const expectedLogos = ['theme_logo_plain_default', 'theme_logo_custom'];
 const themeLogoFiles = fs.readdirSync(mediaRoot).filter(fileName => /^theme_logo_.*\.svg$/.test(fileName));
-assert(themeLogoFiles.length >= expectedThemes.length, 'Every builtin theme must provide a dedicated logo');
+assert(themeLogoFiles.length === expectedLogos.length,
+  'Only the default and custom theme logos may remain');
+for (const logoName of expectedLogos) {
+  assert(fs.existsSync(path.join(mediaRoot, `${logoName}.svg`)), `Theme logo is missing: ${logoName}`);
+}
 for (const fileName of themeLogoFiles) {
   const source = fs.readFileSync(path.join(mediaRoot, fileName), 'utf8');
   assert(/viewBox="0 0 64 64"/.test(source), `Invalid theme logo viewBox: ${fileName}`);
   assert(!/(<script|<image|<use|href=|url\(|<filter)/i.test(source), `Unsafe SVG feature in ${fileName}`);
 }
 assert(assets.includes('static themeLogo(themeId: string)'), 'Theme logo resolver is missing');
-
-const swordFrostJpegs = [
-  'theme_startup_sword_frost.jpg',
-  'theme_cover_sword_frost_01.jpg', 'theme_cover_sword_frost_02.jpg',
-  'theme_cover_sword_frost_03.jpg', 'theme_cover_sword_frost_04.jpg',
-  'theme_cover_sword_frost_05.jpg', 'theme_cover_sword_frost_06.jpg',
-  'theme_folder_art_sword_frost.jpg'
-];
-for (const fileName of swordFrostJpegs) {
-  const filePath = path.join(mediaRoot, fileName);
-  assert(fs.existsSync(filePath), `Sword Frost artwork is missing: ${fileName}`);
-  const dimensions = jpegDimensions(filePath);
-  const expected = fileName === 'theme_startup_sword_frost.jpg' ? { width: 841, height: 1870 } :
-    { width: 450, height: 660 };
-  assert(dimensions.width === expected.width && dimensions.height === expected.height,
-    `Invalid Sword Frost artwork dimensions: ${fileName}`);
-}
-const swordFrostSvgs = [
-  'theme_logo_sword_frost.svg', 'theme_frame_sword_frost.svg',
-  'reader_bg_sword_frost_light.svg', 'reader_bg_sword_frost_dark.svg',
-  'reader_decor_sword_frost_light.svg', 'reader_decor_sword_frost_dark.svg',
-  'ic_theme_sword_frost_bookshelf.svg', 'ic_theme_sword_frost_explore.svg',
-  'ic_theme_sword_frost_search.svg', 'ic_theme_sword_frost_mine.svg',
-  'regex_frame_sword_talisman.svg', 'regex_cap_sword_talisman.svg'
-];
-for (const fileName of swordFrostSvgs) {
-  assert(fs.existsSync(path.join(mediaRoot, fileName)), `Sword Frost vector asset is missing: ${fileName}`);
-}
-
-const qingluanWaterJpegs = [
-  'theme_startup_qingluan_water.jpg',
-  'theme_cover_qingluan_water_01.jpg', 'theme_cover_qingluan_water_02.jpg',
-  'theme_cover_qingluan_water_03.jpg', 'theme_cover_qingluan_water_04.jpg',
-  'theme_cover_qingluan_water_05.jpg', 'theme_cover_qingluan_water_06.jpg',
-  'theme_folder_art_qingluan_water.jpg'
-];
-for (const fileName of qingluanWaterJpegs) {
-  const filePath = path.join(mediaRoot, fileName);
-  assert(fs.existsSync(filePath), `Qingluan Water artwork is missing: ${fileName}`);
-  const dimensions = jpegDimensions(filePath);
-  const expected = fileName === 'theme_startup_qingluan_water.jpg' ? { width: 841, height: 1870 } :
-    { width: 450, height: 660 };
-  assert(dimensions.width === expected.width && dimensions.height === expected.height,
-    `Invalid Qingluan Water artwork dimensions: ${fileName}`);
-}
-const qingluanWaterSvgs = [
-  'theme_logo_qingluan_water.svg', 'theme_frame_qingluan_water.svg',
-  'reader_bg_qingluan_water_light.svg', 'reader_bg_qingluan_water_dark.svg',
-  'reader_decor_qingluan_water_light.svg', 'reader_decor_qingluan_water_dark.svg',
-  'ic_theme_qingluan_water_bookshelf.svg', 'ic_theme_qingluan_water_explore.svg',
-  'ic_theme_qingluan_water_search.svg', 'ic_theme_qingluan_water_mine.svg',
-  'regex_frame_qingluan_jade.svg', 'regex_cap_qingluan_jade.svg'
-];
-for (const fileName of qingluanWaterSvgs) {
-  assert(fs.existsSync(path.join(mediaRoot, fileName)), `Qingluan Water vector asset is missing: ${fileName}`);
-}
-
-const catPipiJpegs = [
-  'theme_startup_cat_pipi.jpg',
-  'theme_cover_cat_pipi_01.jpg', 'theme_cover_cat_pipi_02.jpg',
-  'theme_cover_cat_pipi_03.jpg', 'theme_cover_cat_pipi_04.jpg',
-  'theme_cover_cat_pipi_05.jpg', 'theme_cover_cat_pipi_06.jpg',
-  'theme_folder_art_cat_pipi.jpg'
-];
-for (const fileName of catPipiJpegs) {
-  const filePath = path.join(mediaRoot, fileName);
-  assert(fs.existsSync(filePath), `Cat Pipi artwork is missing: ${fileName}`);
-  const dimensions = jpegDimensions(filePath);
-  const expected = fileName === 'theme_startup_cat_pipi.jpg' ? { width: 841, height: 1870 } :
-    { width: 450, height: 660 };
-  assert(dimensions.width === expected.width && dimensions.height === expected.height,
-    `Invalid Cat Pipi artwork dimensions: ${fileName}`);
-}
-const catPipiSvgs = [
-  'theme_logo_cat_pipi.svg', 'theme_frame_cat_pipi.svg',
-  'reader_bg_cat_pipi_light.svg', 'reader_bg_cat_pipi_dark.svg',
-  'reader_decor_cat_pipi_light.svg', 'reader_decor_cat_pipi_dark.svg',
-  'ic_theme_cat_pipi_bookshelf.svg', 'ic_theme_cat_pipi_explore.svg',
-  'ic_theme_cat_pipi_search.svg', 'ic_theme_cat_pipi_mine.svg',
-  'regex_frame_pipi_soft_paw.svg', 'regex_cap_pipi_soft_paw.svg'
-];
-for (const fileName of catPipiSvgs) {
-  assert(fs.existsSync(path.join(mediaRoot, fileName)), `Cat Pipi vector asset is missing: ${fileName}`);
-}
 
 const bubbleStyles = ['qq-soft', 'qq-solid', 'capsule', 'paper', 'neon', 'sword-talisman', 'qingluan-jade',
   'pipi-soft-paw'];
@@ -281,7 +189,8 @@ assert((indexPage.includes("this.actionItem('多选'") ||
 assert(indexPage.includes("this.shelfGroupChip('未分组', -1)") && indexPage.includes("Text('＋')"),
   'Bookshelf group bar must include ungrouped and add-group actions');
 const settingsPageSource = indexPage.slice(indexPage.indexOf('struct SettingsPage'));
-assert(settingsPageSource.includes('.backgroundColor(this.pageColor())'),
+assert(settingsPageSource.includes('.backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))') ||
+  settingsPageSource.includes('.backgroundColor(this.pageColor())'),
   'Mine page background is not connected to the active theme');
 assert(!settingsPageSource.includes(".backgroundColor(this.appDarkMode ? '#101113' : '#F5F5F5')"),
   'Mine page still contains the legacy fixed background color');
@@ -334,7 +243,8 @@ assert(themePage.includes('ThemeAssetRegistry.themeLogo(theme.id)') &&
 assert(runtime.includes('static accentSurfaceColor(darkMode: boolean)'),
   'Theme runtime does not expose a themed selected-surface color');
 assert(ttsSettingsPage.includes('? this.accentColor() : this.inputColor()') &&
-  ttsSettingsPage.includes('.backgroundColor(this.inputColor())'),
+  (ttsSettingsPage.includes('.backgroundColor(this.inputColor())') ||
+    ttsSettingsPage.includes('fillColor: this.inputColor()')),
   'TTS voice or speed controls are not connected to theme surfaces');
 assert(!readerSettingsPage.includes("this.appDarkMode ? '#24272D' : '#F0F2F5'"),
   'Reader settings still contains legacy fixed control backgrounds');
@@ -450,7 +360,30 @@ for (const relativePath of requiredFiles) {
   assert(fs.existsSync(path.join(etsRoot, relativePath)), `Required theme file is missing: ${relativePath}`);
 }
 
+// The main background is drawn by one shared layer, so every page that is not
+// the reader, the startup cover or the color editor has to mount it.
+const backgroundLayer = read('entry/src/main/ets/components/AppBackgroundLayer.ets');
+assert(backgroundLayer.includes('export struct AppBackgroundLayer') &&
+  backgroundLayer.includes("StorageLink('appMainBackgroundGlobal')") &&
+  backgroundLayer.includes("StorageLink('appCustomLightMainBackgroundImagePath')"),
+  'Shared background layer must read the scheme background from storage');
 const pageRoot = path.join(etsRoot, 'pages');
+const backgroundExcludedPages = ['ReadBook.ets', 'Startup.ets', 'ThemeColorSettings.ets'];
+let backgroundPageCount = 0;
+for (const fileName of fs.readdirSync(pageRoot).filter(fileName => fileName.endsWith('.ets'))) {
+  const source = fs.readFileSync(path.join(pageRoot, fileName), 'utf8');
+  const usesLayer = /^[ \t]+AppBackgroundLayer\(/m.test(source);
+  if (backgroundExcludedPages.includes(fileName)) {
+    assert(!usesLayer, `Page must not draw the shared background layer: ${fileName}`);
+    continue;
+  }
+  assert(usesLayer, `Page is missing the shared background layer: ${fileName}`);
+  assert(source.includes("from '../components/AppBackgroundLayer'"),
+    `Page does not import the shared background layer: ${fileName}`);
+  backgroundPageCount++;
+}
+assert(backgroundPageCount >= 30, `Too few pages mount the shared background layer: ${backgroundPageCount}`);
+
 for (const fileName of fs.readdirSync(pageRoot).filter(fileName => fileName.endsWith('.ets'))) {
   const source = fs.readFileSync(path.join(pageRoot, fileName), 'utf8');
   if (source.includes('pageColor(): string')) {
@@ -458,7 +391,24 @@ for (const fileName of fs.readdirSync(pageRoot).filter(fileName => fileName.ends
   }
 }
 
-console.log(`Theme framework check passed: ${expectedThemes.length} themes, ` +
-  `${backgroundFiles.length} legacy backgrounds, ${readerDecorationFiles.length} responsive ornaments, ` +
-  `${themedIconFiles.length} themed icons, ` +
+// A struct member that shadows an ArkUI attribute breaks the compiler, so the
+// theme helpers must keep names that no CommonAttribute owns.
+const shadowingNames = ['backgroundImage', 'backgroundOpacity', 'background', 'backgroundColor',
+  'opacity', 'width', 'height', 'border', 'padding', 'margin', 'mask', 'overlay', 'shadow', 'blur',
+  'clip', 'offset', 'position', 'scale', 'rotate', 'translate', 'visibility', 'zIndex', 'enabled',
+  'draggable', 'focusable', 'transition', 'align', 'alignSelf', 'alignItems', 'alignContent'];
+const shadowFiles = [path.join(etsRoot, 'components'), pageRoot];
+for (const scanRoot of shadowFiles) {
+  for (const fileName of fs.readdirSync(scanRoot).filter(name => name.endsWith('.ets'))) {
+    const source = fs.readFileSync(path.join(scanRoot, fileName), 'utf8');
+    if (!source.includes('@Component')) continue;
+    for (const name of shadowingNames) {
+      assert(!new RegExp(`^[ \\t]*(?:private |public |protected )?${name}\\s*\\(`, 'm').test(source),
+        `Struct member shadows the ArkUI attribute ${name}(): ${fileName}`);
+    }
+  }
+}
+
+console.log(`Theme framework check passed: ${expectedThemes.length} builtin theme, ` +
+  `${themeLogoFiles.length} theme logos, ` +
   `${bubbleStyles.length} bubble styles.`);

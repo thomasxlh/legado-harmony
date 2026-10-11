@@ -9,6 +9,7 @@ import { SystemTtsReader } from '../utils/SystemTtsReader';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { TtsSettings, TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { ResponsiveManagerListLayout } from '../utils/ResponsiveManagerListLayout';
 import { FormDraftStore } from '../utils/FormDraftStore';
 import deviceInfo from '@ohos.deviceInfo';
@@ -116,6 +117,7 @@ struct CustomTtsVoiceManagerPage {
 
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
+      AppBackgroundLayer()
       Column() {
         this.titleBar()
         this.searchBar()
@@ -195,7 +197,7 @@ struct CustomTtsVoiceManagerPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.pageColor())
+      .backgroundColor(this.pageColorBehind())
 
       if (!this.selectionMode && !this.showAddDialog && !this.isImporting && !this.isBatchOperating) {
         this.addVoiceFloatingButton()
@@ -926,8 +928,13 @@ struct CustomTtsVoiceManagerPage {
     return ThemeRuntime.pageColor(this.appDarkMode);
   }
 
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   inputColor(): string {

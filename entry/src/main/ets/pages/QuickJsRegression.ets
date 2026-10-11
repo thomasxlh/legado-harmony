@@ -18,6 +18,7 @@ import { QuickJsShadowComparator } from '../core/script/QuickJsScriptRuntime';
 import { QuickJsValidationCandidate, QuickJsValidationSeed, QuickJsValidationSnapshot,
   QuickJsValidationStore } from '../core/script/QuickJsValidationStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
@@ -75,6 +76,7 @@ struct QuickJsRegressionPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
       Scroll() {
         Column({ space: 12 }) {
           this.explanationCard()
@@ -95,7 +97,7 @@ struct QuickJsRegressionPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(this.pageColorBehind())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -878,7 +880,12 @@ struct QuickJsRegressionPage {
 
   private syncBars(): void { syncSystemBars(getContext(this), this.appDarkMode, this.pageColor()); }
   private pageColor(): string { return ThemeRuntime.pageColor(this.appDarkMode); }
-  private cardColor(): string { return ThemeRuntime.cardColor(this.appDarkMode); }
+
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+  private cardColor(): string { return ThemeRuntime.cardColorBehind(this.appDarkMode); }
   private primaryTextColor(): string { return ThemeRuntime.primaryTextColor(this.appDarkMode); }
   private subTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }
   private accentColor(): string { return ThemeRuntime.accentColor(this.appDarkMode); }

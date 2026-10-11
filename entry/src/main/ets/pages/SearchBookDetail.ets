@@ -11,6 +11,7 @@ import { CoverGallerySettings } from '../utils/CoverGallerySettings';
 import { BookFieldSanitizer } from '../utils/BookFieldSanitizer';
 import { SearchExplorePendingBook } from '../utils/SearchExplorePendingBook';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
@@ -140,6 +141,7 @@ struct SearchBookDetailPage {
 
   build() {
     Stack() {
+      AppBackgroundLayer()
       WebBookFetchRuntimeHost()
       Column() {
         Scroll() {
@@ -314,7 +316,7 @@ struct SearchBookDetailPage {
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .layoutWeight(1)
-        .backgroundColor(this.pageColor())
+        .backgroundColor(this.pageColorBehind())
 
         Row({ space: 10 }) {
           Button(this.isInShelf ? '已加入书架' : '加入书架')
@@ -355,7 +357,7 @@ struct SearchBookDetailPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.pageColor())
+      .backgroundColor(this.pageColorBehind())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
       this.titleBar()
@@ -1296,8 +1298,13 @@ struct SearchBookDetailPage {
     return ThemeRuntime.pageColor(this.appDarkMode);
   }
 
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   inputColor(): string {

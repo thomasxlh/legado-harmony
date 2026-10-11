@@ -9,6 +9,7 @@ import { BookSourceRuntimeSnapshotStore } from '../core/book/BookSourceRuntimeSn
 import { syncSystemBars } from '../utils/SystemBars';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
 /**
@@ -230,96 +231,101 @@ struct VerifyWebPage {
   }
 
   build() {
-    Column() {
-      Row() {
-        ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-          onBack: () => this.finishVerify() })
+    Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
+      Column() {
+        Row() {
+          ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
+            onBack: () => this.finishVerify() })
 
-        Column() {
-          Text(this.title)
-            .fontSize(18)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.primaryTextColor())
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text(this.currentUrl)
-            .fontSize(11)
-            .fontColor(this.subTextColor())
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Column() {
+            Text(this.title)
+              .fontSize(18)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.primaryTextColor())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text(this.currentUrl)
+              .fontSize(11)
+              .fontColor(this.subTextColor())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+
+          Text('完成')
+            .fontSize(15)
+            .fontColor(this.accentColor())
+            .width(56)
+            .height(56)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.finishVerify();
+            })
         }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
+        .width('100%')
+        .height(56)
+        .padding({ right: 8 })
+        .backgroundColor(this.cardColor())
+        .alignItems(VerticalAlign.Center)
 
-        Text('完成')
-          .fontSize(15)
-          .fontColor(this.accentColor())
-          .width(56)
-          .height(56)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            this.finishVerify();
+        if (this.progress > 0 && this.progress < 100) {
+          Progress({ value: this.progress, total: 100, type: ProgressType.Linear })
+            .width('100%')
+            .height(2)
+            .color(this.accentColor())
+        }
+
+        Web({ src: this.url, controller: this.controller })
+          .width('100%')
+          .layoutWeight(1)
+          .javaScriptAccess(true)
+          .domStorageAccess(true)
+          .onlineImageAccess(true)
+          .imageAccess(true)
+          .mixedMode(MixedMode.All)
+          .userAgent(this.browserUserAgent())
+          .javaScriptProxy({
+            object: this.browserJavaBridge,
+            name: 'java',
+            methodList: [
+              'toast', 'longToast', 'startBrowser', 'startBrowserDp', 'open', 'openUrl',
+              'getCookie', 'setCookie', 'removeCookie', 'getVariable', 'putVariable', 'reLoginView'
+            ],
+            controller: this.controller
+          })
+          .onControllerAttached(() => {
+            this.loadBrowserPayload();
+          })
+          .onLoadIntercept((event?: OnLoadInterceptEvent): boolean => {
+            return this.handleBrowserLoadIntercept(event);
+          })
+          .onPageBegin((event?: OnPageBeginEvent) => {
+            if (event?.url) this.currentUrl = event.url;
+          })
+          .onPageEnd((event?: OnPageEndEvent) => {
+            if (event?.url) {
+              this.currentUrl = event.url;
+              if (!this.readerCommentMode) {
+                this.saveCookies(event.url);
+                this.syncDocumentCookies(event.url);
+              }
+            }
+            if (!this.readerCommentMode) this.injectBrowserPayloadScript();
+          })
+          .onProgressChange((event?: OnProgressChangeEvent) => {
+            this.progress = event?.newProgress || 0;
           })
       }
       .width('100%')
-      .height(56)
-      .padding({ right: 8 })
-      .backgroundColor(this.cardColor())
-      .alignItems(VerticalAlign.Center)
-
-      if (this.progress > 0 && this.progress < 100) {
-        Progress({ value: this.progress, total: 100, type: ProgressType.Linear })
-          .width('100%')
-          .height(2)
-          .color(this.accentColor())
-      }
-
-      Web({ src: this.url, controller: this.controller })
-        .width('100%')
-        .layoutWeight(1)
-        .javaScriptAccess(true)
-        .domStorageAccess(true)
-        .onlineImageAccess(true)
-        .imageAccess(true)
-        .mixedMode(MixedMode.All)
-        .userAgent(this.browserUserAgent())
-        .javaScriptProxy({
-          object: this.browserJavaBridge,
-          name: 'java',
-          methodList: [
-            'toast', 'longToast', 'startBrowser', 'startBrowserDp', 'open', 'openUrl',
-            'getCookie', 'setCookie', 'removeCookie', 'getVariable', 'putVariable', 'reLoginView'
-          ],
-          controller: this.controller
-        })
-        .onControllerAttached(() => {
-          this.loadBrowserPayload();
-        })
-        .onLoadIntercept((event?: OnLoadInterceptEvent): boolean => {
-          return this.handleBrowserLoadIntercept(event);
-        })
-        .onPageBegin((event?: OnPageBeginEvent) => {
-          if (event?.url) this.currentUrl = event.url;
-        })
-        .onPageEnd((event?: OnPageEndEvent) => {
-          if (event?.url) {
-            this.currentUrl = event.url;
-            if (!this.readerCommentMode) {
-              this.saveCookies(event.url);
-              this.syncDocumentCookies(event.url);
-            }
-          }
-          if (!this.readerCommentMode) this.injectBrowserPayloadScript();
-        })
-        .onProgressChange((event?: OnProgressChangeEvent) => {
-          this.progress = event?.newProgress || 0;
-        })
+      .height('100%')
+      .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
+      .backgroundColor(this.pageColorBehind())
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
-    .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 
   async finishVerify(): Promise<void> {
@@ -775,13 +781,18 @@ struct VerifyWebPage {
     return ThemeRuntime.pageColor(this.appDarkMode);
   }
 
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+
   hostOf(url: string): string {
     const match = (url || '').match(/^https?:\/\/([^/:?#]+)/i);
     return match && match[1] ? match[1].toLowerCase() : '';
   }
 
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   primaryTextColor(): string {

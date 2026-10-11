@@ -2,6 +2,7 @@ import { router } from '@kit.ArkUI';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { AdaptiveIconButton } from '../components/AdaptiveIconButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { GlassPresetIds, GlassSettings, GlassSettingsStore } from '../utils/GlassSettingsStore';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
@@ -34,48 +35,53 @@ struct GlassSettingsPage {
   }
 
   build() {
-    Column() {
-      this.titleBar()
-      this.floatingPreview()
-      Scroll() {
-        Column({ space: 12 }) {
-          this.glassEnabledSwitch()
+    Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
+      Column() {
+        this.titleBar()
+        this.floatingPreview()
+        Scroll() {
           Column({ space: 12 }) {
-            this.sectionTitle('效果预设')
-            this.presets()
-            this.sectionTitle('模糊强度')
-            this.sliderCard('全局模糊强度', 'blur', 0, 40, 1)
-            this.sectionTitle('颜色与边框')
-            this.sliderCard('透明度', 'tintOpacity', 0, 100, 1)
-            this.sliderCard('边框透明度', 'borderOpacity', 0, 100, 1)
-            this.sliderCard('边框宽度', 'borderWidth', 0, 2, 0.5)
-            this.sliderCard('组件圆角', 'cornerRadius', 0, 32, 1)
-            this.sectionTitle('阴影')
-            this.shadowSwitch()
-            if (this.settings.shadowEnabled) {
-              this.sliderCard('阴影模糊', 'shadowRadius', 0, 30, 1)
-              this.sliderCard(this.appDarkMode ? '深色阴影' : '浅色阴影',
-                this.appDarkMode ? 'darkShadowOpacity' : 'lightShadowOpacity', 0, 100, 1)
-              this.sliderCard('水平偏移', 'shadowOffsetX', -12, 12, 1)
-              this.sliderCard('垂直偏移', 'shadowOffsetY', -12, 12, 1)
+            this.glassEnabledSwitch()
+            Column({ space: 12 }) {
+              this.sectionTitle('效果预设')
+              this.presets()
+              this.sectionTitle('模糊强度')
+              this.sliderCard('全局模糊强度', 'blur', 0, 40, 1)
+              this.sectionTitle('颜色与边框')
+              this.sliderCard('透明度', 'tintOpacity', 0, 100, 1)
+              this.sliderCard('边框透明度', 'borderOpacity', 0, 100, 1)
+              this.sliderCard('边框宽度', 'borderWidth', 0, 2, 0.5)
+              this.sliderCard('组件圆角', 'cornerRadius', 0, 32, 1)
+              this.sectionTitle('阴影')
+              this.shadowSwitch()
+              if (this.settings.shadowEnabled) {
+                this.sliderCard('阴影模糊', 'shadowRadius', 0, 30, 1)
+                this.sliderCard(this.appDarkMode ? '深色阴影' : '浅色阴影',
+                  this.appDarkMode ? 'darkShadowOpacity' : 'lightShadowOpacity', 0, 100, 1)
+                this.sliderCard('水平偏移', 'shadowOffsetX', -12, 12, 1)
+                this.sliderCard('垂直偏移', 'shadowOffsetY', -12, 12, 1)
+              }
+              this.performanceCard()
             }
-            this.performanceCard()
+            .width('100%')
+            .enabled(this.settings.enabled)
+            .opacity(this.settings.enabled ? 1 : 0.42)
           }
           .width('100%')
-          .enabled(this.settings.enabled)
-          .opacity(this.settings.enabled ? 1 : 0.42)
+          .padding({ left: 14, right: 14, top: 6, bottom: 32 + this.navBarHeight })
         }
-        .width('100%')
-        .padding({ left: 14, right: 14, top: 6, bottom: 32 + this.navBarHeight })
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .layoutWeight(1)
+        .align(Alignment.TopStart)
       }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .layoutWeight(1)
-      .align(Alignment.TopStart)
+      .width('100%')
+      .height('100%').justifyContent(FlexAlign.Start)
+      .backgroundColor(this.pageColorBehind())
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .width('100%')
-    .height('100%').justifyContent(FlexAlign.Start)
-    .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .height('100%')
   }
 
   async loadSettings(): Promise<void> {
@@ -179,7 +185,7 @@ struct GlassSettingsPage {
   }
 
   pageColor(): string { return ThemeRuntime.pageColor(this.appDarkMode); }
-  cardColor(): string { return ThemeRuntime.cardColor(this.appDarkMode); }
+  cardColor(): string { return ThemeRuntime.cardColorBehind(this.appDarkMode); }
   primaryTextColor(): string { return ThemeRuntime.primaryTextColor(this.appDarkMode); }
   subTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }
   accentColor(): string { return ThemeRuntime.accentColor(this.appDarkMode); }
@@ -187,6 +193,11 @@ struct GlassSettingsPage {
 
   previewEffectEnabled(): boolean {
     return this.settings.enabled && !this.settings.lowPerformance;
+  }
+
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
   }
 
   previewBlur(): number {

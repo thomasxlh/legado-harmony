@@ -11,6 +11,7 @@ import { AdaptiveIconButton } from '../components/AdaptiveIconButton';
 import { TtsSettings, TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
 const TTS_CUSTOM_VOICE_IMPORT_LIMIT_BYTES: number = 2 * 1024 * 1024;
@@ -67,6 +68,7 @@ struct TtsSettingsPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
         Scroll() {
           Column() {
             this.sectionTitle('朗读音色')
@@ -194,7 +196,7 @@ struct TtsSettingsPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(this.pageColorBehind())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -202,8 +204,13 @@ struct TtsSettingsPage {
     return ThemeRuntime.pageColor(this.appDarkMode);
   }
 
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   primaryTextColor(): string {

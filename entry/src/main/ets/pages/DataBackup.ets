@@ -4,6 +4,7 @@ import { promptAction, router } from '@kit.ArkUI';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import {
   AppDataBackupImportSession,
   AppDataBackupSelection,
@@ -79,6 +80,7 @@ struct DataBackupPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
       Scroll() {
         Column() {
           Row()
@@ -152,7 +154,7 @@ struct DataBackupPage {
       .width('100%')
       .height('100%')
       .align(Alignment.TopStart)
-      .backgroundColor(this.pageColor())
+      .backgroundColor(this.pageColorBehind())
 
       this.titleBar()
 
@@ -709,7 +711,12 @@ struct DataBackupPage {
   }
 
   pageColor(): string { return ThemeRuntime.pageColor(this.appDarkMode); }
-  cardColor(): string { return ThemeRuntime.cardColor(this.appDarkMode); }
+
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+  cardColor(): string { return ThemeRuntime.cardColorBehind(this.appDarkMode); }
   softColor(): string { return this.appDarkMode ? '#24272D' : '#EEF2F7'; }
   primaryTextColor(): string { return ThemeRuntime.primaryTextColor(this.appDarkMode); }
   subTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }

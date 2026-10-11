@@ -15,6 +15,7 @@ import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { ReaderTtsPlayerPanel } from '../components/ReaderTtsPlayerPanel';
 import { TtsCatalogSheet, CatalogTitleDataSource } from '../components/TtsCatalogSheet';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
@@ -170,6 +171,7 @@ struct AudioBookPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
       ReaderTtsPlayerPanel({
         darkMode: this.appDarkMode,
         accentColor: this.accentColor(),
@@ -193,7 +195,7 @@ struct AudioBookPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(this.pageColorBehind())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onAreaChange((_oldValue: Area, newValue: Area) => {
       const height = typeof newValue.height === 'number' ? newValue.height : Number.parseFloat(`${newValue.height}`);
@@ -1575,7 +1577,7 @@ struct AudioBookPage {
   }
 
   pageColor(): string { return ThemeRuntime.pageColor(this.appDarkMode); }
-  cardColor(): string { return ThemeRuntime.cardColor(this.appDarkMode); }
+  cardColor(): string { return ThemeRuntime.cardColorBehind(this.appDarkMode); }
   inputColor(): string { return ThemeRuntime.inputColor(this.appDarkMode); }
   primaryTextColor(): string { return ThemeRuntime.primaryTextColor(this.appDarkMode); }
   secondaryTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }
@@ -1585,6 +1587,11 @@ struct AudioBookPage {
   bookInitial(): string {
     const name = (this.book?.name || '书').trim();
     return name.length > 0 ? name.substring(0, 1) : '书';
+  }
+
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
   }
 
   /** Mirrors the reader catalog's "已缓存" chip; local books have no remote cache state. */

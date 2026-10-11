@@ -241,7 +241,7 @@ struct ReadBookPage {
   @State tocPanelTab: number = 0;
   @State bookmarks: Bookmark[] = [];
   @State bookmarkMultiSelectMode: boolean = false;
-  @State selectedBookmarkIds: number[] = [];
+  @State selectedBookmarkUrls: string[] = [];
   @State showBookmarkActionMenu: boolean = false;
   @State pendingBookmarkAction: Bookmark | null = null;
   @State bookmarkActionMenuX: number = 16;
@@ -655,7 +655,6 @@ struct ReadBookPage {
   @State readerFontRenderReady: boolean = false;
   @StorageLink('appDarkMode') @Watch('onReaderColorModeChanged') appDarkMode: boolean = false;
   @StorageLink('appThemeMode') appThemeMode: string = 'system';
-  @StorageLink('appThemeBookCoverEnabled') themeBookCoverEnabled: boolean = false;
   @StorageLink('themeRevision') @Watch('onReaderThemeChanged') themeRevision: number = 0;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
@@ -1512,6 +1511,8 @@ struct ReadBookPage {
         return false;
       }
       if (body === null) {
+        // 超时兜底：放弃引擎里仍挂起的取文任务，防止后续重试 join 同一个永不完结的 Promise 反复失败。
+        engine.abandonChapterLoad(chapterIndex);
         body = '';
       }
       let loadedContent = await this.prepareReaderContentRules(body, chapterIndex);
@@ -1601,6 +1602,8 @@ struct ReadBookPage {
         READER_CONTENT_FETCH_TIMEOUT_MS);
       if (refreshSerial !== this.contentLoadSerial || chapterIndex !== this.currentChapterIndex) return;
       if (body === null) {
+        // 超时兜底：放弃引擎里仍挂起的取文任务，防止再次刷新 join 同一个永不完结的 Promise 反复失败。
+        engine.abandonChapterLoad(chapterIndex);
         body = '';
       }
       if (body) {
@@ -4129,11 +4132,11 @@ struct ReadBookPage {
   bookmarkPanelSummary() {
     if (this.bookmarkMultiSelectMode) {
       Row({ space: 16 }) {
-        Text(`已选 ${this.selectedBookmarkIds.length} 项`)
+        Text(`已选 ${this.selectedBookmarkUrls.length} 项`)
           .fontSize(14)
           .fontColor(this.getTextColor())
           .layoutWeight(1)
-        Text(this.selectedBookmarkIds.length === this.bookmarks.length ? '取消全选' : '全选')
+        Text(this.selectedBookmarkUrls.length === this.bookmarks.length ? '取消全选' : '全选')
           .fontSize(13)
           .fontColor(this.accentColor())
           .onClick(() => {
@@ -4141,8 +4144,8 @@ struct ReadBookPage {
           })
         Text('删除')
           .fontSize(13)
-          .fontColor(this.selectedBookmarkIds.length > 0 ? '#D94841' : this.getSubTextColor())
-          .enabled(this.selectedBookmarkIds.length > 0)
+          .fontColor(this.selectedBookmarkUrls.length > 0 ? '#D94841' : this.getSubTextColor())
+          .enabled(this.selectedBookmarkUrls.length > 0)
           .onClick(() => {
             this.deleteSelectedBookmarks();
           })
@@ -4218,7 +4221,7 @@ struct ReadBookPage {
               edgeEffect: SwipeEdgeEffect.Spring
             })
           }
-        }, (bookmark: Bookmark) => `${bookmark.id}`)
+        }, (bookmark: Bookmark) => `${bookmark.bookmarkUrl}`)
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .layoutWeight(1)
@@ -4408,10 +4411,10 @@ struct ReadBookPage {
     }
     .width('100%')
     .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-    .backgroundColor(this.isBookmarkSelected(bookmark.id) ? this.tocSelectedBackgroundColor() : Color.Transparent)
+    .backgroundColor(this.isBookmarkSelected(bookmark.bookmarkUrl) ? this.tocSelectedBackgroundColor() : Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000' })
     .onClick(() => {
-      if (this.bookmarkMultiSelectMode) this.toggleBookmarkSelection(bookmark.id)
+      if (this.bookmarkMultiSelectMode) this.toggleBookmarkSelection(bookmark.bookmarkUrl)
       else this.jumpToBookmark(bookmark)
     })
     .gesture(LongPressGesture({ repeat: false }).onAction((event: GestureEvent) => {
@@ -4421,7 +4424,7 @@ struct ReadBookPage {
 
   private bookmarkSwipeActions(bookmark: Bookmark): HdsSwipeActionOptions {
     return { icons: [
-      { icon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')), backgroundColor: this.buttonColor(), iconOptions: { accessibilityText: '多选' }, onAction: () => this.enterBookmarkMultiSelect(bookmark.id) },
+      { icon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')), backgroundColor: this.buttonColor(), iconOptions: { accessibilityText: '多选' }, onAction: () => this.enterBookmarkMultiSelect(bookmark.bookmarkUrl) },
       { icon: new SymbolGlyphModifier($r('sys.symbol.trash')), backgroundColor: ThemeRuntime.dangerColor(this.appDarkMode), iconOptions: { accessibilityText: '删除书签' }, onAction: () => this.deleteBookmark(bookmark) }
     ] };
   }
@@ -5570,7 +5573,7 @@ struct ReadBookPage {
     .alignItems(HorizontalAlign.Center)
     .backgroundColor(this.accentColor())
     .onClick(() => {
-      this.enterBookmarkMultiSelect(bookmark.id);
+      this.enterBookmarkMultiSelect(bookmark.bookmarkUrl);
     })
   }
 
@@ -5618,9 +5621,9 @@ struct ReadBookPage {
       Column() {
         this.bookmarkContextActionItem($r('sys.symbol.checkmark_circle'), '多选', this.getTextColor(), () => {
           if (this.pendingBookmarkAction) {
-            const bookmarkId = this.pendingBookmarkAction.id;
+            const bookmarkUrl = this.pendingBookmarkAction.bookmarkUrl;
             this.closeBookmarkActionMenu();
-            this.enterBookmarkMultiSelect(bookmarkId);
+            this.enterBookmarkMultiSelect(bookmarkUrl);
           }
         })
         this.bookmarkContextActionItem($r('sys.symbol.trash'), '删除', this.dangerColor(), () => {
@@ -7480,7 +7483,7 @@ struct ReadBookPage {
       bookmark.endPos = this.getPageEndOffset(pageIndex);
       bookmark.content = this.bookmarkContentPreview(pageIndex);
       bookmark.createTime = Date.now();
-      bookmark.id = await db.insertBookmark(bookmark);
+      await db.insertBookmark(bookmark);
       await this.loadBookmarks();
       HdsFeedback.showToast('书签已添加');
     } catch (e) {
@@ -7498,9 +7501,9 @@ struct ReadBookPage {
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
-      await db.deleteBookmark(bookmark.id);
-      this.bookmarks = this.bookmarks.filter((item: Bookmark) => item.id !== bookmark.id);
-      this.selectedBookmarkIds = this.selectedBookmarkIds.filter((id: number) => id !== bookmark.id);
+      await db.deleteBookmark(bookmark.bookmarkUrl);
+      this.bookmarks = this.bookmarks.filter((item: Bookmark) => item.bookmarkUrl !== bookmark.bookmarkUrl);
+      this.selectedBookmarkUrls = this.selectedBookmarkUrls.filter((url: string) => url !== bookmark.bookmarkUrl);
       if (this.bookmarkMultiSelectMode && this.bookmarks.length === 0) {
         this.cancelBookmarkMultiSelect();
       }
@@ -7511,10 +7514,10 @@ struct ReadBookPage {
     }
   }
 
-  enterBookmarkMultiSelect(bookmarkId: number): void {
+  enterBookmarkMultiSelect(bookmarkUrl: string): void {
     this.bookmarkMultiSelectMode = true;
-    if (!this.selectedBookmarkIds.includes(bookmarkId)) {
-      this.selectedBookmarkIds = [...this.selectedBookmarkIds, bookmarkId];
+    if (!this.selectedBookmarkUrls.includes(bookmarkUrl)) {
+      this.selectedBookmarkUrls = [...this.selectedBookmarkUrls, bookmarkUrl];
     }
     setTimeout(() => {
       try {
@@ -7525,41 +7528,41 @@ struct ReadBookPage {
     }, 0);
   }
 
-  isBookmarkSelected(bookmarkId: number): boolean {
-    return this.selectedBookmarkIds.includes(bookmarkId);
+  isBookmarkSelected(bookmarkUrl: string): boolean {
+    return this.selectedBookmarkUrls.includes(bookmarkUrl);
   }
 
-  toggleBookmarkSelection(bookmarkId: number): void {
-    if (this.selectedBookmarkIds.includes(bookmarkId)) {
-      this.selectedBookmarkIds = this.selectedBookmarkIds.filter((id: number) => id !== bookmarkId);
+  toggleBookmarkSelection(bookmarkUrl: string): void {
+    if (this.selectedBookmarkUrls.includes(bookmarkUrl)) {
+      this.selectedBookmarkUrls = this.selectedBookmarkUrls.filter((url: string) => url !== bookmarkUrl);
     } else {
-      this.selectedBookmarkIds = [...this.selectedBookmarkIds, bookmarkId];
+      this.selectedBookmarkUrls = [...this.selectedBookmarkUrls, bookmarkUrl];
     }
   }
 
   toggleSelectAllBookmarks(): void {
-    if (this.selectedBookmarkIds.length === this.bookmarks.length) {
-      this.selectedBookmarkIds = [];
+    if (this.selectedBookmarkUrls.length === this.bookmarks.length) {
+      this.selectedBookmarkUrls = [];
     } else {
-      this.selectedBookmarkIds = this.bookmarks.map((bookmark: Bookmark) => bookmark.id);
+      this.selectedBookmarkUrls = this.bookmarks.map((bookmark: Bookmark): string => bookmark.bookmarkUrl);
     }
   }
 
   cancelBookmarkMultiSelect(): void {
     this.bookmarkMultiSelectMode = false;
-    this.selectedBookmarkIds = [];
+    this.selectedBookmarkUrls = [];
   }
 
   async deleteSelectedBookmarks(): Promise<void> {
-    const ids = [...this.selectedBookmarkIds];
-    if (ids.length === 0) return;
+    const urls = [...this.selectedBookmarkUrls];
+    if (urls.length === 0) return;
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
-      await db.deleteBookmarks(ids);
-      this.bookmarks = this.bookmarks.filter((bookmark: Bookmark) => !ids.includes(bookmark.id));
+      await db.deleteBookmarks(urls);
+      this.bookmarks = this.bookmarks.filter((bookmark: Bookmark) => !urls.includes(bookmark.bookmarkUrl));
       this.cancelBookmarkMultiSelect();
-      HdsFeedback.showToast(`已删除 ${ids.length} 条书签`);
+      HdsFeedback.showToast(`已删除 ${urls.length} 条书签`);
     } catch (e) {
       console.error('批量删除书签失败:', e);
       HdsFeedback.showToast('批量删除书签失败');
@@ -13430,7 +13433,7 @@ struct ReadBookPage {
       this.ttsCurrentSentence(),
       this.ttsPanelTextAfter(),
       this.getTtsFloatingCover(),
-      this.shouldUseTtsThemeBookCover() ? this.activeTtsThemeShelfFrame() : '',
+      '',
       `${this.currentChapterIndex + 1}/${Math.max(1, this.chapters.length)}章`,
       this.ttsSpeed,
       this.ttsSleepTimerMinutes,
@@ -14557,43 +14560,6 @@ struct ReadBookPage {
     this.ttsMediaPixelMap = null;
   }
 
-  shouldUseTtsThemeBookCover(): boolean {
-    return this.themeBookCoverEnabled &&
-      ThemeAssetRegistry.themeBookCovers(ThemeRuntime.bookTokens(this.appDarkMode).coverAssetId).length > 0;
-  }
-
-  activeTtsThemeBookCovers(): ResourceStr[] {
-    const covers = ThemeAssetRegistry.themeBookCovers(ThemeRuntime.bookTokens(this.appDarkMode).coverAssetId);
-    if (covers.length <= 1) {
-      return covers;
-    }
-    const result: ResourceStr[] = [];
-    const seed = this.ttsThemeBookCoverSeed();
-    const start = seed % covers.length;
-    const direction = seed % 2 === 0 ? 1 : covers.length - 1;
-    for (let index = 0; index < covers.length; index++) {
-      result.push(covers[(start + index * direction) % covers.length]);
-    }
-    return result;
-  }
-
-  ttsThemeBookCoverSeed(): number {
-    const key = `${this.book?.bookUrl || this.bookUrl}|${this.book?.name || ''}|${this.book?.author || ''}`;
-    let hash = 17;
-    for (let index = 0; index < key.length; index++) {
-      hash = (hash * 31 + key.charCodeAt(index)) & 0x7FFFFFFF;
-    }
-    return hash;
-  }
-
-  ttsThemeBookCoverInterval(): number {
-    return 3200 + this.ttsThemeBookCoverSeed() % 5 * 420;
-  }
-
-  activeTtsThemeShelfFrame(): ResourceStr {
-    return ThemeAssetRegistry.themeShelfFrame(ThemeRuntime.bookTokens(this.appDarkMode).shelfFrameAssetId);
-  }
-
   getTtsPanelCoverList(): string[] {
     if (!this.book) {
       return [];
@@ -14619,10 +14585,6 @@ struct ReadBookPage {
   }
 
   getTtsFloatingCover(): ResourceStr {
-    if (this.shouldUseTtsThemeBookCover()) {
-      const themeCovers = this.activeTtsThemeBookCovers();
-      return themeCovers.length > 0 ? themeCovers[0] : '';
-    }
     const covers = this.getTtsPanelCoverList();
     return covers.length > 0 ? covers[0] : '';
   }

@@ -3,6 +3,7 @@ import { router } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { syncSystemBars } from '../utils/SystemBars';
 
 @Entry
@@ -25,6 +26,7 @@ struct OpenSourceLicensesPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
       Scroll() {
         Column() {
           Column() {
@@ -84,7 +86,7 @@ struct OpenSourceLicensesPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(this.pageColorBehind())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -114,8 +116,13 @@ struct OpenSourceLicensesPage {
     return ThemeRuntime.pageColor(this.appDarkMode);
   }
 
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   primaryTextColor(): string {

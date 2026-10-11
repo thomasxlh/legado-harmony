@@ -1,6 +1,6 @@
 # 主题开发指南
 
-开源读书的主题由编译期 `ThemePack`、运行时 `ThemeRuntime` 和持久化兼容层组成。主题选择保存稳定的 `themeId`、主题封面开关与用户颜色覆盖值；`Resource`、背景图片、封面和图标由资源注册表解析，不进入 Preferences。
+开源读书的主题由编译期 `ThemePack`、运行时 `ThemeRuntime` 和持久化兼容层组成。当前内置主题只保留默认主题 `plain-default`，其余外观由用户自建的自定义主题方案（最多 5 套）承载。主题选择保存稳定的 `themeId` 与用户颜色覆盖值；`Resource` 与图标由资源注册表解析，不进入 Preferences。
 
 ## 目录与职责
 
@@ -12,16 +12,13 @@ entry/src/main/ets/theme/
 └── ThemeAssetRegistry.ets      # assetId / iconPackId 到 Resource 的映射
 
 entry/src/main/resources/base/media/
-├── reader_bg_*                 # 旧版 9:16 阅读背景 SVG（兼容资源）
-├── reader_decor_*              # 响应式阅读背景角落装饰 SVG（480 × 480）
-├── theme_cover_*               # 主题书籍封面底图
-├── theme_frame_*               # 书架封面装饰边框
-├── theme_folder_art_*          # 平铺模式分组文件夹插画（450 × 660）
-├── ic_theme_rounded_*          # 圆润导航图标包
-└── ic_theme_ink_*              # 水墨导航图标包
+├── theme_logo_plain_default.svg # 默认主题标识
+├── theme_logo_custom.svg        # 自定义主题标识
+├── regex_frame_*                # 正则气泡端饰（左侧框）
+└── regex_cap_*                  # 正则气泡端饰（左右端头）
 ```
 
-当前还内置 `strawberry`、`crimson`、`plum`、`rose`、`crane`、`sword-frost`、`qingluan-water` 与 `cat-pipi` 八组主题专属导航图标，以及对应的浅/深阅读背景和主题标识。
+主题包不再随包附带书籍封面、书架边框、文件夹插画和专属导航图标包：底栏统一使用经典图标包，书架封面只使用原始封面与封面图库。
 
 `AppThemeSettingsStore` 是兼容桥：它继续读写原来的浅/深强调色与按钮色，同时保存 `appThemeId`，因此旧版本用户的自定义颜色不会在升级时丢失。
 
@@ -34,8 +31,7 @@ entry/src/main/resources/base/media/
 - 正则强调：默认强调模式、气泡预设、强调色、气泡文字色。
 - 排版：App 默认字体族。用户选择的自定义字体优先级更高。
 - 阅读排版：推荐字号、行距、段距与四边边距；切换主题时写入该主题的独立阅读配置。
-- 书籍：主题插画封面和书架装饰边框。启用主题封面时跳过原始/图库封面，封面不叠加书名或作者。
-- 启动封面：默认主题直接使用 HarmonyOS 系统启动窗口；其余主题提供参考配套书籍封面视觉语言重新绘制的独立竖屏插画，并按明暗模式自适应遮罩。自定义主题可按明暗模式从有效已购主题中独立选择启动封面。
+- 启动封面：默认主题直接使用 HarmonyOS 系统启动窗口；自定义主题可按明暗模式分别上传自己的竖屏封面与文案，未上传时同样使用系统启动窗口。
 - 导航：悬浮底栏图标包 ID。
 - 形状：小/中/大圆角、卡片、按钮与气泡圆角。
 - 材质：面板、弹层、按钮、遮罩和菜单可分别声明模糊与圆角，并配置明暗色玻璃透明度、边框和阴影。标准玻璃模式使用主题默认值；轻盈、强烈或自定义模式继续优先使用用户设置。
@@ -43,7 +39,7 @@ entry/src/main/resources/base/media/
 有效值优先级为：
 
 ```text
-正则规则级设置 > 用户颜色/字体覆盖 > 当前主题浅深变体 > 经典蓝回退
+正则规则级设置 > 用户颜色/字体覆盖 > 当前主题浅深变体 > 默认主题回退
 ```
 
 阅读页保留原有米黄、素白、青绿和自定义配色，并新增稳定索引 `APP_THEME_INDEX`。只有选择“应用主题”时，主题背景图与阅读文字色才生效。
@@ -69,9 +65,6 @@ theme.readerLayout.marginLeft = 22;
 theme.readerLayout.marginRight = 22;
 theme.readerLayout.marginTop = 22;
 theme.readerLayout.marginBottom = 22;
-theme.book.coverAssetId = 'my-theme';
-theme.book.shelfFrameAssetId = 'my-theme';
-theme.book.shelfFolderAssetId = 'my-theme';
 
 const light = new ThemeVariant();
 light.colors.pageColor = '#F5F5F5';
@@ -103,25 +96,28 @@ BuiltinThemeRegistry.register(theme);
 
 主题 ID 必须稳定且唯一。注册相同 ID 会替换已注册定义，便于模块化主题包覆盖默认值。
 
-## 阅读背景资源
+## 阅读背景
 
-内置主题使用“主题底色 + 原生自适应边框 + 角落装饰”的响应式结构。装饰建议使用无外链、无脚本、无滤镜的透明本地 SVG，基准尺寸为 `480 × 480`。图案应保持低对比，正文区域不要放置密集细节。旧版 `1080 × 1920` 的 `reader_bg_*` 仅作为兼容资源保留，不再直接铺满阅读页。
+内置主题只提供阅读底色（`reader.backgroundColor`），不再随包附带背景图或角落装饰。阅读页背景图始终来自用户自己的选择与封面图库；`ReaderThemeBackground` 保留了对 `backgroundAssetId` 装饰资源的渲染能力，但当前没有任何内置主题使用它。
 
-1. 将浅/深透明装饰资源放入 `entry/src/main/resources/base/media/`，命名为 `reader_decor_<id>_light.svg` 与 `reader_decor_<id>_dark.svg`。
-2. 在 `ThemeAssetRegistry.readerBackgroundDecoration()` 中增加稳定 `assetId` 映射，并在 `readerBackgroundBorderColor()` 中配置边框颜色。
-3. 分别填写 `theme.light.reader.backgroundAssetId` 与 `theme.dark.reader.backgroundAssetId`。
-4. 必须提供 `backgroundColor`；它是实际铺满任意分辨率、横竖屏和分屏窗口的阅读底色。
-5. 正确填写 `contentTone`，阅读页据此决定系统栏图标和辅助内容明暗。
-6. 装饰由 `ReaderThemeBackground` 锚定在左上与右下角的正方形区域并使用 `ImageFit.Contain`，不要把内置主题重新改成 `Cover` 全屏壁纸。
+## 启动封面与冷启动
 
-## 主题封面与书架边框
+HarmonyOS 的 `startWindowIcon` 与 `startWindowBackground` 不可缺省，因此 `startWindowIcon` 指向一张全透明图片 `start_window_blank.png`：冷启动不再先闪一下桌面图标。
 
-封面底图建议使用约 `300 × 440` 的本地 JPG/PNG/SVG。底图直接提供完整主题插画，不叠加书名或作者；同一 `coverAssetId` 可在 `themeBookCovers()` 中映射多张封面，书架会按书籍稳定打乱顺序并使用错开的间隔自动轮播。边框资源需要保持中心透明，只绘制外框、角花或主题纹样。
+- 自定义主题上传了启动封面，或填写了主/副标题时，`EntryAbility` 加载 `pages/Startup`，由 `ThemeStartupCover` 绘制封面与文案。
+- 两者都为空时不绘制业务启动页，`EntryAbility` 直接加载 `pages/Index`。
+- 封面主/副标题默认留空，只有用户显式填写才展示。历史上被强制写入的默认值「开源读书」会在 `AppThemeSettingsStore` 读取时迁移为空字符串。
 
-1. 添加 `theme_cover_<id>.svg`、`theme_frame_<id>.svg` 与 `theme_folder_art_<id>.jpg`；文件夹资源建议使用 `450 × 660`，与主题封面保持一致比例。
-2. 在 `ThemeAssetRegistry.themeBookCover()`、`themeShelfFrame()` 和 `themeShelfFolder()` 中增加资源映射。
-3. 配置 `theme.book.coverAssetId`、`shelfFrameAssetId` 与 `shelfFolderAssetId`。
-4. 切换主题时用户可选择“保留原封面”或“启用主题封面”，此选择由 `appThemeBookCoverEnabled` 持久化。
+## 主界面背景
+
+自定义背景跟随自定义主题方案，浅色与深色各存一张底图；默认主题不使用背景图：
+
+- 存储：`AppThemeSettings` 的 `customLightMainBackgroundImagePath`、`customDarkMainBackgroundImagePath` 与对应的 `customLightMainBackgroundOpacity`、`customDarkMainBackgroundOpacity`（10–100），控制是否铺到全部页面的 `mainBackgroundGlobal`（默认开启），以及卡片不透明度 `mainBackgroundCardOpacity`（0–100，默认 85）。它们随方案一起落在 `CustomThemeSchemeStore` 里，启用某套方案即切换背景；云端同步只带设置，不带本机图片文件。
+- 渲染：公共组件 `components/AppBackgroundLayer.ets` 负责在最底层先铺一层页面底色，再按不透明度叠加背景图。除阅读页、启动封面与主题配色编辑页外，每个页面都在根容器最底层挂载它；书架主界面传 `always: true` 恒显示，其余页面受 `mainBackgroundGlobal` 控制。
+- 底色：主界面用 `ThemeRuntime.mainPageColor(darkMode)`（有背景图时全透明），其它页面用 `ThemeRuntime.pageColorBehind(darkMode)`（开启全局背景时改为半透明，保留一层底色保证文字可读）。当前主题不是自定义主题，或该模式没有背景图时，两者都与 `pageColor()` 一致。
+- 卡片：卡片与列表项底色用 `ThemeRuntime.cardColorBehind(darkMode)`。铺了背景图时它会按 `mainBackgroundCardOpacity` 变成半透明，让背景图从卡片后面透上来；没有背景图或不透明度为 100 时与 `cardColor()` 完全一致。100 表示卡片仍是实心色，调得越低透得越多，文字、封面与边框始终保持不透明，所以可读性由这一项兜底。
+- 入口：自定义主题编辑页按浅色/深色分别提供「主界面背景」区块，可上传/更换/清除背景图、调节背景不透明度与卡片不透明度，并可关闭「应用到全部页面」，图片落在 `filesDir/main_backgrounds`。
+- 新增需要透出背景的容器时，使用 `ThemeRuntime.mainPageColor()`／`ThemeRuntime.pageColorBehind()` 而不是 `ThemeRuntime.pageColor()`；新增卡片类容器时用 `ThemeRuntime.cardColorBehind()`；新增页面时在根容器最底层挂 `AppBackgroundLayer()`。
 
 ## 悬浮底栏图标包
 
@@ -141,10 +137,11 @@ BuiltinThemeRegistry.register(theme);
 
 ## 验证清单
 
-付费主题不再需要修改服务端代码。发布客户端版本前，按 `server/README.md` 的“主题目录运营”说明向 `theme_catalog` 幂等写入主题 ID、显示名、价格、有效天数和上架状态；新增迁移时也要把内置主题加入初始化数据。不要删除已发布记录，下架时设置 `enabled = FALSE`，以保留已有权益与历史账本的可追溯性。
-
 - 浅色、深色、跟随系统三种模式均检查一次。
 - 冷启动后主题 ID、颜色覆盖和自定义字体保持不变。
+- 无启动封面与文案时冷启动直接进入书架；设置后先展示封面且不出现桌面图标。
+- 启用带主界面背景的自定义主题后，检查书架与二级页面（设置、书源、封面库等）的滚动、弹层与输入框是否仍然可读；切回默认主题时背景应立即消失。
+- 关闭「应用到全部页面」后确认只有书架保留背景，其余页面回到纯色底色。
 - 图片背景下检查当前页、进入页与横向翻页动画。
 - 在旧正则 JSON、schema v2、非法正则、零长度正则下检查阅读页。
 - 同时开启正则气泡与 TTS，确认 TTS 高亮覆盖气泡。

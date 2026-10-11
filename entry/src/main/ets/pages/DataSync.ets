@@ -3,6 +3,7 @@ import { common, Want } from '@kit.AbilityKit';
 import { CloudSyncOutcome, CloudSyncService } from '../utils/CloudSyncService';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
@@ -16,6 +17,10 @@ struct DataSyncPage {
   @StorageLink(CloudSyncService.STORAGE_STATUS) syncStatus: string = CloudSyncService.STATUS_IDLE;
   @StorageLink(CloudSyncService.STORAGE_MESSAGE) syncMessage: string = '';
   @StorageLink(CloudSyncService.STORAGE_LAST_SUCCESS_AT) syncLastSuccessAt: number = 0;
+  @StorageLink(CloudSyncService.STORAGE_LAST_UPLOAD) lastUploadRows: number = 0;
+  @StorageLink(CloudSyncService.STORAGE_LAST_DOWNLOAD) lastDownloadRows: number = 0;
+  /** 是否有已落库但尚未上传的本地改动，据此提示“改动待上传”。 */
+  @StorageLink(CloudSyncService.STORAGE_PENDING) pendingChange: boolean = false;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State syncing: boolean = false;
@@ -40,7 +45,7 @@ struct DataSyncPage {
         'book_sources': '书源',
         'book_groups': '分组',
         'search_keywords': '搜索历史',
-        'sync_heartbeats': '同步心跳'
+        'bookmarks': '书签'
       };
       let total = 0;
       let biggestTable = '';
@@ -67,6 +72,7 @@ struct DataSyncPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
       Scroll() {
         Column() {
           Row()
@@ -78,7 +84,8 @@ struct DataSyncPage {
           Column() {
             this.infoItem('在线书架与分组', '书籍信息、阅读进度、分组与排序', true)
             this.infoItem('书源', '书源配置、分组、排序与启用状态', true)
-            this.infoItem('搜索历史', '搜索过的关键词记录', this.syncSizeText !== '')
+            this.infoItem('搜索历史', '搜索过的关键词记录', true)
+            this.infoItem('书签', '阅读时添加的书签与划线摘录', this.syncSizeText !== '')
             if (this.syncSizeText !== '') {
               this.infoItem('同步数据量', this.syncSizeText, false)
             }
@@ -122,7 +129,7 @@ struct DataSyncPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(this.pageColorBehind())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -163,6 +170,14 @@ struct DataSyncPage {
         .fontColor(this.subTextColor())
         .lineHeight(20)
         .width('100%')
+
+      if (this.cloudSyncSupported && this.pendingChange && !this.syncing) {
+        Text('检测到本地改动，将在下一个同步窗口上传')
+          .fontSize(12)
+          .fontColor(this.warningColor())
+          .lineHeight(18)
+          .width('100%')
+      }
 
       if (this.cloudSyncSupported) {
         Button(this.syncing ? '正在同步' : '立即同步')
@@ -252,12 +267,20 @@ struct DataSyncPage {
     }
     this.syncing = true;
     try {
-      const outcome: CloudSyncOutcome = await CloudSyncService.syncNow(true);
-      if (outcome.status === CloudSyncService.STATUS_PENDING) {
-        // 结果未知：数据已提交，后台验证器数分钟内出最终结论。
-        HdsFeedback.showToast('已提交同步，正在后台确认云连接');
+      const outcome: CloudSyncOutcome = await CloudSyncService.syncNow();
+      if (outcome.status === CloudSyncService.STATUS_SUBMITTED) {
+        // 超时未见终态回执（云空间开关关闭时甚至没有任何进度回调）：不声称成功，
+        // 引导用户去云空间自行确认。
+        HdsFeedback.showToast(outcome.message || '已提交，请到“设置-云空间”确认结果');
+      } else if (outcome.status === CloudSyncService.STATUS_PAUSED) {
+        HdsFeedback.showToast(`${outcome.message || '同步已暂停'}，将自动重试`);
       } else {
-        HdsFeedback.showToast('已与云空间同步');
+        const moved = outcome.uploadDone + outcome.downloadDone;
+        if (moved > 0) {
+          HdsFeedback.showToast(`已同步：上传 ${outcome.uploadDone} 行 · 下载 ${outcome.downloadDone} 行`);
+        } else {
+          HdsFeedback.showToast('云端与本机数据一致，本次无数据传输');
+        }
       }
     } catch (e) {
       HdsFeedback.showToast(`同步失败：${e instanceof Error ? e.message : String(e)}`);
@@ -290,8 +313,11 @@ struct DataSyncPage {
     if (this.syncStatus === CloudSyncService.STATUS_ERROR) {
       return '未连接';
     }
-    if (this.syncStatus === CloudSyncService.STATUS_PENDING) {
-      return '确认中';
+    if (this.syncStatus === CloudSyncService.STATUS_SUBMITTED) {
+      return '已提交';
+    }
+    if (this.syncStatus === CloudSyncService.STATUS_PAUSED) {
+      return '已暂停';
     }
     // supported 只说明系统版本支持该 API，不代表云链路已连通：
     // 从未确认连通时显示“待连接”，避免长期误导为“可用”。
@@ -305,7 +331,10 @@ struct DataSyncPage {
     if (this.syncStatus === CloudSyncService.STATUS_ERROR) {
       return this.dangerColor();
     }
-    if (this.syncStatus === CloudSyncService.STATUS_PENDING) {
+    if (this.syncStatus === CloudSyncService.STATUS_SUBMITTED) {
+      return this.warningColor();
+    }
+    if (this.syncStatus === CloudSyncService.STATUS_PAUSED) {
       return this.warningColor();
     }
     return this.accentColor();
@@ -315,11 +344,15 @@ struct DataSyncPage {
     if (!this.cloudSyncSupported) {
       return '当前设备系统版本不支持端云同步，可使用下方 WebDAV 备份数据。';
     }
-    if (this.syncStatus === CloudSyncService.STATUS_PENDING) {
-      return '已提交同步：系统正在后台上传并确认云连接，数分钟内自动更新状态，无需反复点击。';
+    if (this.syncStatus === CloudSyncService.STATUS_SUBMITTED) {
+      const reason = this.syncMessage || '同步请求已提交，但未收到上传/下载完成回执';
+      return `${reason}。最常见原因是“设置-云空间”里本应用的同步开关未开启（或华为账号未登录）；开关开启并联网后会自动上传，无需反复点击。`;
     }
     if (this.syncStatus === CloudSyncService.STATUS_SYNCING && this.syncMessage) {
       return this.syncMessage;
+    }
+    if (this.syncStatus === CloudSyncService.STATUS_PAUSED && this.syncMessage) {
+      return `${this.syncMessage}。条件恢复后系统将自动续传，无需反复点击`;
     }
     if (this.syncStatus === CloudSyncService.STATUS_ERROR && this.syncMessage) {
       return `上次同步出现问题：${this.syncMessage}`;
@@ -328,11 +361,18 @@ struct DataSyncPage {
       // 从未确认过连通：不能声称“设备间保持一致”。
       return '尚未确认云空间连接：请在“设置-云空间”中登录华为账号并开启本应用的同步开关，随后点击上方“立即同步”验证。';
     }
-    return '书架、书源与搜索历史通过华为云空间同步：应用在启动、回到前台或云端数据变化时自动合并上传，登录同一华为账号的设备间保持一致。';
+    const moved = this.lastUploadRows + this.lastDownloadRows;
+    if (this.syncStatus === CloudSyncService.STATUS_SYNCED && moved > 0) {
+      return `最近一次同步：上传 ${this.lastUploadRows} 行、下载 ${this.lastDownloadRows} 行。书架、书源、书签与搜索历史通过华为云空间同步，登录同一华为账号的设备间保持一致。`;
+    }
+    return '书架、书源、书签与搜索历史通过华为云空间同步：应用在启动、回到前台或云端数据变化时自动合并上传，登录同一华为账号的设备间保持一致。';
   }
 
   syncIssueDescription(): string {
     if (this.syncStatus === CloudSyncService.STATUS_ERROR && this.syncMessage) {
+      return this.syncMessage;
+    }
+    if (this.syncStatus === CloudSyncService.STATUS_PAUSED && this.syncMessage) {
       return this.syncMessage;
     }
     return '当前没有需要处理的同步问题';
@@ -342,7 +382,10 @@ struct DataSyncPage {
     if (this.syncStatus === CloudSyncService.STATUS_ERROR) {
       return this.dangerColor();
     }
-    if (this.syncStatus === CloudSyncService.STATUS_PENDING) {
+    if (this.syncStatus === CloudSyncService.STATUS_SUBMITTED) {
+      return this.warningColor();
+    }
+    if (this.syncStatus === CloudSyncService.STATUS_PAUSED) {
       return this.warningColor();
     }
     if (this.syncStatus === CloudSyncService.STATUS_UNSUPPORTED) {
@@ -355,8 +398,13 @@ struct DataSyncPage {
     return ThemeRuntime.pageColor(this.appDarkMode);
   }
 
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   softColor(): string {

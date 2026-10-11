@@ -1,6 +1,7 @@
 import { promptAction, router } from '@kit.ArkUI';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { Book } from '../model/data/Book';
 import { ReaderReplaceRule, ReaderReplaceRuleCheck, ReaderReplaceRuleStore } from '../utils/ReaderReplaceRuleStore';
 import { syncSystemBars } from '../utils/SystemBars';
@@ -287,6 +288,7 @@ struct ReaderReplaceRulesPage {
 
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
+      AppBackgroundLayer()
       Column() {
         this.titleBar()
         if (this.editing) {
@@ -297,7 +299,7 @@ struct ReaderReplaceRulesPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.pageColor())
+      .backgroundColor(this.pageColorBehind())
 
       if (!this.editing && !this.selectionMode && !this.showAddRuleDialog && !this.isImporting) {
         Button({ type: ButtonType.Circle, stateEffect: true }) {
@@ -1704,7 +1706,12 @@ struct ReaderReplaceRulesPage {
   }
 
   pageColor(): string { return ThemeRuntime.pageColor(this.appDarkMode); }
-  cardColor(): string { return ThemeRuntime.cardColor(this.appDarkMode); }
+
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+  cardColor(): string { return ThemeRuntime.cardColorBehind(this.appDarkMode); }
   inputColor(): string { return ThemeRuntime.inputColor(this.appDarkMode); }
   primaryTextColor(): string { return ThemeRuntime.primaryTextColor(this.appDarkMode); }
   secondaryTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }

@@ -1,7 +1,5 @@
 import { BuiltinThemeRegistry } from '../theme/BuiltinThemeRegistry';
-import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeIds, ThemePack, ThemeVariant } from '../theme/ThemeModels';
-import { StartupCoverTextStore } from '../utils/StartupCoverTextStore';
 
 @Component
 export struct ThemeStartupCover {
@@ -13,9 +11,6 @@ export struct ThemeStartupCover {
   @Prop titleOverride: string = '';
   @Prop subtitleOverride: string = '';
   @Prop explicitText: boolean = false;
-  @Prop showTextEditButton: boolean = false;
-  onEditText: () => void = (): void => {};
-  @StorageLink('startupCoverTextsRevision') startupCoverTextsRevision: number = 0;
   @State artScale: number = 1;
   @State contentOpacity: number = 1;
   @State viewportHeight: number = 0;
@@ -54,14 +49,16 @@ export struct ThemeStartupCover {
             .draggable(false)
         }
       } else {
-        // 使用参考主题封面视觉语言重新绘制的独立启动插画，不复用书籍封面本身。
-        Image(this.customImagePath || ThemeAssetRegistry.startupBackground(this.resolvedThemeId()))
-          .width('100%')
-          .height('100%')
-          .objectFit(ImageFit.Cover)
-          .opacity(this.contentOpacity * (this.darkMode ? 0.62 : 1))
-          .scale({ x: this.artScale, y: this.artScale })
-          .draggable(false)
+        // 自定义主题上传的独立启动封面插画。
+        if (this.customImagePath) {
+          Image(this.customImagePath)
+            .width('100%')
+            .height('100%')
+            .objectFit(ImageFit.Cover)
+            .opacity(this.contentOpacity * (this.darkMode ? 0.62 : 1))
+            .scale({ x: this.artScale, y: this.artScale })
+            .draggable(false)
+        }
 
         Row()
           .width('100%')
@@ -119,17 +116,6 @@ export struct ThemeStartupCover {
             }
             .alignItems(HorizontalAlign.Center)
             .hitTestBehavior(HitTestMode.None)
-
-            if (this.compact && this.showTextEditButton) {
-              Button('编辑文案', { type: ButtonType.Normal })
-                .height(24)
-                .padding({ left: 7, right: 7 })
-                .fontSize(10)
-                .fontColor('#F2FFFFFF')
-                .backgroundColor('#42000000')
-                .border({ width: 0.5, color: '#55FFFFFF' })
-                .onClick(() => this.onEditText())
-            }
           }
           .width('100%')
           .justifyContent(FlexAlign.Center)
@@ -168,12 +154,10 @@ export struct ThemeStartupCover {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
-  isDefaultTheme(): boolean {
-    return this.resolvedThemeId() === ThemeIds.PLAIN_DEFAULT;
-  }
-
   usesBusinessCover(): boolean {
-    return !!this.customImagePath || !this.isDefaultTheme();
+    // 内置主题已精简为默认主题，只有自定义主题上传的封面或文案才绘制业务启动页。
+    return !!this.customImagePath ||
+      (this.explicitText && (!!this.titleOverride || !!this.subtitleOverride));
   }
 
   resolvedThemeId(): string {
@@ -190,13 +174,10 @@ export struct ThemeStartupCover {
   }
 
   coverTitle(): string {
-    if (this.explicitText) return this.titleOverride;
-    return StartupCoverTextStore.title(this.resolvedThemeId(), '开源读书');
+    return this.titleOverride;
   }
 
   coverSubtitle(): string {
-    if (this.explicitText) return this.subtitleOverride;
-    const id = this.resolvedThemeId();
-    return StartupCoverTextStore.subtitle(id, StartupCoverTextStore.defaultSubtitle(id));
+    return this.subtitleOverride;
   }
 }

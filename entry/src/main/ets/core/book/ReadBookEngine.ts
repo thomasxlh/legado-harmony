@@ -709,20 +709,32 @@ export class ReadBookEngine {
   private schedulePreloadContent(idx: number, anchorIndex: number, generation: number, delayMs: number): void {
     setTimeout(() => {
       if (generation !== this.preloadGeneration || this.curIdx !== anchorIndex) return;
-      this.preloadContent(idx);
+      this.preloadContent(idx, generation);
     }, Math.max(0, delayMs));
   }
 
-  private preloadContent(idx: number): void {
+  private preloadContent(idx: number, generation: number): void {
     if (idx < 0 || idx >= this.chapters.length) {
       return;
     }
     if (this.chapterCache.has(idx) || this.chapterLoading.has(idx)) {
       return;
     }
-    this.fetchContent(idx).catch((err: Error) => {
-      console.error('[RE] preload chapter failed:', idx, err);
-    });
+    // 预载任务携带代际取消检查：切换章节后，旧预载在取消检查点尽早退出，
+    // 不再与当前章竞争书源限流窗口和连接。用户显式加载的章节（curIdx）不取消，
+    // 保证 loadContent 仍可 join 同章在飞的预载任务。
+    this.fetchContent(idx, (): boolean => generation !== this.preloadGeneration && idx !== this.curIdx)
+      .catch((err: Error) => {
+        console.error('[RE] preload chapter failed:', idx, err);
+      });
+  }
+
+  /** 页面级取文超时后放弃该章在飞任务：清掉 chapterLoading 里挂起的去重 Promise
+   * 并取消底层请求，避免后续重试继续 join 一个永不完结的取文链而反复超时失败。 */
+  abandonChapterLoad(idx: number): void {
+    this.chapterLoading.delete(idx);
+    this.preloadGeneration++;
+    this.webBook.cancelPendingRequests();
   }
 
   async loadNextChapter(): Promise<string> {

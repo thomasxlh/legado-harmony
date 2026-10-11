@@ -18,8 +18,8 @@ struct StartupPage {
   @StorageLink('appThemeId') appThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @StorageLink('appCustomLightStartupImagePath') customLightStartupImagePath: string = '';
   @StorageLink('appCustomDarkStartupImagePath') customDarkStartupImagePath: string = '';
-  @StorageLink('appCustomLightStartupTitle') customLightStartupTitle: string = '开源读书';
-  @StorageLink('appCustomDarkStartupTitle') customDarkStartupTitle: string = '开源读书';
+  @StorageLink('appCustomLightStartupTitle') customLightStartupTitle: string = '';
+  @StorageLink('appCustomDarkStartupTitle') customDarkStartupTitle: string = '';
   @StorageLink('appCustomLightStartupSubtitle') customLightStartupSubtitle: string = '';
   @StorageLink('appCustomDarkStartupSubtitle') customDarkStartupSubtitle: string = '';
   @StorageLink('pendingLocalBookImportNonce') @Watch('onPendingLocalBookImportChanged')
@@ -35,8 +35,7 @@ struct StartupPage {
     ReaderSystemFontHelper.applyToStorage(this.getUIContext());
     ReaderFontBootstrap.registerFromSettings(getContext(this), this.getUIContext(), 'startup-aboutToAppear');
     const startupDelay = RecentReadShortcut.isPending() || this.hasPendingBookSourceImport() ||
-      this.hasPendingLocalBookImport() || (ThemeRuntime.startupThemeId(this.appDarkMode) === ThemeIds.PLAIN_DEFAULT &&
-        !this.customStartupImage()) ?
+      this.hasPendingLocalBookImport() || !this.usesBusinessCover() ?
       0 : 720;
     this.jumpTimer = setTimeout(() => {
       this.jumpTimer = -1;
@@ -169,6 +168,13 @@ struct StartupPage {
 
   pageColor(): string {
     return ThemeRuntime.pageColor(this.appDarkMode);
+  }
+
+  usesBusinessCover(): boolean {
+    // 只有自定义主题上传了封面或填写了文案时才绘制业务启动页。
+    return !!this.customStartupImage() ||
+      (this.appThemeId === ThemeIds.CUSTOM &&
+        (!!this.customStartupTitle() || !!this.customStartupSubtitle()));
   }
 
   customStartupImage(): string {

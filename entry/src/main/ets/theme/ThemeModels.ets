@@ -1,19 +1,6 @@
 export class ThemeIds {
   static readonly CUSTOM: string = 'custom';
   static readonly PLAIN_DEFAULT: string = 'plain-default';
-  static readonly CLASSIC_BLUE: string = 'classic-blue';
-  static readonly WARM_PAPER: string = 'warm-paper';
-  static readonly FOREST_MIST: string = 'forest-mist';
-  static readonly INK_WASH: string = 'ink-wash';
-  static readonly NEON_NIGHT: string = 'neon-night';
-  static readonly STRAWBERRY_CREAM: string = 'strawberry-cream';
-  static readonly CRIMSON_ARCHIVE: string = 'crimson-archive';
-  static readonly PLUM_TEA: string = 'plum-tea';
-  static readonly ROSE_LETTER: string = 'rose-letter';
-  static readonly MOON_CRANE: string = 'moon-crane';
-  static readonly SWORD_FROST: string = 'sword-frost';
-  static readonly QINGLUAN_WATER: string = 'qingluan-water';
-  static readonly CAT_PIPI: string = 'cat-pipi';
 }
 
 export class ThemeComponentSourceIds {
@@ -118,18 +105,12 @@ export class ThemeReaderLayoutTokens {
   marginBottom: number = 18;
 }
 
-export class ThemeBookTokens {
-  coverAssetId: string = ThemeIds.CLASSIC_BLUE;
-  shelfFrameAssetId: string = ThemeIds.CLASSIC_BLUE;
-  shelfFolderAssetId: string = ThemeIds.CLASSIC_BLUE;
-}
-
 export class ThemeNavigationTokens {
   iconPackId: string = 'classic';
 }
 
 export class ThemeStartupTokens {
-  styleId: string = ThemeIds.CLASSIC_BLUE;
+  styleId: string = ThemeIds.PLAIN_DEFAULT;
 }
 
 export class ThemeRadiusTokens {
@@ -183,14 +164,13 @@ export class ThemeGlassTokens {
 
 export class ThemePack {
   schemaVersion: number = 3;
-  id: string = ThemeIds.CLASSIC_BLUE;
-  name: string = '经典蓝';
+  id: string = ThemeIds.PLAIN_DEFAULT;
+  name: string = '默认主题';
   description: string = '';
   light: ThemeVariant = new ThemeVariant();
   dark: ThemeVariant = new ThemeVariant();
   typography: ThemeTypographyTokens = new ThemeTypographyTokens();
   readerLayout: ThemeReaderLayoutTokens = new ThemeReaderLayoutTokens();
-  book: ThemeBookTokens = new ThemeBookTokens();
   navigation: ThemeNavigationTokens = new ThemeNavigationTokens();
   startup: ThemeStartupTokens = new ThemeStartupTokens();
   radius: ThemeRadiusTokens = new ThemeRadiusTokens();

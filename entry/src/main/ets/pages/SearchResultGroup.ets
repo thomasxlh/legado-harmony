@@ -5,6 +5,7 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { SearchResultAggregationStore, SearchResultGroupSnapshot } from '../utils/SearchResultAggregationStore';
 import { SearchBookShelfChange, SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
@@ -43,6 +44,7 @@ struct SearchResultGroupPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
       if (this.books.length > 0) {
         SearchBookResultList({
           books: this.books,
@@ -52,7 +54,7 @@ struct SearchResultGroupPage {
           showResultCover: this.showResultCover,
           useBookshelfCoverGallery: this.useBookshelfCoverGallery,
           showResultTags: this.showResultTags,
-          pageColor: this.pageColor(),
+          pageColor: this.pageColorBehind(),
           cardColor: this.cardColor(),
           itemBorderColor: this.groupBorderColor(),
           itemBorderWidth: 1,
@@ -116,7 +118,7 @@ struct SearchResultGroupPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(this.pageColorBehind())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -209,7 +211,12 @@ struct SearchResultGroupPage {
   }
 
   pageColor(): string { return ThemeRuntime.pageColor(this.appDarkMode); }
-  cardColor(): string { return ThemeRuntime.cardColor(this.appDarkMode); }
+
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+  cardColor(): string { return ThemeRuntime.cardColorBehind(this.appDarkMode); }
   primaryTextColor(): string { return ThemeRuntime.primaryTextColor(this.appDarkMode); }
   subTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }
   groupBorderColor(): string { return this.appDarkMode ? '#262A31' : '#FFFFFF'; }

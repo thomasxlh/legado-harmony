@@ -5,6 +5,7 @@ import { WebBookService } from '../core/book/WebBookService';
 import { BookUrlResolver } from '../core/book/BookUrlResolver';
 import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { syncSystemBars } from '../utils/SystemBars';
 import { BookFieldSanitizer } from '../utils/BookFieldSanitizer';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
@@ -126,6 +127,7 @@ struct BookChapterListPage {
 
   build() {
     Stack() {
+      AppBackgroundLayer()
       WebBookFetchRuntimeHost()
 
       Column() {
@@ -143,7 +145,7 @@ struct BookChapterListPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.pageColor())
+      .backgroundColor(this.pageColorBehind())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
       this.titleBar()
@@ -253,7 +255,7 @@ struct BookChapterListPage {
     .layoutWeight(1)
     .justifyContent(FlexAlign.Center)
     .padding({ bottom: 60 })
-    .backgroundColor(this.pageColor())
+    .backgroundColor(this.pageColorBehind())
   }
 
   @Builder
@@ -268,7 +270,7 @@ struct BookChapterListPage {
       .layoutWeight(1)
       .justifyContent(FlexAlign.Center)
       .padding({ bottom: 80 })
-      .backgroundColor(this.pageColor())
+      .backgroundColor(this.pageColorBehind())
     } else {
       List({ scroller: this.scroller }) {
         LazyForEach(this.dataSource, (chapter: BookChapter) => {
@@ -313,7 +315,7 @@ struct BookChapterListPage {
       .scrollBar(BarState.Auto)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .cachedCount(6)
-      .backgroundColor(this.pageColor())
+      .backgroundColor(this.pageColorBehind())
     }
   }
 
@@ -533,6 +535,11 @@ struct BookChapterListPage {
 
   private pageColor(): string {
     return ThemeRuntime.pageColor(this.appDarkMode);
+  }
+
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
   }
 
   private inputColor(): string {

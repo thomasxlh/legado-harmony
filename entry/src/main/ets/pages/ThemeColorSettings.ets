@@ -5,13 +5,12 @@ import { CustomThemeScheme, CustomThemeSchemeStore } from '../utils/CustomThemeS
 import { AdaptiveColorPicker } from '../components/AdaptiveColorPicker';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ThemeComponentSourceIds, ThemeIds, ThemePack, ThemeVariant } from '../theme/ThemeModels';
-import { BuiltinThemeRegistry } from '../theme/BuiltinThemeRegistry';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { ThemeStartupCover } from '../components/ThemeStartupCover';
 import { ReaderThemeBackground } from '../components/ReaderThemeBackground';
 import { StartupCoverImageStore } from '../utils/StartupCoverImageStore';
-import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
 @Component
@@ -81,13 +80,18 @@ struct ThemeColorSettingsPage {
   @State darkSources: ThemeComponentSourceIds = new ThemeComponentSourceIds();
   @State lightStartupImagePath: string = '';
   @State darkStartupImagePath: string = '';
-  @State lightStartupTitle: string = '开源读书';
-  @State darkStartupTitle: string = '开源读书';
+  @State lightStartupTitle: string = '';
+  @State darkStartupTitle: string = '';
   @State lightStartupSubtitle: string = '';
   @State darkStartupSubtitle: string = '';
-  @State availableThemes: ThemePack[] = [];
+  @State lightMainBackgroundImagePath: string = '';
+  @State darkMainBackgroundImagePath: string = '';
+  @State lightMainBackgroundOpacity: number = AppThemeSettingsStore.DEFAULT_MAIN_BACKGROUND_OPACITY;
+  @State darkMainBackgroundOpacity: number = AppThemeSettingsStore.DEFAULT_MAIN_BACKGROUND_OPACITY;
+  @State mainBackgroundGlobal: boolean = true;
+  @State mainBackgroundCardOpacity: number = AppThemeSettingsStore.DEFAULT_MAIN_BACKGROUND_CARD_OPACITY;
   private schemeId: string = '';
-  private schemeName: string = '';
+  @State schemeName: string = '';
   private draftSettings: AppThemeSettings = new AppThemeSettings();
   private saveQueue: Promise<void> = Promise.resolve();
   private closing: boolean = false;
@@ -113,12 +117,13 @@ struct ThemeColorSettingsPage {
     Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
         Column() {
-          this.sectionTitle('从全部主题中组合部件，修改只更新方案预览，需返回主题页手动启用')
+          this.sectionTitle('分别设置浅色与深色模式下的启动封面、主界面背景与主题颜色，修改只更新方案预览，需返回主题页手动启用')
+          this.schemeNameOptions()
           this.modeOptions()
-          this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 主题部件`)
-          this.sourceOptions()
           this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 启动封面`)
           this.startupCoverOptions()
+          this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 主界面背景`)
+          this.mainBackgroundOptions()
           this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 自定义颜色`)
           Column() {
             this.colorOptions()
@@ -183,7 +188,13 @@ struct ThemeColorSettingsPage {
       this.darkStartupTitle = settings.customDarkStartupTitle;
       this.lightStartupSubtitle = settings.customLightStartupSubtitle;
       this.darkStartupSubtitle = settings.customDarkStartupSubtitle;
-      this.refreshAvailableThemes();
+      this.lightMainBackgroundImagePath = settings.customLightMainBackgroundImagePath;
+      this.darkMainBackgroundImagePath = settings.customDarkMainBackgroundImagePath;
+      this.lightMainBackgroundOpacity = settings.customLightMainBackgroundOpacity;
+      this.darkMainBackgroundOpacity = settings.customDarkMainBackgroundOpacity;
+      this.mainBackgroundGlobal = settings.mainBackgroundGlobal !== false;
+      this.mainBackgroundCardOpacity = AppThemeSettingsStore.normalizeMainBackgroundCardOpacity(
+        settings.mainBackgroundCardOpacity);
       this.settingsLoaded = true;
     } catch (e) {
       console.warn('读取主题色设置失败:', e);
@@ -224,118 +235,6 @@ struct ThemeColorSettingsPage {
     }
   }
 
-  async setComponentSource(category: string, themeId: string): Promise<void> {
-    if (!themeId) return;
-    try {
-      const settings = this.settingsFromState();
-      const dark = this.selectedMode === 'dark';
-      const sources = AppThemeSettingsStore.cloneSources(
-        dark ? settings.customDarkSources : settings.customLightSources,
-        settings.customBaseThemeId);
-      this.setSourceValue(sources, category, themeId);
-      if (dark) settings.customDarkSources = sources;
-      else settings.customLightSources = sources;
-      if (category === 'layout') {
-        const otherSources = AppThemeSettingsStore.cloneSources(
-          dark ? settings.customLightSources : settings.customDarkSources,
-          settings.customBaseThemeId);
-        this.setSourceValue(otherSources, category, themeId);
-        if (dark) settings.customLightSources = otherSources;
-        else settings.customDarkSources = otherSources;
-      }
-      this.copyVariantOverrides(settings, BuiltinThemeRegistry.findById(themeId), dark, category);
-      this.draftSettings = settings;
-      this.lightSources = AppThemeSettingsStore.cloneSources(
-        settings.customLightSources, settings.customBaseThemeId);
-      this.darkSources = AppThemeSettingsStore.cloneSources(
-        settings.customDarkSources, settings.customBaseThemeId);
-      this.lightAccentColor = settings.customLightAccentColor;
-      this.darkAccentColor = settings.customDarkAccentColor;
-      this.lightButtonColor = settings.customLightButtonColor;
-      this.darkButtonColor = settings.customDarkButtonColor;
-      await this.onSettingChanged();
-    } catch (e) {
-      console.warn('保存自定义主题方案部件失败:', e);
-    }
-  }
-
-  setSourceValue(sources: ThemeComponentSourceIds, category: string, themeId: string): void {
-    if (category === 'startup') sources.startupThemeId = themeId;
-    else if (category === 'palette') sources.paletteThemeId = themeId;
-    else if (category === 'reader') sources.readerThemeId = themeId;
-    else if (category === 'bubble') sources.bubbleThemeId = themeId;
-    else if (category === 'navigation') sources.navigationThemeId = themeId;
-    else if (category === 'book') sources.bookThemeId = themeId;
-    else if (category === 'typography') sources.typographyThemeId = themeId;
-    else if (category === 'layout') sources.layoutThemeId = themeId;
-    else if (category === 'radius') sources.radiusThemeId = themeId;
-    else if (category === 'glass') sources.glassThemeId = themeId;
-  }
-
-  copyVariantOverrides(settings: AppThemeSettings, theme: ThemePack, dark: boolean, category: string): void {
-    const variant = dark ? theme.dark : theme.light;
-    if (category === 'palette') {
-      if (dark) {
-        settings.customDarkAccentColor = variant.colors.accentColor;
-        settings.customDarkButtonColor = variant.colors.buttonColor;
-      } else {
-        settings.customLightAccentColor = variant.colors.accentColor;
-        settings.customLightButtonColor = variant.colors.buttonColor;
-      }
-    }
-    if (category !== 'reader') return;
-    if (dark) {
-      settings.customDarkReaderBackgroundColor = variant.reader.backgroundColor;
-      settings.customDarkReaderTextColor = variant.reader.textColor;
-      settings.customDarkReaderSubTextColor = variant.reader.subTextColor;
-      settings.customDarkReaderBackgroundAssetId = variant.reader.backgroundAssetId;
-      settings.customDarkReaderBackgroundImageFit = variant.reader.backgroundImageFit;
-      settings.customDarkReaderContentTone = variant.reader.contentTone;
-    } else {
-      settings.customLightReaderBackgroundColor = variant.reader.backgroundColor;
-      settings.customLightReaderTextColor = variant.reader.textColor;
-      settings.customLightReaderSubTextColor = variant.reader.subTextColor;
-      settings.customLightReaderBackgroundAssetId = variant.reader.backgroundAssetId;
-      settings.customLightReaderBackgroundImageFit = variant.reader.backgroundImageFit;
-      settings.customLightReaderContentTone = variant.reader.contentTone;
-    }
-  }
-
-  currentSources(): ThemeComponentSourceIds {
-    return this.selectedMode === 'dark' ? this.darkSources : this.lightSources;
-  }
-
-  sourceThemeId(category: string): string {
-    if (category === 'layout') return this.lightSources.layoutThemeId;
-    const sources = this.currentSources();
-    if (category === 'startup') return sources.startupThemeId;
-    if (category === 'palette') return sources.paletteThemeId;
-    if (category === 'reader') return sources.readerThemeId;
-    if (category === 'bubble') return sources.bubbleThemeId;
-    if (category === 'navigation') return sources.navigationThemeId;
-    if (category === 'book') return sources.bookThemeId;
-    if (category === 'typography') return sources.typographyThemeId;
-    if (category === 'layout') return sources.layoutThemeId;
-    if (category === 'radius') return sources.radiusThemeId;
-    return sources.glassThemeId;
-  }
-
-  themeOptions(): SelectOption[] {
-    const options: SelectOption[] = [];
-    for (const theme of this.availableThemes) {
-      options.push({ value: theme.name });
-    }
-    return options;
-  }
-
-  sourceSelectedIndex(category: string): number {
-    const themeId = this.sourceThemeId(category);
-    for (let index = 0; index < this.availableThemes.length; index++) {
-      if (this.availableThemes[index].id === themeId) return index;
-    }
-    return 0;
-  }
-
   settingsFromState(): AppThemeSettings {
     const settings = AppThemeSettingsStore.cloneSettings(this.draftSettings);
     settings.themeId = ThemeIds.CUSTOM;
@@ -359,7 +258,18 @@ struct ThemeColorSettingsPage {
     settings.customDarkStartupTitle = this.darkStartupTitle;
     settings.customLightStartupSubtitle = this.lightStartupSubtitle;
     settings.customDarkStartupSubtitle = this.darkStartupSubtitle;
+    settings.customLightMainBackgroundImagePath = this.lightMainBackgroundImagePath;
+    settings.customDarkMainBackgroundImagePath = this.darkMainBackgroundImagePath;
+    settings.customLightMainBackgroundOpacity = this.lightMainBackgroundOpacity;
+    settings.customDarkMainBackgroundOpacity = this.darkMainBackgroundOpacity;
+    settings.mainBackgroundGlobal = this.mainBackgroundGlobal;
+    settings.mainBackgroundCardOpacity = this.mainBackgroundCardOpacity;
     return AppThemeSettingsStore.cloneSettings(settings);
+  }
+
+  setSchemeName(value: string): void {
+    this.schemeName = value;
+    this.onSettingChanged();
   }
 
   currentStartupImagePath(): string {
@@ -384,6 +294,70 @@ struct ThemeColorSettingsPage {
     if (this.selectedMode === 'dark') this.darkStartupSubtitle = value;
     else this.lightStartupSubtitle = value;
     this.onSettingChanged();
+  }
+
+  currentMainBackgroundImagePath(): string {
+    return this.selectedMode === 'dark' ? this.darkMainBackgroundImagePath :
+      this.lightMainBackgroundImagePath;
+  }
+
+  currentMainBackgroundOpacity(): number {
+    return this.selectedMode === 'dark' ? this.darkMainBackgroundOpacity :
+      this.lightMainBackgroundOpacity;
+  }
+
+  setCurrentMainBackgroundOpacity(value: number): void {
+    this.previewMainBackgroundOpacity(value);
+    this.onSettingChanged();
+  }
+
+  previewMainBackgroundOpacity(value: number): void {
+    const normalized = AppThemeSettingsStore.normalizeMainBackgroundOpacity(value);
+    if (this.selectedMode === 'dark') this.darkMainBackgroundOpacity = normalized;
+    else this.lightMainBackgroundOpacity = normalized;
+  }
+
+  setMainBackgroundGlobal(value: boolean): void {
+    this.mainBackgroundGlobal = value;
+    this.onSettingChanged();
+  }
+
+  setMainBackgroundCardOpacity(value: number): void {
+    this.mainBackgroundCardOpacity = AppThemeSettingsStore.normalizeMainBackgroundCardOpacity(value);
+    this.onSettingChanged();
+  }
+
+  async chooseMainBackgroundImage(): Promise<void> {
+    try {
+      const darkMode = this.selectedMode === 'dark';
+      const oldPath = this.currentMainBackgroundImagePath();
+      const imagePath = await StartupCoverImageStore.pickAndSaveMainBackground(
+        getContext(this), this.schemeId, darkMode);
+      if (!imagePath) return;
+      if (darkMode) this.darkMainBackgroundImagePath = imagePath;
+      else this.lightMainBackgroundImagePath = imagePath;
+      await this.onSettingChanged();
+      if (oldPath && oldPath !== imagePath) {
+        StartupCoverImageStore.remove(getContext(this), oldPath,
+          StartupCoverImageStore.MAIN_BACKGROUND_DIR);
+      }
+      HdsFeedback.showToast(`${darkMode ? '深色' : '浅色'}主界面背景已更新`);
+    } catch (e) {
+      console.error('上传主界面背景失败:', e);
+      HdsFeedback.showToast('上传主界面背景失败，请重试');
+    }
+  }
+
+  async clearMainBackgroundImage(): Promise<void> {
+    const darkMode = this.selectedMode === 'dark';
+    const oldPath = this.currentMainBackgroundImagePath();
+    if (!oldPath) return;
+    if (darkMode) this.darkMainBackgroundImagePath = '';
+    else this.lightMainBackgroundImagePath = '';
+    await this.onSettingChanged();
+    StartupCoverImageStore.remove(getContext(this), oldPath,
+      StartupCoverImageStore.MAIN_BACKGROUND_DIR);
+    HdsFeedback.showToast('已清除主界面背景');
   }
 
   async chooseStartupImage(): Promise<void> {
@@ -411,7 +385,7 @@ struct ThemeColorSettingsPage {
     else this.lightStartupImagePath = '';
     await this.onSettingChanged();
     StartupCoverImageStore.remove(getContext(this), oldPath);
-    HdsFeedback.showToast('已恢复所选主题的启动封面');
+    HdsFeedback.showToast('已清除自定义启动封面');
   }
 
   customPreviewTheme(): ThemePack {
@@ -424,23 +398,6 @@ struct ThemeColorSettingsPage {
   customPreviewVariant(): ThemeVariant {
     const theme = this.customPreviewTheme();
     return this.selectedMode === 'dark' ? theme.dark : theme.light;
-  }
-
-  refreshAvailableThemes(): void {
-    this.availableThemes = BuiltinThemeRegistry.all();
-  }
-
-  isSourceInUse(themeId: string): boolean {
-    return this.sourceUsesTheme(this.lightSources, themeId) || this.sourceUsesTheme(this.darkSources, themeId);
-  }
-
-  sourceUsesTheme(sources: ThemeComponentSourceIds, themeId: string): boolean {
-    return sources.startupThemeId === themeId || sources.paletteThemeId === themeId ||
-      sources.readerThemeId === themeId ||
-      sources.bubbleThemeId === themeId || sources.navigationThemeId === themeId ||
-      sources.bookThemeId === themeId || sources.typographyThemeId === themeId ||
-      sources.layoutThemeId === themeId || sources.radiusThemeId === themeId ||
-      sources.glassThemeId === themeId;
   }
 
   setCurrentAccentColor(color: string): void {
@@ -501,7 +458,7 @@ struct ThemeColorSettingsPage {
       ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => this.closeEditor() })
-      Text('自定义主题')
+      Text(this.schemeName.trim() || '自定义主题')
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
@@ -522,6 +479,30 @@ struct ThemeColorSettingsPage {
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+  }
+
+  @Builder
+  schemeNameOptions() {
+    Column({ space: 6 }) {
+      Text('主题名称')
+        .fontSize(12)
+        .fontColor(this.subTextColor())
+        .width('100%')
+      TextInput({ placeholder: '输入主题名称', text: this.schemeName })
+        .width('100%')
+        .height(42)
+        .maxLength(20)
+        .fontColor(this.primaryTextColor())
+        .placeholderColor(this.subTextColor())
+        .backgroundColor(this.inputColor())
+        .borderRadius(10)
+        .onChange((value: string) => this.setSchemeName(value))
+    }
+    .width('calc(100% - 24vp)')
+    .padding(14)
+    .margin({ left: 12, right: 12, bottom: 12 })
+    .borderRadius(16)
+    .backgroundColor(this.cardColor())
   }
 
   @Builder
@@ -552,75 +533,6 @@ struct ThemeColorSettingsPage {
       .onClick(() => {
         this.selectedMode = mode;
       })
-  }
-
-  @Builder
-  sourceOptions() {
-    Column() {
-      this.componentSourceRow('启动封面', 'App 冷启动时展示的主题插画与标识', 'startup')
-      this.componentSourceRow('完整配色', '页面、卡片、文字、状态栏图标及基础颜色', 'palette')
-      this.componentSourceRow('阅读背景', '阅读背景、正文颜色和背景素材', 'reader')
-      this.componentSourceRow('强调气泡', '正文强调方式、气泡样式及气泡配色', 'bubble')
-      this.componentSourceRow('导航图标', '书架、发现、搜索和我的底部图标', 'navigation')
-      this.componentSourceRow('书籍素材', '主题封面、书架边框和文件夹图案', 'book')
-      this.componentSourceRow('字体', '主题自带的应用字体风格', 'typography')
-      this.componentSourceRow('阅读排版（浅深共用）', '字号、行距、段距和页面边距', 'layout')
-      this.componentSourceRow('圆角形状', '卡片、按钮、气泡等圆角尺寸', 'radius')
-      this.componentSourceRow('磨砂效果', '模糊、透明度、边框和阴影参数', 'glass', false)
-    }
-    .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12 })
-    .borderRadius(16)
-    .clip(true)
-    .backgroundColor(this.cardColor())
-  }
-
-  @Builder
-  componentSourceRow(title: string, desc: string, category: string, divider: boolean = true) {
-    Row({ space: 8 }) {
-      Column() {
-        Text(title)
-          .fontSize(15)
-          .fontColor(this.primaryTextColor())
-        Text(desc)
-          .fontSize(11)
-          .fontColor(this.subTextColor())
-          .margin({ top: 3 })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      Select(this.themeOptions())
-        .selected(this.sourceSelectedIndex(category))
-        .value(BuiltinThemeRegistry.findById(this.sourceThemeId(category)).name)
-        .font({ size: 13 })
-        .fontColor(this.subTextColor())
-        .backgroundColor(Color.Transparent)
-        .arrowPosition(ArrowPosition.END)
-        .padding({ left: 0, right: 0 })
-        .borderRadius(16)
-        .border({ width: 0 })
-        .optionBgColor(Color.Transparent)
-        .divider(null)
-        .optionFontColor(this.primaryTextColor())
-        .selectedOptionFontColor(ThemeRuntime.accentColor(this.appDarkMode))
-        .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
-        .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
-        .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .attributeModifier(new SelectMenuMaterialModifier())
-        .onSelect((index: number) => {
-          if (index >= 0 && index < this.availableThemes.length) {
-            this.setComponentSource(category, this.availableThemes[index].id);
-          }
-        })
-    }
-    .width('calc(100% - 28vp)')
-    .constraintSize({ minHeight: 68 })
-    .padding({ top: 9, bottom: 9 })
-    .margin({ left: 14, right: 14 })
-    .border({ width: { bottom: divider ? 0.5 : 0 },
-      color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
@@ -687,7 +599,7 @@ struct ThemeColorSettingsPage {
           .layoutWeight(1)
           .onClick(() => this.chooseStartupImage())
         if (this.currentStartupImagePath()) {
-          Button('恢复主题封面', { type: ButtonType.Normal })
+          Button('恢复默认封面', { type: ButtonType.Normal })
             .height(38)
             .fontSize(13)
             .fontColor(this.currentAccentColor())
@@ -737,6 +649,143 @@ struct ThemeColorSettingsPage {
     .width('calc(100% - 24vp)')
     .padding(14)
     .margin({ left: 12, right: 12 })
+    .borderRadius(16)
+    .backgroundColor(this.cardColor())
+  }
+
+  @Builder
+  mainBackgroundOptions() {
+    Column({ space: 12 }) {
+      Row({ space: 10 }) {
+        Button(this.currentMainBackgroundImagePath() ? '更换背景图' : '上传背景图',
+          { type: ButtonType.Normal })
+          .height(38)
+          .fontSize(13)
+          .fontColor('#FFFFFF')
+          .backgroundColor(this.currentButtonColor())
+          .layoutWeight(1)
+          .onClick(() => this.chooseMainBackgroundImage())
+        if (this.currentMainBackgroundImagePath()) {
+          Button('清除背景', { type: ButtonType.Normal })
+            .height(38)
+            .fontSize(13)
+            .fontColor(this.currentAccentColor())
+            .backgroundColor(this.inputColor())
+            .layoutWeight(1)
+            .onClick(() => this.clearMainBackgroundImage())
+        }
+      }
+      .width('100%')
+
+      Column({ space: 4 }) {
+        Row() {
+          Text('不透明度')
+            .fontSize(12)
+            .fontColor(this.subTextColor())
+            .layoutWeight(1)
+          Text(`${this.currentMainBackgroundOpacity()}%`)
+            .fontSize(12)
+            .fontColor(this.subTextColor())
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        Slider({
+          value: this.currentMainBackgroundOpacity(),
+          min: AppThemeSettingsStore.MIN_MAIN_BACKGROUND_OPACITY,
+          max: AppThemeSettingsStore.MAX_MAIN_BACKGROUND_OPACITY,
+          step: 1,
+          style: SliderStyle.OutSet
+        })
+          .width('100%')
+          .trackThickness(4)
+          .selectedColor(this.currentAccentColor())
+          .trackColor(this.inputColor())
+          .blockColor(this.currentAccentColor())
+          .onChange((value: number, mode: SliderChangeMode) => {
+            this.previewMainBackgroundOpacity(value);
+            if (mode === SliderChangeMode.End) {
+              this.setCurrentMainBackgroundOpacity(value);
+            }
+          })
+      }
+      .width('100%')
+
+      if (this.currentMainBackgroundImagePath()) {
+        Stack() {
+          Image(this.currentMainBackgroundImagePath())
+            .width('100%')
+            .height('100%')
+            .objectFit(ImageFit.Cover)
+            .opacity(this.currentMainBackgroundOpacity() / 100)
+            .draggable(false)
+        }
+        .width('100%')
+        .height(96)
+        .borderRadius(12)
+        .clip(true)
+        .backgroundColor(this.pageColor())
+      }
+
+      Row({ space: 10 }) {
+        Column({ space: 2 }) {
+          Text('应用到全部页面')
+            .fontSize(13)
+            .fontColor(this.primaryTextColor())
+            .alignSelf(ItemAlign.Start)
+          Text('关闭后只有书架主界面铺这张背景图，其余页面保持纯色底色。')
+            .fontSize(11)
+            .fontColor(this.subTextColor())
+            .width('100%')
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        AdaptiveSwitch({ isOn: this.mainBackgroundGlobal, selectedColor: this.currentAccentColor(),
+          onChange: (value: boolean) => this.setMainBackgroundGlobal(value) })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Column({ space: 4 }) {
+        Row() {
+          Text('卡片不透明度')
+            .fontSize(12)
+            .fontColor(this.subTextColor())
+            .layoutWeight(1)
+          Text(`${this.mainBackgroundCardOpacity}%`)
+            .fontSize(12)
+            .fontColor(this.subTextColor())
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+        Slider({
+          value: this.mainBackgroundCardOpacity,
+          min: AppThemeSettingsStore.MIN_MAIN_BACKGROUND_CARD_OPACITY,
+          max: AppThemeSettingsStore.MAX_MAIN_BACKGROUND_CARD_OPACITY,
+          step: 1,
+          style: SliderStyle.OutSet
+        })
+          .width('100%')
+          .trackThickness(4)
+          .selectedColor(this.currentAccentColor())
+          .trackColor(this.inputColor())
+          .blockColor(this.currentAccentColor())
+          .onChange((value: number, mode: SliderChangeMode) => {
+            if (mode === SliderChangeMode.End) {
+              this.setMainBackgroundCardOpacity(value);
+            }
+          })
+      }
+      .width('100%')
+
+      Text('背景图铺在页面底层，启用本方案后生效；默认主题不使用背景图。')
+        .fontSize(11)
+        .fontColor(this.subTextColor())
+        .width('100%')
+    }
+    .width('calc(100% - 24vp)')
+    .padding(14)
+    .margin({ left: 12, right: 12, top: 12 })
     .borderRadius(16)
     .backgroundColor(this.cardColor())
   }
@@ -814,19 +863,6 @@ struct ThemeColorSettingsPage {
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
-
-        Stack() {
-          Image(ThemeAssetRegistry.themeBookCover(this.customPreviewTheme().book.coverAssetId))
-            .width(30)
-            .height(44)
-            .objectFit(ImageFit.Fill)
-          Image(ThemeAssetRegistry.themeShelfFrame(this.customPreviewTheme().book.shelfFrameAssetId))
-            .width(30)
-            .height(44)
-            .objectFit(ImageFit.Fill)
-        }
-        .width(30)
-        .height(44)
       }
       .width('100%')
       .padding(12)

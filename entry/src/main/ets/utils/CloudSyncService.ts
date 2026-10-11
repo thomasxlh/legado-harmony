@@ -5,37 +5,72 @@ import hilog from '@ohos.hilog';
 /** 状态机初始态，独立定义以避免类字段初始化顺序上的耦合。 */
 const SYNC_STATUS_IDLE_LITERAL: string = 'idle';
 
+/** 单张同步表在一次会话内的传输统计快照，数值取该表最后一次进度回调。 */
+interface TableSyncStats {
+  uploadTotal: number;
+  uploadRemained: number;
+  uploadFailed: number;
+  downloadTotal: number;
+  downloadRemained: number;
+  downloadFailed: number;
+}
+
 /** 端云同步主流程的终局判定结果，供 UI 展示与后续重试决策使用。 */
 export class CloudSyncOutcome {
   /** 状态机的终态。一次进度回调都没收到时不会是 SYNCED。 */
   status: string = SYNC_STATUS_IDLE_LITERAL;
-  /** 是否确定数据已到达云端。仅 SYNCED 且本值为 true 时才刷新“上次成功时间”。 */
-  confirmed: boolean = false;
   /** 主同步过程中见过的最坏进度码；-1 表示没有任何进度回调。 */
   progressCode: number = -1;
   /** 未能同步的行数，来自进度回调的 upload/download failed 计数。 */
   failedRows: number = 0;
+  /** 本次会话需上传的行数（跨表汇总）；0 表示进度回调未上报任何待传行。 */
+  uploadTotal: number = 0;
+  /** 本次会话已成功上传的行数。 */
+  uploadDone: number = 0;
+  /** 本次会话需下载的行数。 */
+  downloadTotal: number = 0;
+  /** 本次会话已成功下载的行数。 */
+  downloadDone: number = 0;
   /** 面向用户的补充说明，空串表示无附加信息。 */
   message: string = '';
 }
 
 export class CloudSyncService {
   static readonly SYNC_TABLES: string[] =
-    ['books', 'book_sources', 'book_groups', 'search_keywords', 'sync_heartbeats'];
+    ['books', 'book_sources', 'book_groups', 'search_keywords', 'bookmarks'];
+
+  /**
+   * 端云分布式表的 autoSync 取值，**必须为 true**。
+   * 设为 false 时云空间里本应用的同步开关会被系统置为关闭，且每次应用启动重新
+   * 声明都会再关一次，于是“用户在设置里打开了开关、应用却一直报没开”，整轮
+   * cloudSync 恒返回 code=1；重登账号与卸载重装都救不了，因为每次启动都关一遍。
+   */
+  static readonly DISTRIBUTED_AUTO_SYNC: boolean = true;
 
   static readonly STORAGE_SUPPORTED: string = 'cloudSyncSupported';
   static readonly STORAGE_STATUS: string = 'cloudSyncStatus';
   static readonly STORAGE_LAST_SUCCESS_AT: string = 'cloudSyncLastSuccessAt';
   static readonly STORAGE_MESSAGE: string = 'cloudSyncMessage';
   static readonly STORAGE_REVISION: string = 'cloudSyncRevision';
+  /** 最近一次会话实际上传/下载的行数，供 UI 直接回答“到底有没有数据在传”。 */
+  static readonly STORAGE_LAST_UPLOAD: string = 'cloudSyncLastUploadRows';
+  static readonly STORAGE_LAST_DOWNLOAD: string = 'cloudSyncLastDownloadRows';
+  /** 是否有已落库但尚未上传的本地变更，供界面提示“改动待上传”。 */
+  static readonly STORAGE_PENDING: string = 'cloudSyncPending';
   /** 云链路已确认连通；与 STORAGE_SUPPORTED 区分，后者只代表系统版本支持该 API。 */
   static readonly STORAGE_LINKED: string = 'cloudSyncLinked';
 
   static readonly STATUS_IDLE: string = 'idle';
   static readonly STATUS_SYNCING: string = 'syncing';
-  static readonly STATUS_PENDING: string = 'pending';
+  /** 同步请求已提交但应用无法确认结果（系统未给任何进度回调），请用户自行去云空间确认。 */
+  static readonly STATUS_SUBMITTED: string = 'submitted';
   static readonly STATUS_SYNCED: string = 'synced';
   static readonly STATUS_ERROR: string = 'error';
+  /**
+   * 同步被可自动恢复的原因暂停（网络错误/其他设备占用/网络策略不满足/被系统停止），
+   * 系统会在条件恢复后自动重试。与 STATUS_ERROR 区分：不视为失败、不清空云链路标记。
+   */
+  static readonly STATUS_PAUSED: string = 'paused';
   static readonly STATUS_UNSUPPORTED: string = 'unsupported';
 
   private static store: relationalStore.RdbStore | null = null;
@@ -47,32 +82,31 @@ export class CloudSyncService {
   private static pendingSync: Promise<CloudSyncOutcome> | null = null;
   /** pendingSync 对应的会话起始时间，用于识别并回收陈旧槽位。 */
   private static pendingSyncStartedAt: number = 0;
-  private static deviceId: string = '';
   private static lastAutoSyncRequestAt: number = 0;
-  private static lastDataChangeTriggerAt: number = 0;
-  /** 自动同步被去抖或在飞时丢弃，标记“有本地变更待上传”，下个窗口优先补传。 */
-  private static autoSyncWanted: boolean = false;
-  /** 手动同步写心跳后进入的静默窗口：期间云端回推的变更通知不再触发自动同步。 */
-  private static heartbeatQuietUntil: number = 0;
+  /**
+   * 待上传变更的发生时刻，0 表示没有待上传变更。
+   * 用时刻而非布尔量：同步会话开始时“取走”当前标记，会话期间新写入的变更会重新
+   * 置位，于是会话结束时能区分“本次已纳入的变更”与“之后才发生的变更”——后者
+   * 必须继续留在待上传状态，否则补传定时器会因为标记被清空而跳过它们。
+   */
+  private static pendingSince: number = 0;
   private static autoSyncTriggerRegistered: boolean = false;
   private static followUpTimer: number = -1;
-  /** 后台验证器的冷却截止时刻：期间不再重复起新的验证器。 */
-  private static verifyUntil: number = 0;
 
   static readonly AUTO_SYNC_MIN_INTERVAL_MS: number = 5 * 60 * 1000;
-  // 后台验证最多 VERIFY_TICKS 轮，单轮等待不超过 VERIFY_TICK_INTERVAL_MS，
-  // 因此即使定时器被冻结，槽位也会在有限时间内被回收（见 SLOT_STALE_MS）。
-  static readonly VERIFY_TICKS: number = 12;
-  static readonly VERIFY_TICK_INTERVAL_MS: number = 30 * 1000;
-  /** 心跳静默窗口：覆盖主同步上传 + 云端回推通知的典型耗时。 */
-  private static readonly HEARTBEAT_QUIET_MS: number = 90 * 1000;
-  /** 心跳行保留窗口，避免重装/换机导致云端行数单调增长。 */
-  private static readonly HEARTBEAT_RETAIN_MS: number = 30 * 24 * 60 * 60 * 1000;
   /** 槽位陈旧阈值：远超单次同步的最坏耗时，用于兜底回收。 */
   private static readonly SLOT_STALE_MS: number = 15 * 60 * 1000;
-  /** 验证器冷却期：略长于验证器最长运行时间，避免开关长期关闭时反复起验证器。 */
-  private static readonly VERIFY_COOL_DOWN_MS: number = 7 * 60 * 1000;
+  /** cloudSync 受理回执等待上限：AsyncCallback 正常毫秒级返回，超时视为系统无响应。 */
+  private static readonly SUBMISSION_TIMEOUT_MS: number = 30 * 1000;
+  /** 受理后等待首个进度回执的宽限：超时仍无任何回执则按“已提交”定稿（开关关闭即此表现）。
+   * 取值偏保守：弱网/系统批量传输时首个回执可能晚到十几秒，过短会把“其实成功了”
+   * 的会话误判为“已提交”。
+   */
+  private static readonly FIRST_PROGRESS_GRACE_MS: number = 15 * 1000;
+  /** 已有进度回执但未见 FINISH 的会话上限：超时先按“已提交”定稿，迟到终态仍会覆盖。 */
+  private static readonly SESSION_FINISH_CAP_MS: number = 10 * 60 * 1000;
   private static readonly LAST_SUCCESS_KEY: string = 'cloud_sync_last_success_at';
+  private static readonly LAST_SESSION_KEY: string = 'cloud_sync_last_session';
 
   static initializeStorage(): void {
     AppStorage.setOrCreate(CloudSyncService.STORAGE_SUPPORTED, false);
@@ -81,19 +115,23 @@ export class CloudSyncService {
     AppStorage.setOrCreate(CloudSyncService.STORAGE_LAST_SUCCESS_AT, 0);
     AppStorage.setOrCreate(CloudSyncService.STORAGE_MESSAGE, '');
     AppStorage.setOrCreate(CloudSyncService.STORAGE_REVISION, 0);
+    AppStorage.setOrCreate(CloudSyncService.STORAGE_LAST_UPLOAD, 0);
+    AppStorage.setOrCreate(CloudSyncService.STORAGE_LAST_DOWNLOAD, 0);
+    AppStorage.setOrCreate(CloudSyncService.STORAGE_PENDING, false);
   }
 
-  static async configure(store: relationalStore.RdbStore, deviceId: string): Promise<void> {
+  static async configure(store: relationalStore.RdbStore): Promise<void> {
     CloudSyncService.initializeStorage();
     CloudSyncService.store = store;
-    CloudSyncService.deviceId = deviceId;
     // 先恢复跨冷启动的“上次成功时间”，再设置状态，避免被 STATUS_IDLE 覆盖后丢失。
     await CloudSyncService.restorePersistedLastSuccessAt();
+    await CloudSyncService.restorePersistedSession();
     try {
-      // autoSync 关闭：阅读/听书时进度每几秒落一次库，若交给系统"及时"上云，
-      // 云空间会随上传次数持续累积占用。改为由应用在合适时机（前后台切换、
-      // 云端变更通知）去抖触发，进度更新合并后择机上传。
-      const config: relationalStore.DistributedConfig = { autoSync: false };
+      // autoSync 必须为 true，理由见 DISTRIBUTED_AUTO_SYNC：置为 false 会把云空间里
+      // 本应用的同步开关关掉，导致整轮 cloudSync 恒失败。
+      const config: relationalStore.DistributedConfig = {
+        autoSync: CloudSyncService.DISTRIBUTED_AUTO_SYNC
+      };
       await store.setDistributedTables(CloudSyncService.SYNC_TABLES,
         relationalStore.DistributedType.DISTRIBUTED_CLOUD, config);
       CloudSyncService.supported = true;
@@ -123,8 +161,8 @@ export class CloudSyncService {
       return;
     }
     try {
-      cloudData.onAutoSyncTrigger((info: cloudData.AutoSyncTriggerInfo): void => {
-        CloudSyncService.handleAutoSyncTrigger(info);
+      cloudData.onAutoSyncTrigger((_info: cloudData.AutoSyncTriggerInfo): void => {
+        CloudSyncService.requestAutoSync();
       });
       CloudSyncService.autoSyncTriggerRegistered = true;
     } catch (error) {
@@ -134,30 +172,51 @@ export class CloudSyncService {
     }
   }
 
-  private static handleAutoSyncTrigger(info: cloudData.AutoSyncTriggerInfo): void {
-    // 本设备上传落地云端后，系统会回推“云端数据变更”通知；
-    // 记录其到达时间，作为云空间链路可用的确定性证据（后台验证器使用）。
-    if (info.mode === cloudData.AutoSyncTriggerMode.CLOUD_DATA_CHANGE) {
-      CloudSyncService.lastDataChangeTriggerAt = Date.now();
-      hilog.info(0x0000, 'CloudSync', 'cloud data change trigger received');
-    }
-    // 手动同步写心跳后进入静默窗口：心跳落地回推的通知不应再唤起自动同步，
-    // 否则“手动同步 → 回推 → 自动同步 → 回推”会形成自我维持的上传链条。
-    if (Date.now() < CloudSyncService.heartbeatQuietUntil) {
-      hilog.info(0x0000, 'CloudSync', 'auto sync trigger suppressed by heartbeat quiet window');
-      return;
-    }
-    CloudSyncService.requestAutoSync();
-  }
-
-  /** 汇报一次本地数据变更：仅标记待上传，不主动发起同步（同步时机仍由去抖控制）。 */
+  /**
+   * 汇报一次本地数据变更：标记待上传，并安排一次去抖补传。
+   *
+   * 只标记是不够的：系统自动同步的时机由系统控制、应用无法干预，若标记之后一直
+   * 没有前后台切换、也没有云端变更通知，这轮变更可能被长期搁置（改了书签/书源
+   * 却迟迟不上云，界面还显示“已同步”）。所以这里自己挂上补传定时器作为兜底。
+   * 补传仍受去抖约束：定时器只挂一次，重复汇报不会提前也不会叠加，最密也就是
+   * 每 AUTO_SYNC_MIN_INTERVAL_MS 一次，不会出现“每写一次库就同步一次”。
+   */
   static notifyLocalChange(): void {
-    CloudSyncService.autoSyncWanted = true;
+    CloudSyncService.markPendingChange();
+    CloudSyncService.scheduleFollowUp();
   }
 
   /** 是否已有待上传的本地变更尚未同步。 */
   static hasPendingLocalChange(): boolean {
-    return CloudSyncService.autoSyncWanted;
+    return CloudSyncService.pendingSince > 0;
+  }
+
+  /** 置位待上传标记，同时让界面可见（界面据此区分“应用没感知改动”与“上传失败”）。 */
+  private static markPendingChange(): void {
+    if (CloudSyncService.pendingSince === 0) {
+      CloudSyncService.pendingSince = Date.now();
+      AppStorage.setOrCreate(CloudSyncService.STORAGE_PENDING, true);
+    }
+  }
+
+  private static clearPendingChange(): void {
+    CloudSyncService.pendingSince = 0;
+    AppStorage.setOrCreate(CloudSyncService.STORAGE_PENDING, false);
+  }
+
+  /** 会话开始时取走标记：返回这批变更的时刻（0 表示本来就没有待上传变更）。 */
+  private static takePendingChange(): number {
+    const taken: number = CloudSyncService.pendingSince;
+    CloudSyncService.clearPendingChange();
+    return taken;
+  }
+
+  /** 会话明确失败时把取走的标记还回去，界面继续显示“有本地改动待上传”。 */
+  private static restorePendingChange(at: number): void {
+    if (at > 0 && CloudSyncService.pendingSince === 0) {
+      CloudSyncService.pendingSince = at;
+      AppStorage.setOrCreate(CloudSyncService.STORAGE_PENDING, true);
+    }
   }
 
   /**
@@ -168,35 +227,35 @@ export class CloudSyncService {
   static requestAutoSync(urgent: boolean = false): void {
     if (!CloudSyncService.supported) {
       // 能力尚未就绪（冷启动早期）：留待办，configure 成功后再补一次。
-      CloudSyncService.autoSyncWanted = true;
+      CloudSyncService.markPendingChange();
       return;
     }
     const now = Date.now();
     // 只有 urgent 才绕过去抖。注意不能因为“有堆积变更”就绕过：阅读进度每几秒
-    // 落一次库，autoSyncWanted 几乎恒为真，那等于取消去抖，正是这个设计要避免的
-    // 云空间持续增长。堆积变更改由 scheduleFollowUp 在下个去抖窗口补传。
+    // 落一次库，待上传标记几乎恒为已置位，那等于取消去抖，会退化成“每写一次库
+    // 就同步一次”的频繁同步。堆积变更改由 scheduleFollowUp 在下个去抖窗口补传。
     if (!urgent &&
       now - CloudSyncService.lastAutoSyncRequestAt < CloudSyncService.AUTO_SYNC_MIN_INTERVAL_MS) {
-      // 去抖期内被丢弃的请求必须留待办：autoSync=false 意味着系统不会兜底补传。
-      CloudSyncService.autoSyncWanted = true;
+      // 去抖期内被丢弃的请求必须留待办：系统自动同步的时机不可控，不能指望它
+      // 恰好覆盖这一次变更。
+      CloudSyncService.markPendingChange();
       CloudSyncService.scheduleFollowUp();
       return;
     }
     if (CloudSyncService.pendingSync) {
       // 在飞：不重复发起，但同样留待办，避免这一轮变更被永久跳过。
-      CloudSyncService.autoSyncWanted = true;
+      CloudSyncService.markPendingChange();
       CloudSyncService.scheduleFollowUp();
       return;
     }
     CloudSyncService.lastAutoSyncRequestAt = now;
-    CloudSyncService.autoSyncWanted = false;
-    // 自动同步不写心跳脏行：写心跳会触发云端数据变更通知，
-    // onAutoSyncTrigger 再次唤起自动同步，形成"每 5 分钟上传一版心跳"的自我维持循环，
-    // 云端版本无限累积导致云空间占用持续增长。
-    CloudSyncService.syncNow(false).then((outcome: CloudSyncOutcome) => {
+    // 待上传标记由 syncNow 在会话开始时取走、在明确失败时还回，这里不再手工清理，
+    // 否则会把“同步期间新写入的变更”一并清掉，补传定时器随后会跳过它们。
+    CloudSyncService.syncNow().then((outcome: CloudSyncOutcome) => {
       hilog.info(0x0000, 'CloudSync',
-        'auto sync done: status=%{public}s confirmed=%{public}d code=%{public}d',
-        outcome.status, outcome.confirmed ? 1 : 0, outcome.progressCode);
+        'auto sync done: status=%{public}s code=%{public}d pending=%{public}d',
+        outcome.status, outcome.progressCode,
+        CloudSyncService.hasPendingLocalChange() ? 1 : 0);
     }).catch((error: Error) => {
       // 真实异常单独成行，避免与“去抖跳过”混在一起难以定位。
       hilog.warn(0x0000, 'CloudSync', 'auto sync failed: %{public}s', error.message);
@@ -205,7 +264,7 @@ export class CloudSyncService {
 
   /** 一轮同步结束后，若期间又有变更被标记待上传，安排一次补传。 */
   private static scheduleFollowUp(): void {
-    if (!CloudSyncService.autoSyncWanted || !CloudSyncService.supported) {
+    if (!CloudSyncService.hasPendingLocalChange() || !CloudSyncService.supported) {
       return;
     }
     if (CloudSyncService.followUpTimer >= 0) {
@@ -213,7 +272,7 @@ export class CloudSyncService {
     }
     CloudSyncService.followUpTimer = setTimeout(() => {
       CloudSyncService.followUpTimer = -1;
-      if (CloudSyncService.autoSyncWanted) {
+      if (CloudSyncService.hasPendingLocalChange()) {
         CloudSyncService.requestAutoSync(true);
       }
     }, CloudSyncService.AUTO_SYNC_MIN_INTERVAL_MS);
@@ -241,19 +300,20 @@ export class CloudSyncService {
   }
 
   /**
-   * @param verifyWithHeartbeat 仅手动同步传 true：用“心跳行往返探针”确认数据确实到达云端。
-   * 端云框架在云空间开关关闭时不会向应用上报任何错误（完成回调 err=0、进度回调不触发），
-   * 因此用探针行做确定性验证：
-   * 1. 写入心跳时间戳 T1，随主同步（TIME_FIRST）推送到云端；
-   * 2. 本地再写 T2=T1+1 制造端云差异（不推送）；
-   * 3. 用 SYNC_MODE_CLOUD_FIRST 仅对探针表做“云→端”拉取；
-   * 4. 若本地值被拉回的云端版本覆盖为 T1，证明 T1 已到达云端；若仍是 T2，说明云端不可达
-   *    （开关关闭/网络异常），明确报错而不是提示已同步。
+   * 发起一次端云同步。
    *
-   * 心跳行只能证明“链路通”，不能证明业务表全部成功：终局判定同时纳入主同步的
-   * 最坏进度码与失败行数（见 finishSession）。
+   * cloudSync 的 AsyncCallback 只是“受理回执”：系统毫秒级返回 err=0 仅表示请求
+   * 已受理，不代表同步完成；真实结果由进度回调送达，终态信号是
+   * schedule=SYNC_FINISH（携带终态码）或非 SUCCESS 进度码。据此分四态：
+   * 1. FINISH 且 SUCCESS → STATUS_SYNCED；
+   * 2. 阻断性进度码（开关未开/超上限/空间不足/未知错误）或存在失败行 → STATUS_ERROR；
+   * 3. 暂停态进度码（网络错误/其他设备占用/网络策略）→ STATUS_PAUSED，系统自动重试；
+   * 4. 超时未见终态（云空间开关关闭时甚至没有任何进度回调）→ STATUS_SUBMITTED：
+   *    只提示“已提交”，不声称成功；迟到的 FINISH 仍会重新定稿并覆盖结果。
+   * 不做心跳探针之类的“成功性验证”：探针只能证明链路通、不能证明业务表成功，
+   * 还会向云端写脏数据并引入长窗口定时器，性价比极低。
    */
-  static async syncNow(verifyWithHeartbeat: boolean = false): Promise<CloudSyncOutcome> {
+  static async syncNow(): Promise<CloudSyncOutcome> {
     const store = CloudSyncService.store;
     if (!store || !CloudSyncService.supported) {
       return Promise.reject(new Error('当前设备不支持端云同步'));
@@ -261,22 +321,34 @@ export class CloudSyncService {
     const existing = CloudSyncService.acquireSlot();
     if (existing) {
       // 复用在飞任务，等待真实完成，避免并发调用拿到假的成功结果。
-      // “确认中”阶段的在飞任务是后台验证器，加入后会等待最终结论。
       return existing;
     }
-    const slot: Promise<CloudSyncOutcome> =
-      CloudSyncService.runSyncSession(verifyWithHeartbeat);
-    CloudSyncService.pendingSync = slot;
+    const taken: number = CloudSyncService.takePendingChange();
+    const slot: Promise<CloudSyncOutcome> = CloudSyncService.runSyncSession();
+    // 待上传标记的归属：会话开始时取走的这批变更，只在明确失败或暂停时还回。
+    // SUBMITTED（结果未知）不还给——开关没开时那会变成每 5 分钟一次的无效重试。
+    // PAUSED 时还回：暂停只代表系统稍后自动续传，本应用的补传定时器仍是兜底保障。
+    const tracked: Promise<CloudSyncOutcome> = slot.then((outcome: CloudSyncOutcome) => {
+      if (outcome.status === CloudSyncService.STATUS_ERROR ||
+        outcome.status === CloudSyncService.STATUS_PAUSED) {
+        CloudSyncService.restorePendingChange(taken);
+      }
+      return outcome;
+    }, (error: Error): Promise<CloudSyncOutcome> => {
+      CloudSyncService.restorePendingChange(taken);
+      return Promise.reject(error);
+    });
+    CloudSyncService.pendingSync = tracked;
     CloudSyncService.pendingSyncStartedAt = Date.now();
     const release = (): void => {
-      if (CloudSyncService.pendingSync === slot) {
+      if (CloudSyncService.pendingSync === tracked) {
         CloudSyncService.pendingSync = null;
         CloudSyncService.pendingSyncStartedAt = 0;
       }
       CloudSyncService.scheduleFollowUp();
     };
-    slot.then(release, release);
-    return slot;
+    tracked.then(release, release);
+    return tracked;
   }
 
   /**
@@ -301,371 +373,344 @@ export class CloudSyncService {
     return null;
   }
 
-  private static async runSyncSession(verifyWithHeartbeat: boolean): Promise<CloudSyncOutcome> {
+  /**
+   * 单次同步会话。cloudSync 的 AsyncCallback 是受理回执（正常毫秒级返回），
+   * 真实结果由进度回调给出：schedule=SYNC_FINISH 或非 SUCCESS 进度码即视为终态。
+   * 超时未见终态时按“已提交”定稿并返回，但进度闭包保持存活，迟到的 FINISH 会
+   * 重新定稿、覆盖 AppStorage 中的旧结果——第一次定稿决定 Promise 归宿，之后的
+   * 定稿只刷新界面状态。
+   */
+  private static runSyncSession(): Promise<CloudSyncOutcome> {
     const store = CloudSyncService.store;
     if (!store) {
       const empty = new CloudSyncOutcome();
       empty.status = CloudSyncService.STATUS_ERROR;
       empty.message = '数据库尚未就绪';
       CloudSyncService.applyOutcome(empty);
-      throw new Error(empty.message);
-    }
-    const sessionStart = Date.now();
-    let probeStamp = 0;
-    if (verifyWithHeartbeat) {
-      probeStamp = await CloudSyncService.writeSyncHeartbeat();
-      if (probeStamp > 0) {
-        // 抑制心跳落地后回推的变更通知，切断“手动同步 → 自动同步”的自触发链。
-        CloudSyncService.heartbeatQuietUntil = Date.now() + CloudSyncService.HEARTBEAT_QUIET_MS;
-      }
+      return Promise.reject(new Error(empty.message));
     }
     CloudSyncService.setStatus(CloudSyncService.STATUS_SYNCING, '');
-    let worstCode: number = -1;
-    let worstMessage: string = '';
-    let failedRows: number = 0;
-    let sawProgress: boolean = false;
-    const mainTask = new Promise<void>((resolve, reject) => {
-      try {
-        store.cloudSync(relationalStore.SyncMode.SYNC_MODE_TIME_FIRST,
-          CloudSyncService.SYNC_TABLES,
-          (progress: relationalStore.ProgressDetails) => {
-            // 累积整个会话中最坏的结果：多张表会分别回调，只看最后一次会漏掉
-            // “books 失败、其它表成功”这类混合场景。
-            sawProgress = true;
-            worstCode = CloudSyncService.worseProgressCode(worstCode, progress.code);
-            failedRows += CloudSyncService.countFailedRows(progress);
-            worstMessage = CloudSyncService.progressMessage(progress) || worstMessage;
-            hilog.debug(0x0000, 'CloudSync', 'progress: code=%{public}d details=%{public}s',
-              progress.code, JSON.stringify(progress.details));
-            const live = CloudSyncService.progressText(progress);
-            if (live) {
-              CloudSyncService.setStatus(CloudSyncService.STATUS_SYNCING, live);
-            }
-          },
-          (error: BusinessError) => {
-            hilog.info(0x0000, 'CloudSync',
-              'main sync finished: err=%{public}d worstCode=%{public}d failedRows=%{public}d probe=%{public}d',
-              error ? error.code : 0, worstCode, failedRows, probeStamp);
-            if (error) {
-              reject(new Error(CloudSyncService.describeError(error.code, error.message)));
-              return;
-            }
-            resolve();
-          });
-      } catch (error) {
-        const err = error as BusinessError;
-        reject(new Error(CloudSyncService.describeError(err.code, err.message)));
-      }
+    return new Promise<CloudSyncOutcome>((resolve, reject) => {
+      let worstCode: number = -1;
+      let worstMessage: string = '';
+      let sawProgress: boolean = false;
+      let sawFinish: boolean = false;
+      // FINISH 已见：系统不应再回调，忽略迟到的杂散回执。
+      let finished: boolean = false;
+      // 会话是否已定稿：第一次定稿决定 Promise 归宿，之后的定稿只刷新界面。
+      let settled: boolean = false;
+      let graceTimer: number = -1;
+      let capTimer: number = -1;
+      // 每张表取最后一次进度回调的统计值：同一张表会多次回调，且中间值单调，
+      // 直接覆盖即可；跨表汇总在定稿时进行。
+      const tableStats: Map<string, TableSyncStats> = new Map<string, TableSyncStats>();
+
+      const finalize = (): void => {
+        if (graceTimer >= 0) {
+          clearTimeout(graceTimer);
+          graceTimer = -1;
+        }
+        if (capTimer >= 0) {
+          clearTimeout(capTimer);
+          capTimer = -1;
+        }
+        const outcome = CloudSyncService.finishSession(worstCode, worstMessage,
+          CloudSyncService.countFailedRowsFrom(tableStats), sawProgress, sawFinish,
+          CloudSyncService.aggregateTableStats(tableStats));
+        CloudSyncService.applyOutcome(outcome);
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (outcome.status === CloudSyncService.STATUS_ERROR) {
+          reject(new Error(outcome.message));
+        } else {
+          resolve(outcome);
+        }
+      };
+
+      const onProgress = (progress: relationalStore.ProgressDetails): void => {
+        if (finished) {
+          return;
+        }
+        sawProgress = true;
+        CloudSyncService.captureTableStats(tableStats, progress);
+        const message = CloudSyncService.progressMessage(progress);
+        if (progress.schedule === relationalStore.Progress.SYNC_FINISH) {
+          // FINISH 携带终态码：中途的非 SUCCESS 码可能是瞬时抖动，以终态为准。
+          sawFinish = true;
+          finished = true;
+          worstCode = progress.code;
+          worstMessage = message || worstMessage;
+          finalize();
+          return;
+        }
+        worstCode = CloudSyncService.worseProgressCode(worstCode, progress.code);
+        worstMessage = message || worstMessage;
+        if (progress.code !== relationalStore.ProgressCode.SUCCESS &&
+          CloudSyncService.isBlockingProgressCode(progress.code)) {
+          // 阻断性失败：立即定稿为 ERROR，迟到的 FINISH 仍可覆盖。
+          finalize();
+          return;
+        }
+        // 正常传输或暂停态（网络错误/被占用/网络策略等可自动恢复的场景）：
+        // 会话保持等待，由会话上限兜底定稿为 PAUSED，迟到的 FINISH 仍可覆盖。
+        // 正常传输中：首个回执到达后撤掉受理宽限，改挂会话上限。
+        if (graceTimer >= 0) {
+          clearTimeout(graceTimer);
+          graceTimer = -1;
+        }
+        if (capTimer < 0) {
+          capTimer = setTimeout((): void => {
+            capTimer = -1;
+            finalize();
+          }, CloudSyncService.SESSION_FINISH_CAP_MS);
+        }
+        const live = CloudSyncService.progressText(progress) ||
+          (progress.code !== relationalStore.ProgressCode.SUCCESS
+            ? CloudSyncService.describeError(progress.code, message) : '');
+        if (live) {
+          CloudSyncService.setStatus(CloudSyncService.STATUS_SYNCING, live);
+        }
+      };
+
+      const submission = new Promise<void>((resolveSubmission, rejectSubmission) => {
+        // 受理等待上限：AsyncCallback 正常毫秒级返回，超时说明系统无响应。
+        const submissionTimer: number = setTimeout((): void => {
+          rejectSubmission(new Error('系统长时间未受理同步请求'));
+        }, CloudSyncService.SUBMISSION_TIMEOUT_MS);
+        try {
+          store.cloudSync(relationalStore.SyncMode.SYNC_MODE_TIME_FIRST,
+            CloudSyncService.SYNC_TABLES, onProgress,
+            (error: BusinessError): void => {
+              clearTimeout(submissionTimer);
+              hilog.info(0x0000, 'CloudSync', 'cloudSync submitted: err=%{public}d',
+                error ? error.code : 0);
+              if (error) {
+                rejectSubmission(new Error(CloudSyncService.describeError(error.code, error.message)));
+                return;
+              }
+              resolveSubmission();
+            });
+        } catch (error) {
+          clearTimeout(submissionTimer);
+          const err = error as BusinessError;
+          rejectSubmission(new Error(CloudSyncService.describeError(err.code, err.message)));
+        }
+      });
+
+      submission.then((): void => {
+        // 已受理但尚无任何进度回执：给首个回执一段宽限，超时按“已提交”定稿
+        //（云空间开关关闭时正是这种表现），迟到的回执仍会重新定稿。
+        if (settled || sawProgress) {
+          return;
+        }
+        graceTimer = setTimeout((): void => {
+          graceTimer = -1;
+          finalize();
+        }, CloudSyncService.FIRST_PROGRESS_GRACE_MS);
+      }, (error: Error): void => {
+        // 受理即失败（cloudSync 回调 err 非 0 / 抛异常 / 超时无响应）。
+        if (settled) {
+          return;
+        }
+        settled = true;
+        const failed = new CloudSyncOutcome();
+        failed.status = CloudSyncService.STATUS_ERROR;
+        failed.progressCode = worstCode;
+        failed.failedRows = CloudSyncService.countFailedRowsFrom(tableStats);
+        failed.message = CloudSyncService.errorText(error) || '同步失败';
+        CloudSyncService.applyOutcome(failed);
+        reject(new Error(failed.message));
+      });
     });
-
-    try {
-      await mainTask;
-    } catch (error) {
-      const failed = new CloudSyncOutcome();
-      failed.status = CloudSyncService.STATUS_ERROR;
-      failed.progressCode = worstCode;
-      failed.failedRows = failedRows;
-      failed.message = CloudSyncService.errorText(error) || '同步失败';
-      CloudSyncService.applyOutcome(failed);
-      throw new Error(failed.message);
-    }
-
-    let confirmed = false;
-    if (probeStamp > 0) {
-      confirmed = await CloudSyncService.probeCloudRoundTrip(probeStamp);
-    } else if (sawProgress && worstCode === relationalStore.ProgressCode.SUCCESS) {
-      // 自动同步不写心跳，但主同步明确上报过 SUCCESS，可视为链路已通。
-      confirmed = true;
-    }
-
-    const outcome = CloudSyncService.finishSession(probeStamp, sessionStart, worstCode,
-      worstMessage, failedRows, sawProgress, confirmed);
-    if (outcome.status === CloudSyncService.STATUS_ERROR) {
-      CloudSyncService.applyOutcome(outcome);
-      throw new Error(outcome.message);
-    }
-    CloudSyncService.applyOutcome(outcome);
-    return outcome;
   }
 
   /**
-   * 主同步无异常后的终局判定。核心原则：一次进度回调都没收到（sawProgress=false）
-   * 属于“未知”，绝不能当作成功 —— 云空间开关关闭时正是这种表现。
+   * 从进度回调里记录各表最新的传输统计；同一张表后到的回调覆盖先到的。
+   * 这里必须逐字段做空值兜底：不同系统版本回调上来的 details 结构不完整
+   * （见过只有 upload 没有 download 的表），直接在回调里取 .total 会抛异常，
+   * 而进度回调里抛异常会连带打断整个同步会话。
    */
-  private static finishSession(probeStamp: number, sessionStart: number, worstCode: number,
-    worstMessage: string, failedRows: number, sawProgress: boolean,
-    confirmed: boolean): CloudSyncOutcome {
+  private static captureTableStats(tableStats: Map<string, TableSyncStats>,
+    progress: relationalStore.ProgressDetails): void {
+    const details = progress.details;
+    if (!details) {
+      return;
+    }
+    const tables = Object.keys(details);
+    for (const table of tables) {
+      const tableDetails = details[table];
+      if (!tableDetails) {
+        continue;
+      }
+      // 必须兜住异常：不同系统版本回调上来的 details 结构可能不完整（只有 upload
+      // 没有 download 之类），取属性会抛异常；而进度回调里抛出的异常会连带打断
+      // 整个同步会话，表现就是“同步莫名其妙失败”。
+      try {
+        tableStats.set(table, {
+          uploadTotal: tableDetails.upload.total,
+          uploadRemained: tableDetails.upload.remained,
+          uploadFailed: tableDetails.upload.failed,
+          downloadTotal: tableDetails.download.total,
+          downloadRemained: tableDetails.download.remained,
+          downloadFailed: tableDetails.download.failed
+        });
+      } catch (error) {
+        const err = error as BusinessError;
+        hilog.warn(0x0000, 'CloudSync', 'capture stats failed: %{public}s %{public}d %{public}s',
+          table, err.code, err.message);
+      }
+    }
+  }
+
+  /** 跨表汇总传输统计，用于终局展示与持久化。 */
+  private static aggregateTableStats(tableStats: Map<string, TableSyncStats>): TableSyncStats {
+    const summary: TableSyncStats = {
+      uploadTotal: 0,
+      uploadRemained: 0,
+      uploadFailed: 0,
+      downloadTotal: 0,
+      downloadRemained: 0,
+      downloadFailed: 0
+    };
+    tableStats.forEach((stats: TableSyncStats): void => {
+      summary.uploadTotal += stats.uploadTotal;
+      summary.uploadRemained += stats.uploadRemained;
+      summary.uploadFailed += stats.uploadFailed;
+      summary.downloadTotal += stats.downloadTotal;
+      summary.downloadRemained += stats.downloadRemained;
+      summary.downloadFailed += stats.downloadFailed;
+    });
+    return summary;
+  }
+
+  /**
+   * 会话定稿时的终局判定。终态信号优先级从高到低：
+   * 1. 阻断性进度码（含 FINISH 携带的失败码）→ STATUS_ERROR；
+   * 2. 存在失败行 → STATUS_ERROR；
+   * 3. 见过 FINISH 且无失败 → STATUS_SYNCED（仅凭中间回执不足以判成功）；
+   * 4. 最坏码为暂停态（网络错误/被占用/网络策略等）→ STATUS_PAUSED，
+   *    条件恢复后系统自动重试，不视为失败、不清空云链路标记；
+   * 5. 有进度回执但超时未见 FINISH → STATUS_SUBMITTED（后台可能仍在传输）；
+   * 6. 一次进度回执都没有 → STATUS_SUBMITTED（云空间开关关闭时的典型表现）。
+   */
+  private static finishSession(worstCode: number, worstMessage: string,
+    failedRows: number, sawProgress: boolean, sawFinish: boolean,
+    stats: TableSyncStats): CloudSyncOutcome {
     const outcome = new CloudSyncOutcome();
     outcome.progressCode = worstCode;
     outcome.failedRows = failedRows;
+    outcome.uploadTotal = stats.uploadTotal;
+    outcome.uploadDone = stats.uploadTotal - stats.uploadRemained;
+    outcome.downloadTotal = stats.downloadTotal;
+    outcome.downloadDone = stats.downloadTotal - stats.downloadRemained;
 
-    // 失败码优先：无论探针结论如何，明确失败就是失败。
-    if (worstCode >= 0 && worstCode !== relationalStore.ProgressCode.SUCCESS) {
+    // 阻断性码优先：系统明确上报的失败结果，直接判失败。
+    if (worstCode >= 0 && worstCode !== relationalStore.ProgressCode.SUCCESS &&
+      CloudSyncService.isBlockingProgressCode(worstCode)) {
       outcome.status = CloudSyncService.STATUS_ERROR;
       outcome.message = CloudSyncService.describeProgress(worstCode, worstMessage);
       return outcome;
     }
-    // 心跳行到达不代表业务表全部成功：合并主同步统计到的失败行数。
     if (failedRows > 0) {
       outcome.status = CloudSyncService.STATUS_ERROR;
-      outcome.message = `有 ${failedRows} 条数据未能同步`;
+      outcome.message = `有 ${failedRows} 条数据未能同步，请稍后重试`;
       return outcome;
     }
-    if (confirmed) {
+    if (worstCode >= 0 && worstCode !== relationalStore.ProgressCode.SUCCESS) {
+      // 暂停态：不是失败，系统会在网络恢复/云端可用后自动续传。
+      outcome.status = CloudSyncService.STATUS_PAUSED;
+      outcome.message = CloudSyncService.describeProgress(worstCode, worstMessage);
+      return outcome;
+    }
+    if (sawFinish) {
+      // 系统上报过 FINISH 且全部 SUCCESS，是端云链路可用的确定性证据。
       outcome.status = CloudSyncService.STATUS_SYNCED;
-      outcome.confirmed = true;
+      if (outcome.uploadTotal === 0 && outcome.downloadTotal === 0) {
+        outcome.message = '云端与本机数据一致，本次无数据传输';
+      }
+      return outcome;
+    }
+    if (sawProgress) {
+      outcome.status = CloudSyncService.STATUS_SUBMITTED;
+      outcome.message = '同步仍在后台进行，暂未收到完成回执，请稍后重试或前往“设置-云空间”确认';
       return outcome;
     }
 
-    // 走到这里有两种未知：一次进度都没有（开关关闭的典型表现），或写了心跳但
-    // 短探针没拉回来（系统批量上传期间应用发起的 cloudSync 会被静默丢弃）。
-    // 两者都不能判成功，也都不立刻判失败：进入“确认中”，由后台验证器通过
-    // “云端变更通知 + 心跳拉取”双通道在数分钟内得出最终结论。
-    outcome.status = CloudSyncService.STATUS_PENDING;
-    if (CloudSyncService.verifyBusy()) {
-      // 已有验证器在跑或刚跑完（冷却期内）：保持“确认中”即可，重复起验证器
-      // 只会让开关长期关闭的设备陷入“每次同步都起一个 6 分钟验证器”的循环。
-      hilog.info(0x0000, 'CloudSync',
-        'sync result unknown, verifier already active (sawProgress=%{public}d probe=%{public}d)',
-        sawProgress ? 1 : 0, probeStamp);
-      return outcome;
-    }
-    CloudSyncService.verifyUntil = Date.now() + CloudSyncService.VERIFY_COOL_DOWN_MS;
-    const verdict = CloudSyncService.startCloudVerify(probeStamp, sessionStart);
-    CloudSyncService.pendingSync = verdict;
-    // 验证器可能以 rejection 结束，而 UI 反馈已由 setStatus 承担；挂空分支防止
-    // 无人接管的 promise rejection。
-    verdict.catch(() => undefined);
-    hilog.info(0x0000, 'CloudSync',
-      'sync result unknown (sawProgress=%{public}d probe=%{public}d), background verify started',
-      sawProgress ? 1 : 0, probeStamp);
+    // 一次进度回执都没有：云空间开关关闭、系统静默排队/批量传输期都可能如此。
+    // 应用无法确认结果，既不判成功也不判失败，交给用户去云空间自行确认。
+    outcome.status = CloudSyncService.STATUS_SUBMITTED;
+    outcome.message = '同步请求已提交，应用无法确认结果，请前往“设置-云空间”查看';
     return outcome;
-  }
-
-  /** 后台验证器是否已在运行或刚跑完（冷却期内不再重复起新的验证器）。 */
-  private static verifyBusy(): boolean {
-    return Date.now() < CloudSyncService.verifyUntil;
   }
 
   /** 把终局结果落到 AppStorage：只有确认成功才刷新“上次成功时间”。 */
   private static applyOutcome(outcome: CloudSyncOutcome): void {
     if (outcome.status === CloudSyncService.STATUS_SYNCED) {
-      if (outcome.confirmed) {
-        AppStorage.setOrCreate(CloudSyncService.STORAGE_LINKED, true);
-      }
+      AppStorage.setOrCreate(CloudSyncService.STORAGE_LINKED, true);
     } else if (outcome.status === CloudSyncService.STATUS_ERROR) {
       AppStorage.setOrCreate(CloudSyncService.STORAGE_LINKED, false);
     }
+    // STATUS_SUBMITTED 不改变云链路标记：既未确认连通，也未确认失败。同理，结果
+    // 未知的会话不能用 0 覆盖上一轮的传输行数——那会把“上次确实传了多少行”这个
+    // 唯一可诊断的证据抹掉，界面也会退化成“云端与本机一致，本次无数据传输”。
+    if (outcome.status !== CloudSyncService.STATUS_SUBMITTED) {
+      AppStorage.setOrCreate(CloudSyncService.STORAGE_LAST_UPLOAD, outcome.uploadDone);
+      AppStorage.setOrCreate(CloudSyncService.STORAGE_LAST_DOWNLOAD, outcome.downloadDone);
+      CloudSyncService.persistLastSession(outcome);
+    }
+    hilog.info(0x0000, 'CloudSync',
+      'session done: status=%{public}s upload=%{public}d/%{public}d download=%{public}d/%{public}d failed=%{public}d',
+      outcome.status, outcome.uploadDone, outcome.uploadTotal,
+      outcome.downloadDone, outcome.downloadTotal, outcome.failedRows);
     CloudSyncService.setStatus(outcome.status, outcome.message);
   }
 
-  /**
-   * 后台云连接验证器：终局未知时启动。每 30 秒检查一次：
-   * 1. 是否收到“云端数据变更”通知（本设备上传落地后系统会回推，开关关闭时不会有）；
-   * 2. 心跳拉取探针是否确认。
-   * 最长 VERIFY_TICKS 轮（约 6 分钟）后仍未确认则判定云空间不可达。
-   * 单轮等待固定不超过 VERIFY_TICK_INTERVAL_MS，配合槽位陈旧回收，不会永久占用同步。
-   */
-  private static startCloudVerify(pushedAt: number,
-    sessionStart: number): Promise<CloudSyncOutcome> {
-    const verdict = CloudSyncService.runCloudVerify(pushedAt, sessionStart);
-    const release = (): void => {
-      if (CloudSyncService.pendingSync === verdict) {
-        CloudSyncService.pendingSync = null;
-        CloudSyncService.pendingSyncStartedAt = 0;
-      }
-    };
-    verdict.then(release, release);
-    return verdict;
-  }
-
-  private static async runCloudVerify(pushedAt: number,
-    sessionStart: number): Promise<CloudSyncOutcome> {
-    const outcome = new CloudSyncOutcome();
-    const store = CloudSyncService.store;
-    const deviceId = CloudSyncService.deviceId;
-    const linkMessage = '未能连接云空间：请检查“设置-云空间”中本应用的同步开关与网络连接';
-    if (!store || !deviceId) {
-      outcome.status = CloudSyncService.STATUS_ERROR;
-      outcome.message = linkMessage;
-      CloudSyncService.applyOutcome(outcome);
-      throw new Error(linkMessage);
-    }
-    for (let tick = 1; tick <= CloudSyncService.VERIFY_TICKS; tick++) {
-      await CloudSyncService.delay(CloudSyncService.VERIFY_TICK_INTERVAL_MS);
-      // 通道一：本会话期间收到过“云端数据变更”通知，证明链路可用
-      if (CloudSyncService.lastDataChangeTriggerAt >= sessionStart) {
-        hilog.info(0x0000, 'CloudSync',
-          'verify confirmed by data-change trigger, tick=%{public}d', tick);
-        outcome.status = CloudSyncService.STATUS_SYNCED;
-        outcome.confirmed = true;
-        CloudSyncService.applyOutcome(outcome);
-        return outcome;
-      }
-      // 通道二：心跳拉取探针
-      if (pushedAt > 0) {
-        try {
-          await CloudSyncService.pullSyncHeartbeatTable(store);
-        } catch (error) {
-          const err = error as BusinessError;
-          hilog.warn(0x0000, 'CloudSync',
-            'verify pull failed (tick %{public}d): %{public}d %{public}s',
-            tick, err.code, err.message);
-          continue;
-        }
-        const current = await CloudSyncService.readHeartbeatStamp(store, deviceId);
-        if (current === pushedAt) {
-          hilog.info(0x0000, 'CloudSync',
-            'verify confirmed by heartbeat pull, tick=%{public}d', tick);
-          outcome.status = CloudSyncService.STATUS_SYNCED;
-          outcome.confirmed = true;
-          CloudSyncService.applyOutcome(outcome);
-          return outcome;
-        }
-      }
-    }
-    hilog.warn(0x0000, 'CloudSync', 'verify failed after all ticks');
-    outcome.status = CloudSyncService.STATUS_ERROR;
-    outcome.message = linkMessage;
-    CloudSyncService.applyOutcome(outcome);
-    throw new Error(linkMessage);
-  }
-
-  /** 写入本设备心跳时间戳，返回写入的时间戳；失败返回 0。 */
-  private static async writeSyncHeartbeat(): Promise<number> {
-    const store = CloudSyncService.store;
-    const deviceId = CloudSyncService.deviceId;
-    if (!store || !deviceId) {
-      return 0;
-    }
-    const stamp = Date.now();
-    try {
-      const predicates = new relationalStore.RdbPredicates('sync_heartbeats');
-      predicates.equalTo('deviceId', deviceId);
-      const bucket: relationalStore.ValuesBucket = { updatedAt: stamp };
-      const affected = await store.update(bucket, predicates);
-      if (affected <= 0) {
-        const insertBucket: relationalStore.ValuesBucket = {
-          deviceId: deviceId,
-          updatedAt: stamp
-        };
-        await store.insert('sync_heartbeats', insertBucket);
-      }
-      // 顺带清理长时间未上报的设备心跳，避免重装/换机导致云端行数单调增长。
-      CloudSyncService.pruneSyncHeartbeats(stamp);
-      return stamp;
-    } catch (error) {
-      const err = error as BusinessError;
-      hilog.warn(0x0000, 'CloudSync', 'write heartbeat failed: %{public}d %{public}s',
-        err.code, err.message);
-      return 0;
-    }
-  }
-
-  private static pruneSyncHeartbeats(now: number): void {
+  /** 最近一次会话的传输行数落到 device_meta，跨冷启动保留，供界面展示。 */
+  private static persistLastSession(outcome: CloudSyncOutcome): void {
     const store = CloudSyncService.store;
     if (!store) {
       return;
     }
-    const threshold = now - CloudSyncService.HEARTBEAT_RETAIN_MS;
-    store.executeSql('DELETE FROM sync_heartbeats WHERE updatedAt > 0 AND updatedAt < ?',
-      [threshold]).catch((error: BusinessError) => {
-      hilog.warn(0x0000, 'CloudSync', 'prune heartbeats failed: %{public}d %{public}s',
+    const summary: Record<string, number> = {
+      uploaded: outcome.uploadDone,
+      downloaded: outcome.downloadDone,
+      failed: outcome.failedRows,
+      finishedAt: Date.now()
+    };
+    store.executeSql('INSERT OR REPLACE INTO device_meta (key, value) VALUES (?, ?)',
+      [CloudSyncService.LAST_SESSION_KEY, JSON.stringify(summary)]).catch((error: BusinessError) => {
+      hilog.warn(0x0000, 'CloudSync', 'persist last session failed: %{public}d %{public}s',
         error.code, error.message);
     });
   }
 
-  /** 心跳往返探针：见 syncNow 注释。返回 true 表示推送的行已确认到达云端。 */
-  private static async probeCloudRoundTrip(pushedAt: number): Promise<boolean> {
+  /** 数据库就绪后补读持久化的上次会话统计。 */
+  private static restorePersistedSession(): Promise<void> {
     const store = CloudSyncService.store;
-    const deviceId = CloudSyncService.deviceId;
-    if (!store || !deviceId) {
-      return false;
+    if (!store) {
+      return Promise.resolve();
     }
-    // 本地写一个比云端更新的时间戳，制造端云差异（不随主同步推送）。
-    const localStamp = pushedAt + 1;
-    try {
-      const predicates = new relationalStore.RdbPredicates('sync_heartbeats');
-      predicates.equalTo('deviceId', deviceId);
-      const bumpBucket: relationalStore.ValuesBucket = { updatedAt: localStamp };
-      const affected = await store.update(bumpBucket, predicates);
-      if (affected <= 0) {
-        const insertBucket: relationalStore.ValuesBucket = {
-          deviceId: deviceId,
-          updatedAt: localStamp
-        };
-        await store.insert('sync_heartbeats', insertBucket);
-      }
-    } catch (error) {
-      const err = error as BusinessError;
-      hilog.warn(0x0000, 'CloudSync', 'probe bump failed: %{public}d %{public}s',
-        err.code, err.message);
-      return false;
-    }
-    // 云端刚经历清空/全量重传时，系统批量上传在后台持续进行，应用发起的 cloudSync
-    // 会被静默丢弃，长窗口等待只会阻塞用户。这里只做短窗口快探（约 50 秒）：
-    // 稳态下一次拉取即可确认；批量传输期间确认不了则交给后台验证器异步出结论。
-    const schedule: number[] = [0, 5000, 10000, 15000, 20000];
-    for (let index = 0; index < schedule.length; index++) {
-      if (schedule[index] > 0) {
-        await CloudSyncService.delay(schedule[index]);
-        CloudSyncService.setStatus(CloudSyncService.STATUS_SYNCING,
-          `正在校验云连接（第 ${index}/${schedule.length - 1} 次）…`);
-      }
+    return store.querySql('SELECT value FROM device_meta WHERE key = ?',
+      [CloudSyncService.LAST_SESSION_KEY]).then((resultSet) => {
       try {
-        // 仅对探针表执行“云→端”拉取，不会把本地差异推送到云端。
-        await CloudSyncService.pullSyncHeartbeatTable(store);
-      } catch (error) {
-        const err = error as BusinessError;
-        hilog.warn(0x0000, 'CloudSync', 'probe pull failed (attempt %{public}d): %{public}d %{public}s',
-          index + 1, err.code, err.message);
-        continue;
-      }
-      const current = await CloudSyncService.readHeartbeatStamp(store, deviceId);
-      const confirmed = current === pushedAt;
-      hilog.info(0x0000, 'CloudSync',
-        'probe: attempt=%{public}d pushedAt=%{public}d local=%{public}d current=%{public}d confirmed=%{public}d',
-        index + 1, pushedAt, localStamp, current, confirmed ? 1 : 0);
-      if (confirmed) {
-        return true;
-      }
-    }
-    hilog.warn(0x0000, 'CloudSync', 'probe not confirmed after retries: pushedAt=%{public}d', pushedAt);
-    return false;
-  }
-
-  private static readHeartbeatStamp(store: relationalStore.RdbStore,
-    deviceId: string): Promise<number> {
-    return new Promise<number>((resolve) => {
-      const predicates = new relationalStore.RdbPredicates('sync_heartbeats');
-      predicates.equalTo('deviceId', deviceId);
-      store.query(predicates, []).then((resultSet) => {
-        let current = -1;
-        try {
-          if (resultSet.goToFirstRow()) {
-            current = resultSet.getLong(resultSet.getColumnIndex('updatedAt'));
+        if (resultSet.goToFirstRow()) {
+          const raw = resultSet.getString(resultSet.getColumnIndex('value'));
+          const parsed = JSON.parse(raw) as Record<string, number>;
+          if (parsed && typeof parsed === 'object') {
+            const uploaded = Number(parsed['uploaded']) || 0;
+            const downloaded = Number(parsed['downloaded']) || 0;
+            AppStorage.setOrCreate(CloudSyncService.STORAGE_LAST_UPLOAD, uploaded);
+            AppStorage.setOrCreate(CloudSyncService.STORAGE_LAST_DOWNLOAD, downloaded);
           }
-        } catch (error) {
-          const err = error as BusinessError;
-          hilog.warn(0x0000, 'CloudSync', 'read heartbeat failed: %{public}d %{public}s',
-            err.code, err.message);
-        } finally {
-          resultSet.close();
         }
-        resolve(current);
-      }).catch((error: BusinessError) => {
-        hilog.warn(0x0000, 'CloudSync', 'query heartbeat failed: %{public}d %{public}s',
-          error.code, error.message);
-        resolve(-1);
-      });
-    });
-  }
-
-  private static delay(ms: number): Promise<void> {
-    return new Promise<void>((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, ms);
+      } finally {
+        resultSet.close();
+      }
+    }).catch((error: BusinessError) => {
+      hilog.warn(0x0000, 'CloudSync', 'restore last session failed: %{public}d %{public}s',
+        error.code, error.message);
     });
   }
 
@@ -688,7 +733,8 @@ export class CloudSyncService {
         'searchRule', 'exploreRule', 'bookInfoRule', 'tocRule', 'contentRule'],
       'book_groups': ['groupName'],
       'search_keywords': ['keyword'],
-      'sync_heartbeats': ['deviceId']
+      'bookmarks': ['bookmarkUrl', 'bookUrl', 'bookName', 'bookAuthor',
+        'chapterName', 'content']
     };
     let total = 0;
     for (const table of CloudSyncService.SYNC_TABLES) {
@@ -716,10 +762,7 @@ export class CloudSyncService {
       }
       sizes[table] = bytes;
       total += bytes;
-      hilog.info(0x0000, 'CloudSync', 'sync table size: %{public}s = %{public}d bytes',
-        table, bytes);
     }
-    hilog.info(0x0000, 'CloudSync', 'sync total size: %{public}d bytes', total);
     return sizes;
   }
 
@@ -733,31 +776,22 @@ export class CloudSyncService {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   }
 
-  private static pullSyncHeartbeatTable(store: relationalStore.RdbStore): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      try {
-        store.cloudSync(relationalStore.SyncMode.SYNC_MODE_CLOUD_FIRST,
-          ['sync_heartbeats'],
-          (progress: relationalStore.ProgressDetails) => {
-            hilog.debug(0x0000, 'CloudSync', 'probe progress: code=%{public}d', progress.code);
-          },
-          (error: BusinessError) => {
-            if (error) {
-              reject(new Error(`${error.code}: ${error.message}`));
-            } else {
-              resolve();
-            }
-          });
-      } catch (error) {
-        const err = error as BusinessError;
-        reject(new Error(`${err.code}: ${err.message}`));
-      }
-    });
+  /**
+   * 是否为阻断性进度码：系统明确上报的失败结果，不可自动恢复，应定稿为 ERROR。
+   * 其余非 SUCCESS 码（NETWORK_ERROR/LOCKED_BY_OTHERS/BLOCKED_BY_NETWORK_STRATEGY/
+   * STOP_CLOUD_SYNC）都是暂停态，条件恢复后系统会自动重试。
+   */
+  private static isBlockingProgressCode(code: number): boolean {
+    return code === relationalStore.ProgressCode.UNKNOWN_ERROR ||
+      code === relationalStore.ProgressCode.CLOUD_DISABLED ||
+      code === relationalStore.ProgressCode.RECORD_LIMIT_EXCEEDED ||
+      code === relationalStore.ProgressCode.NO_SPACE_FOR_ASSET;
   }
 
   /**
    * 取两个进度码中更坏的一个。一次同步会对多张表分别回调，只看最后一次会漏掉
    * “某张表失败、其它表成功”的混合场景。-1 表示尚未收到任何回调。
+   * 阻断性码优先级最高，不能被后续的 SUCCESS 或暂停码覆盖。
    */
   private static worseProgressCode(current: number, incoming: number): number {
     if (current < 0) {
@@ -766,17 +800,10 @@ export class CloudSyncService {
     if (incoming < 0) {
       return current;
     }
-    // 明确的阻断性结果优先级最高，不能被后续的 SUCCESS 覆盖。
-    const blocking: number[] = [
-      relationalStore.ProgressCode.CLOUD_DISABLED,
-      relationalStore.ProgressCode.LOCKED_BY_OTHERS,
-      relationalStore.ProgressCode.RECORD_LIMIT_EXCEEDED,
-      relationalStore.ProgressCode.NO_SPACE_FOR_ASSET
-    ];
-    if (blocking.indexOf(current) >= 0) {
+    if (CloudSyncService.isBlockingProgressCode(current)) {
       return current;
     }
-    if (blocking.indexOf(incoming) >= 0) {
+    if (CloudSyncService.isBlockingProgressCode(incoming)) {
       return incoming;
     }
     if (current === relationalStore.ProgressCode.SUCCESS) {
@@ -789,20 +816,12 @@ export class CloudSyncService {
     return progress.message ? progress.message : '';
   }
 
-  private static countFailedRows(progress: relationalStore.ProgressDetails): number {
-    const details = progress.details;
-    if (!details) {
-      return 0;
-    }
-    let failed = 0;
-    const tables = Object.keys(details);
-    for (const table of tables) {
-      const tableDetails = details[table];
-      if (!tableDetails) {
-        continue;
-      }
-      failed += tableDetails.upload.failed + tableDetails.download.failed;
-    }
+  /** 从各表最后一次统计快照汇总失败行数，避免逐次进度回调累加造成重复计数。 */
+  private static countFailedRowsFrom(tableStats: Map<string, TableSyncStats>): number {
+    let failed: number = 0;
+    tableStats.forEach((stats: TableSyncStats): void => {
+      failed += stats.uploadFailed + stats.downloadFailed;
+    });
     return failed;
   }
 
@@ -821,10 +840,17 @@ export class CloudSyncService {
       if (!tableDetails) {
         continue;
       }
-      uploadTotal += tableDetails.upload.total;
-      uploadRemained += tableDetails.upload.remained;
-      downloadTotal += tableDetails.download.total;
-      downloadRemained += tableDetails.download.remained;
+      // 同上，结构不完整时按 0 处理，不能让异常冒出进度回调。
+      try {
+        uploadTotal += tableDetails.upload.total;
+        uploadRemained += tableDetails.upload.remained;
+        downloadTotal += tableDetails.download.total;
+        downloadRemained += tableDetails.download.remained;
+      } catch (error) {
+        const err = error as BusinessError;
+        hilog.warn(0x0000, 'CloudSync', 'progress text failed: %{public}s %{public}d %{public}s',
+          table, err.code, err.message);
+      }
     }
     if (uploadTotal === 0 && downloadTotal === 0) {
       return '';
@@ -854,8 +880,11 @@ export class CloudSyncService {
     if (status === CloudSyncService.STATUS_SYNCING) {
       return '正在与云空间同步';
     }
-    if (status === CloudSyncService.STATUS_PENDING) {
-      return '已提交，正在确认云连接';
+    if (status === CloudSyncService.STATUS_PAUSED) {
+      return '同步暂停，将自动重试';
+    }
+    if (status === CloudSyncService.STATUS_SUBMITTED) {
+      return '已提交，请到云空间确认';
     }
     if (status === CloudSyncService.STATUS_ERROR) {
       return '同步失败';
@@ -916,7 +945,8 @@ export class CloudSyncService {
       return '同步任务被系统停止';
     }
     if (code === relationalStore.ProgressCode.UNKNOWN_ERROR) {
-      return '同步遇到未知错误';
+      const hint = '同步遇到未知错误，请确认已登录华为账号并开启云空间同步开关后重试';
+      return rawMessage ? `${hint}（${rawMessage}）` : hint;
     }
     // 未识别的码带上原始信息，避免出现 “undefined” 之类的空壳文案。
     if (rawMessage) {

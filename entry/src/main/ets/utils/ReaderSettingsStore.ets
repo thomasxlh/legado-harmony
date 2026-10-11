@@ -1059,13 +1059,13 @@ export class ReaderSettingsStore {
 
   private static activeThemeId(): string {
     return ReaderSettingsStore.normalizeThemeProfileId(
-      AppStorage.get<string>('appThemeId') || 'classic-blue'
+      AppStorage.get<string>('appThemeId') || 'plain-default'
     );
   }
 
   private static normalizeThemeProfileId(themeId: string): string {
     const value = (themeId || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
-    return value || 'classic-blue';
+    return value || 'plain-default';
   }
 
   private static themeProfileKey(themeId: string): string {

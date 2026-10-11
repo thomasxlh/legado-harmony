@@ -13,6 +13,7 @@ import picker from '@ohos.file.picker';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { VerificationSupport } from '../core/http/VerificationSupport';
 import { CookieStore } from '../core/http/CookieStore';
 import { TlsTrustStore } from '../core/http/TlsTrustStore';
@@ -345,6 +346,7 @@ struct BookSourcePage {
 
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
+      AppBackgroundLayer()
       WebBookFetchRuntimeHost()
       Column() {
         Column() {
@@ -699,7 +701,7 @@ struct BookSourcePage {
       .width('100%')
       .height('100%')
       .padding({ top: 56 + this.statusBarHeight })
-      .backgroundColor(this.pageColor())
+      .backgroundColor(this.pageColorBehind())
 
       this.bookSourceTitleBar()
 
@@ -1243,7 +1245,7 @@ struct BookSourcePage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(this.pageColorBehind())
     .onAreaChange((_oldValue: Area, newValue: Area) => this.updateContextViewport(newValue))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
@@ -3080,8 +3082,13 @@ struct BookSourcePage {
     return ThemeRuntime.pageColor(this.appDarkMode);
   }
 
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   glassCardColor(): string {

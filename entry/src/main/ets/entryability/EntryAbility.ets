@@ -17,7 +17,6 @@ import { ReaderProgressCheckpoint } from '../utils/ReaderProgressCheckpoint';
 import { CloudSyncService } from '../utils/CloudSyncService';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ThemeIds } from '../theme/ThemeModels';
-import { StartupCoverTextStore } from '../utils/StartupCoverTextStore';
 import { QuickJsDiagnostics } from '../core/script/QuickJsDiagnostics';
 import { TlsTrustStore } from '../core/http/TlsTrustStore';
 import fs from '@ohos.file.fs';
@@ -185,7 +184,6 @@ export default class EntryAbility extends UIAbility {
     });
     const appThemePromise = AppThemeSettingsStore.load(this.context).then((settings) => {
       AppThemeSettingsStore.applyToStorage(settings);
-      return StartupCoverTextStore.load(this.context);
     }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Sync app theme settings failed: %{public}s', JSON.stringify(e));
     });
@@ -195,6 +193,7 @@ export default class EntryAbility extends UIAbility {
       hilog.warn(0x0000, 'testTag', 'Sync glass settings failed: %{public}s', JSON.stringify(e));
     });
     // Theme and glass affect the first frame, but they are independent and can be restored in parallel.
+    // 主界面背景属于自定义主题方案，随主题设置一起恢复。
     this.themeBootstrapPromise = Promise.all([appThemePromise, glassPromise]).then(() => {});
     // Reader preferences and custom font registration are not needed to paint Index/Startup. Keep their I/O warm,
     // but do not make the first application content wait for them.
@@ -238,8 +237,17 @@ export default class EntryAbility extends UIAbility {
       (AppStorage.get<string>(darkMode ?
         AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_IMAGE_PATH :
         AppThemeSettingsStore.KEY_CUSTOM_LIGHT_STARTUP_IMAGE_PATH) || '') : '';
+    const customStartupText = activeThemeId === ThemeIds.CUSTOM ?
+      ((AppStorage.get<string>(darkMode ?
+        AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_TITLE :
+        AppThemeSettingsStore.KEY_CUSTOM_LIGHT_STARTUP_TITLE) || '') +
+      (AppStorage.get<string>(darkMode ?
+        AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_SUBTITLE :
+        AppThemeSettingsStore.KEY_CUSTOM_LIGHT_STARTUP_SUBTITLE) || '')) : '';
+    // 启动窗口图标已改为全透明图片，这里只决定是否需要业务启动页：没有封面
+    // 也没有文案时直接加载首页，避免多一次无意义的页面切换。
     const usesSystemStartup = ThemeRuntime.startupThemeId(darkMode) === ThemeIds.PLAIN_DEFAULT &&
-      !customStartupImage;
+      !customStartupImage && !customStartupText.trim();
     const hasPendingImport = !!AppStorage.get<string>('pendingBookSourceImportUri') ||
       !!AppStorage.get<string>('pendingLocalBookImportUri');
     const initialPage = usesSystemStartup && !hasPendingImport ? 'pages/Index' : 'pages/Startup';

@@ -15,6 +15,7 @@ import { BookSourceDebugContext, BookSourceDebugSession, BookSourceDebugStep,
   BookSourceDebugRedactor } from '../core/book/BookSourceDebugModels';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
@@ -94,6 +95,7 @@ struct BookSourceDebugPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
       Scroll() {
         Column({ space: 12 }) {
           this.sourceCard()
@@ -110,7 +112,7 @@ struct BookSourceDebugPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(this.pageColorBehind())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -648,5 +650,10 @@ struct BookSourceDebugPage {
     if (this.stage === SourceRuntimeStage.EXPLORE) return '输入关键词（发现阶段将使用第一个分类）';
     if (this.stage === SourceRuntimeStage.CONTENT) return '输入章节 URL';
     return '输入书籍或目录 URL';
+  }
+
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
   }
 }

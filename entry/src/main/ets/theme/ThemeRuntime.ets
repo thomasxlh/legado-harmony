@@ -1,7 +1,6 @@
 import { BuiltinThemeRegistry } from './BuiltinThemeRegistry';
 import {
   ThemeBubbleStyles,
-  ThemeBookTokens,
   ThemeComponentSourceIds,
   ThemeGlassSurfaceTokens,
   ThemeGlassTokens,
@@ -39,6 +38,21 @@ export class ThemeRuntime {
   static readonly KEY_CUSTOM_BASE_THEME_ID: string = 'appCustomBaseThemeId';
   static readonly KEY_CUSTOM_LIGHT_SOURCES: string = 'appCustomLightThemeSources';
   static readonly KEY_CUSTOM_DARK_SOURCES: string = 'appCustomDarkThemeSources';
+
+  // 主界面背景属于自定义主题方案，浅色/深色各存一张底图与不透明度。
+  static readonly KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_IMAGE_PATH: string = 'appCustomLightMainBackgroundImagePath';
+  static readonly KEY_CUSTOM_DARK_MAIN_BACKGROUND_IMAGE_PATH: string = 'appCustomDarkMainBackgroundImagePath';
+  static readonly KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_OPACITY: string = 'appCustomLightMainBackgroundOpacity';
+  static readonly KEY_CUSTOM_DARK_MAIN_BACKGROUND_OPACITY: string = 'appCustomDarkMainBackgroundOpacity';
+  // 主界面背景是否铺到主界面以外的页面。
+  static readonly KEY_MAIN_BACKGROUND_GLOBAL: string = 'appMainBackgroundGlobal';
+  // 铺了背景图时卡片保留的不透明度（0-100）：低于 100 时卡片半透明，让背景图透上来。
+  static readonly KEY_MAIN_BACKGROUND_CARD_OPACITY: string = 'appMainBackgroundCardOpacity';
+  static readonly DEFAULT_MAIN_BACKGROUND_CARD_OPACITY: number = 85;
+  static readonly MIN_MAIN_BACKGROUND_CARD_OPACITY: number = 0;
+  static readonly MAX_MAIN_BACKGROUND_CARD_OPACITY: number = 100;
+  // 铺开到全部页面时，非主界面页面保留的底色不透明度（0-100）。
+  private static readonly GLOBAL_BACKGROUND_PAGE_ALPHA: number = 72;
 
   static readonly KEY_LIGHT_PAGE_COLOR: string = 'themeLightPageColor';
   static readonly KEY_DARK_PAGE_COLOR: string = 'themeDarkPageColor';
@@ -153,6 +167,98 @@ export class ThemeRuntime {
     const fallback = ThemeRuntime.fallbackVariant(darkMode).colors.pageColor;
     return ThemeRuntime.colorFromStorage(darkMode ? ThemeRuntime.KEY_DARK_PAGE_COLOR :
       ThemeRuntime.KEY_LIGHT_PAGE_COLOR, fallback);
+  }
+
+  /**
+   * 主界面背景跟随自定义主题方案：只有启用自定义主题时才生效，默认主题不使用背景图。
+   */
+  static mainBackgroundImagePath(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): string {
+    if (ThemeRuntime.currentThemeId() !== ThemeIds.CUSTOM) {
+      return '';
+    }
+    return AppStorage.get<string>(darkMode ?
+      ThemeRuntime.KEY_CUSTOM_DARK_MAIN_BACKGROUND_IMAGE_PATH :
+      ThemeRuntime.KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_IMAGE_PATH) || '';
+  }
+
+  static mainBackgroundOpacity(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): number {
+    const value = AppStorage.get<number>(darkMode ?
+      ThemeRuntime.KEY_CUSTOM_DARK_MAIN_BACKGROUND_OPACITY :
+      ThemeRuntime.KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_OPACITY);
+    const numeric = typeof value === 'number' && Number.isFinite(value) ? value : 100;
+    return ThemeRuntime.clampNumber(numeric, 10, 100);
+  }
+
+  /**
+   * 主界面背景是否生效：只有启用自定义主题且方案里配了背景图时才生效。
+   */
+  static usesMainBackground(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): boolean {
+    if (ThemeRuntime.currentThemeId() !== ThemeIds.CUSTOM) {
+      return false;
+    }
+    return !!ThemeRuntime.mainBackgroundImagePath(darkMode);
+  }
+
+  /**
+   * 是否把主界面背景铺到全部页面。关闭时只有书架主界面有背景，其它页面保持纯色底色。
+   */
+  static usesGlobalBackground(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): boolean {
+    if (!ThemeRuntime.usesMainBackground(darkMode)) {
+      return false;
+    }
+    return AppStorage.get<boolean>(ThemeRuntime.KEY_MAIN_BACKGROUND_GLOBAL) !== false;
+  }
+
+  /**
+   * 主界面页面底色：自定义主题设置了背景图时改为全透明，让底层背景图透出；
+   * 未设置时与 pageColor 完全一致，避免影响书架以外的任何界面。
+   */
+  static mainPageColor(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): string {
+    if (ThemeRuntime.usesMainBackground(darkMode)) {
+      return '#00000000';
+    }
+    return ThemeRuntime.pageColor(darkMode);
+  }
+
+  /**
+   * 非主界面的页面底色：开启「应用到全部页面」后改为半透明，让当前页面底层铺的那张
+   * 背景图透出来，同时保留一层底色保证文字可读；未开启时与 pageColor 一致。
+   */
+  static pageColorBehind(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): string {
+    if (!ThemeRuntime.usesGlobalBackground(darkMode)) {
+      return ThemeRuntime.pageColor(darkMode);
+    }
+    const color = ThemeRuntime.pageColor(darkMode);
+    const rgb = /^#[0-9a-fA-F]{8}$/.test(color) ? color.substring(3) : color.substring(1);
+    return `#${ThemeRuntime.opacityHex(ThemeRuntime.GLOBAL_BACKGROUND_PAGE_ALPHA)}${rgb.toUpperCase()}`;
+  }
+
+  /**
+   * 卡片不透明度（0-100）：100 表示卡片仍是实心色，越低背景图透得越多。
+   */
+  static mainBackgroundCardOpacity(): number {
+    const value = AppStorage.get<number>(ThemeRuntime.KEY_MAIN_BACKGROUND_CARD_OPACITY);
+    const numeric = typeof value === 'number' && Number.isFinite(value) ? value :
+      ThemeRuntime.DEFAULT_MAIN_BACKGROUND_CARD_OPACITY;
+    return ThemeRuntime.clampNumber(numeric, ThemeRuntime.MIN_MAIN_BACKGROUND_CARD_OPACITY,
+      ThemeRuntime.MAX_MAIN_BACKGROUND_CARD_OPACITY);
+  }
+
+  /**
+   * 卡片/列表项底色：铺了背景图时按「卡片不透明度」改为半透明，让背景图从卡片后面
+   * 透上来；没有背景图或不透明度为 100 时与 cardColor 完全一致。
+   */
+  static cardColorBehind(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): string {
+    if (!ThemeRuntime.usesMainBackground(darkMode)) {
+      return ThemeRuntime.cardColor(darkMode);
+    }
+    const opacity = ThemeRuntime.mainBackgroundCardOpacity();
+    if (opacity >= ThemeRuntime.MAX_MAIN_BACKGROUND_CARD_OPACITY) {
+      return ThemeRuntime.cardColor(darkMode);
+    }
+    const color = ThemeRuntime.cardColor(darkMode);
+    const rgb = /^#[0-9a-fA-F]{8}$/.test(color) ? color.substring(3) : color.substring(1);
+    return `#${ThemeRuntime.opacityHex(opacity)}${rgb.toUpperCase()}`;
   }
 
   static cardColor(darkMode: boolean): string {
@@ -409,13 +515,6 @@ export class ThemeRuntime {
     }
     const fallback = ThemeRuntime.currentPack().navigation.iconPackId || 'classic';
     return ThemeRuntime.storageString(ThemeRuntime.KEY_ICON_PACK_ID, fallback);
-  }
-
-  static bookTokens(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): ThemeBookTokens {
-    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
-      return ThemeRuntime.customSourceTheme('book', darkMode).book;
-    }
-    return ThemeRuntime.currentPack().book;
   }
 
   static readerLayout(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): ThemeReaderLayoutTokens {

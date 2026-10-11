@@ -1,6 +1,7 @@
 import { router } from '@kit.ArkUI';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { LocalBookScanResult, LocalBookService } from '../core/book/LocalBookService';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { Book } from '../model/data/Book';
@@ -31,75 +32,80 @@ struct LocalBookSettingsPage {
   }
 
   build() {
-    Column() {
-      this.titleBar()
-      Column({ space: 12 }) {
-        Row() {
-          Text(`已添加书籍（${this.books.length}）`)
-            .fontSize(16)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.primaryTextColor())
-            .layoutWeight(1)
-        }
-        .width('100%')
-
-        if (this.books.length === 0) {
-          Column({ space: 6 }) {
-            Text('暂无已添加书籍')
-              .fontSize(15)
+    Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
+      Column() {
+        this.titleBar()
+        Column({ space: 12 }) {
+          Row() {
+            Text(`已添加书籍（${this.books.length}）`)
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
               .fontColor(this.primaryTextColor())
-            Text('点击下方按钮选择 TXT 或 EPUB 文件')
-              .fontSize(13)
-              .fontColor(this.subTextColor())
+              .layoutWeight(1)
           }
           .width('100%')
-          .layoutWeight(1)
-          .justifyContent(FlexAlign.Center)
-        } else {
-          List({ space: 8 }) {
-            ForEach(this.books, (book: Book) => {
-              ListItem() {
-                this.bookItem(book)
-              }
-            }, (book: Book) => book.bookUrl)
-          }
-          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-          .width('100%')
-          .layoutWeight(1)
-          .clip(true)
-        }
 
-        Text('选择 TXT 或 EPUB 文件导入书架')
-          .fontSize(15)
-          .fontColor(this.primaryTextColor())
-        Text('支持一次选择多个文件，导入后文件会复制到应用内部存储，不依赖原文件位置。')
-          .fontSize(13)
-          .fontColor(this.subTextColor())
-        Button(this.isScanning ? '正在导入' : '选择书籍文件')
-          .width('100%')
-          .height(44)
-          .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
-          .enabled(!this.isScanning)
-          .onClick(() => {
-            this.addBooks();
-          })
-        if (this.statusText) {
-          Text(this.statusText)
+          if (this.books.length === 0) {
+            Column({ space: 6 }) {
+              Text('暂无已添加书籍')
+                .fontSize(15)
+                .fontColor(this.primaryTextColor())
+              Text('点击下方按钮选择 TXT 或 EPUB 文件')
+                .fontSize(13)
+                .fontColor(this.subTextColor())
+            }
+            .width('100%')
+            .layoutWeight(1)
+            .justifyContent(FlexAlign.Center)
+          } else {
+            List({ space: 8 }) {
+              ForEach(this.books, (book: Book) => {
+                ListItem() {
+                  this.bookItem(book)
+                }
+              }, (book: Book) => book.bookUrl)
+            }
+            .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+            .width('100%')
+            .layoutWeight(1)
+            .clip(true)
+          }
+
+          Text('选择 TXT 或 EPUB 文件导入书架')
+            .fontSize(15)
+            .fontColor(this.primaryTextColor())
+          Text('支持一次选择多个文件，导入后文件会复制到应用内部存储，不依赖原文件位置。')
             .fontSize(13)
             .fontColor(this.subTextColor())
+          Button(this.isScanning ? '正在导入' : '选择书籍文件')
             .width('100%')
-            .margin({ top: 8 })
+            .height(44)
+            .backgroundColor(this.buttonColor())
+            .fontColor('#FFFFFF')
+            .enabled(!this.isScanning)
+            .onClick(() => {
+              this.addBooks();
+            })
+          if (this.statusText) {
+            Text(this.statusText)
+              .fontSize(13)
+              .fontColor(this.subTextColor())
+              .width('100%')
+              .margin({ top: 8 })
+          }
         }
+        .width('100%')
+        .layoutWeight(1)
+        .padding({ left: 16, right: 16, top: 24, bottom: 32 + this.navBarHeight })
       }
       .width('100%')
-      .layoutWeight(1)
-      .padding({ left: 16, right: 16, top: 24, bottom: 32 + this.navBarHeight })
+      .height('100%')
+      .backgroundColor(this.pageColorBehind())
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   @Builder
@@ -191,8 +197,13 @@ struct LocalBookSettingsPage {
     return ThemeRuntime.pageColor(this.appDarkMode);
   }
 
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   primaryTextColor(): string {

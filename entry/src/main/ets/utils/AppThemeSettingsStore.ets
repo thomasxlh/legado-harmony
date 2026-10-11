@@ -8,7 +8,6 @@ import { ReaderThemeHelper, ReaderThemeItem } from './ReaderThemeHelper';
 
 export class AppThemeSettings {
   themeId: string = '';
-  themeBookCoverEnabled: boolean = false;
   // Remembers the last choice made in the "apply theme" prompt. Defaults to off so
   // switching themes preserves the reader's current layout unless the user opts in.
   themeApplyLayoutEnabled: boolean = false;
@@ -37,15 +36,23 @@ export class AppThemeSettings {
   customDarkReaderContentTone: string = 'dark';
   customLightStartupImagePath: string = '';
   customDarkStartupImagePath: string = '';
-  customLightStartupTitle: string = '开源读书';
-  customDarkStartupTitle: string = '开源读书';
+  customLightStartupTitle: string = '';
+  customDarkStartupTitle: string = '';
   customLightStartupSubtitle: string = '';
   customDarkStartupSubtitle: string = '';
+  // 主界面背景跟随自定义主题方案，浅色与深色各存一张底图与不透明度。
+  customLightMainBackgroundImagePath: string = '';
+  customDarkMainBackgroundImagePath: string = '';
+  customLightMainBackgroundOpacity: number = AppThemeSettingsStore.DEFAULT_MAIN_BACKGROUND_OPACITY;
+  customDarkMainBackgroundOpacity: number = AppThemeSettingsStore.DEFAULT_MAIN_BACKGROUND_OPACITY;
+  // 主界面背景是否铺到主界面以外的页面（书架、设置、书源等全部页面共享同一张底图）。
+  mainBackgroundGlobal: boolean = true;
+  // 铺了背景图时卡片保留的不透明度，越低背景透得越多；100 表示卡片仍是实心色。
+  mainBackgroundCardOpacity: number = AppThemeSettingsStore.DEFAULT_MAIN_BACKGROUND_CARD_OPACITY;
 }
 
 export class AppThemeSettingsStore {
   static readonly KEY_THEME_ID: string = ThemeRuntime.KEY_THEME_ID;
-  static readonly KEY_THEME_BOOK_COVER_ENABLED: string = 'appThemeBookCoverEnabled';
   static readonly KEY_THEME_APPLY_LAYOUT_ENABLED: string = 'appThemeApplyLayoutEnabled';
   static readonly KEY_LIGHT_ACCENT_COLOR: string = 'appLightAccentColor';
   static readonly KEY_DARK_ACCENT_COLOR: string = 'appDarkAccentColor';
@@ -76,11 +83,26 @@ export class AppThemeSettingsStore {
   static readonly KEY_CUSTOM_DARK_STARTUP_TITLE: string = 'appCustomDarkStartupTitle';
   static readonly KEY_CUSTOM_LIGHT_STARTUP_SUBTITLE: string = 'appCustomLightStartupSubtitle';
   static readonly KEY_CUSTOM_DARK_STARTUP_SUBTITLE: string = 'appCustomDarkStartupSubtitle';
+  static readonly KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_IMAGE_PATH: string = 'appCustomLightMainBackgroundImagePath';
+  static readonly KEY_CUSTOM_DARK_MAIN_BACKGROUND_IMAGE_PATH: string = 'appCustomDarkMainBackgroundImagePath';
+  static readonly KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_OPACITY: string = 'appCustomLightMainBackgroundOpacity';
+  static readonly KEY_CUSTOM_DARK_MAIN_BACKGROUND_OPACITY: string = 'appCustomDarkMainBackgroundOpacity';
+  static readonly KEY_MAIN_BACKGROUND_GLOBAL: string = ThemeRuntime.KEY_MAIN_BACKGROUND_GLOBAL;
+  static readonly KEY_MAIN_BACKGROUND_CARD_OPACITY: string = ThemeRuntime.KEY_MAIN_BACKGROUND_CARD_OPACITY;
+  static readonly DEFAULT_MAIN_BACKGROUND_CARD_OPACITY: number = ThemeRuntime.DEFAULT_MAIN_BACKGROUND_CARD_OPACITY;
+  static readonly MIN_MAIN_BACKGROUND_CARD_OPACITY: number = ThemeRuntime.MIN_MAIN_BACKGROUND_CARD_OPACITY;
+  static readonly MAX_MAIN_BACKGROUND_CARD_OPACITY: number = ThemeRuntime.MAX_MAIN_BACKGROUND_CARD_OPACITY;
   static readonly DEFAULT_THEME_ID: string = BuiltinThemeRegistry.DEFAULT_THEME_ID;
   static readonly DEFAULT_LIGHT_ACCENT_COLOR: string = '#007DFF';
   static readonly DEFAULT_DARK_ACCENT_COLOR: string = '#4E9BFF';
   static readonly DEFAULT_LIGHT_BUTTON_COLOR: string = '#007DFF';
   static readonly DEFAULT_DARK_BUTTON_COLOR: string = '#3F8CFF';
+  static readonly DEFAULT_MAIN_BACKGROUND_OPACITY: number = 100;
+  static readonly MIN_MAIN_BACKGROUND_OPACITY: number = 10;
+  static readonly MAX_MAIN_BACKGROUND_OPACITY: number = 100;
+  // 早期版本把「开源读书」作为启动封面主标题的强制默认值写入存储。文案改为留空
+  // 之后，需要把它当作“未填写”，否则老用户仍会被强制显示底部标题。
+  private static readonly LEGACY_STARTUP_TITLE: string = '开源读书';
   private static readonly STORE_NAME: string = 'app_theme_settings';
   private static cachedSettings: AppThemeSettings | null = null;
 
@@ -94,9 +116,6 @@ export class AppThemeSettingsStore {
       AppThemeSettingsStore.DEFAULT_THEME_ID;
     settings.themeId = AppThemeSettingsStore.normalizeThemeId(await AppThemeSettingsStore.getString(
       store, AppThemeSettingsStore.KEY_THEME_ID, storageThemeId));
-    settings.themeBookCoverEnabled = await AppThemeSettingsStore.getBoolean(
-      store, AppThemeSettingsStore.KEY_THEME_BOOK_COVER_ENABLED,
-      AppStorage.get<boolean>(AppThemeSettingsStore.KEY_THEME_BOOK_COVER_ENABLED) || false);
     settings.themeApplyLayoutEnabled = await AppThemeSettingsStore.getBoolean(
       store, AppThemeSettingsStore.KEY_THEME_APPLY_LAYOUT_ENABLED, false);
     const customBaseFallback = BuiltinThemeRegistry.normalizeBuiltinId(settings.themeId);
@@ -153,18 +172,45 @@ export class AppThemeSettingsStore {
     settings.customDarkStartupImagePath = await AppThemeSettingsStore.getString(
       store, AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_IMAGE_PATH,
       AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_IMAGE_PATH) || '');
-    settings.customLightStartupTitle = await AppThemeSettingsStore.getString(
-      store, AppThemeSettingsStore.KEY_CUSTOM_LIGHT_STARTUP_TITLE,
-      AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_STARTUP_TITLE) || '开源读书');
-    settings.customDarkStartupTitle = await AppThemeSettingsStore.getString(
-      store, AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_TITLE,
-      AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_TITLE) || '开源读书');
+    settings.customLightStartupTitle = AppThemeSettingsStore.migrateStartupText(
+      await AppThemeSettingsStore.getString(
+        store, AppThemeSettingsStore.KEY_CUSTOM_LIGHT_STARTUP_TITLE,
+        AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_STARTUP_TITLE) || ''));
+    settings.customDarkStartupTitle = AppThemeSettingsStore.migrateStartupText(
+      await AppThemeSettingsStore.getString(
+        store, AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_TITLE,
+        AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_TITLE) || ''));
     settings.customLightStartupSubtitle = await AppThemeSettingsStore.getString(
       store, AppThemeSettingsStore.KEY_CUSTOM_LIGHT_STARTUP_SUBTITLE,
       AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_STARTUP_SUBTITLE) || '');
     settings.customDarkStartupSubtitle = await AppThemeSettingsStore.getString(
       store, AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_SUBTITLE,
       AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_SUBTITLE) || '');
+    settings.customLightMainBackgroundImagePath = await AppThemeSettingsStore.getString(
+      store, AppThemeSettingsStore.KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_IMAGE_PATH,
+      AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_IMAGE_PATH) || '');
+    settings.customDarkMainBackgroundImagePath = await AppThemeSettingsStore.getString(
+      store, AppThemeSettingsStore.KEY_CUSTOM_DARK_MAIN_BACKGROUND_IMAGE_PATH,
+      AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_DARK_MAIN_BACKGROUND_IMAGE_PATH) || '');
+    settings.customLightMainBackgroundOpacity = AppThemeSettingsStore.normalizeMainBackgroundOpacity(
+      await AppThemeSettingsStore.getNumber(
+        store, AppThemeSettingsStore.KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_OPACITY,
+        AppStorage.get<number>(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_OPACITY) ||
+          AppThemeSettingsStore.DEFAULT_MAIN_BACKGROUND_OPACITY));
+    settings.customDarkMainBackgroundOpacity = AppThemeSettingsStore.normalizeMainBackgroundOpacity(
+      await AppThemeSettingsStore.getNumber(
+        store, AppThemeSettingsStore.KEY_CUSTOM_DARK_MAIN_BACKGROUND_OPACITY,
+        AppStorage.get<number>(AppThemeSettingsStore.KEY_CUSTOM_DARK_MAIN_BACKGROUND_OPACITY) ||
+          AppThemeSettingsStore.DEFAULT_MAIN_BACKGROUND_OPACITY));
+    const storageMainBackgroundGlobal = AppStorage.get<boolean>(AppThemeSettingsStore.KEY_MAIN_BACKGROUND_GLOBAL);
+    settings.mainBackgroundGlobal = await AppThemeSettingsStore.getBoolean(
+      store, AppThemeSettingsStore.KEY_MAIN_BACKGROUND_GLOBAL,
+      typeof storageMainBackgroundGlobal === 'boolean' ? storageMainBackgroundGlobal : true);
+    settings.mainBackgroundCardOpacity = AppThemeSettingsStore.normalizeMainBackgroundCardOpacity(
+      await AppThemeSettingsStore.getNumber(
+        store, AppThemeSettingsStore.KEY_MAIN_BACKGROUND_CARD_OPACITY,
+        AppStorage.get<number>(AppThemeSettingsStore.KEY_MAIN_BACKGROUND_CARD_OPACITY) ??
+          AppThemeSettingsStore.DEFAULT_MAIN_BACKGROUND_CARD_OPACITY));
     const needsAppearanceMigration = !(await store.has(
       AppThemeSettingsStore.KEY_CUSTOM_LIGHT_READER_BACKGROUND_COLOR));
     await AppThemeSettingsStore.loadMigratedReaderAppearance(context, store, settings, defaults);
@@ -183,7 +229,6 @@ export class AppThemeSettingsStore {
     AppThemeSettingsStore.cachedSettings = AppThemeSettingsStore.clone(normalized);
     const store = await preferences.getPreferences(context, AppThemeSettingsStore.STORE_NAME);
     await store.put(AppThemeSettingsStore.KEY_THEME_ID, normalized.themeId);
-    await store.put(AppThemeSettingsStore.KEY_THEME_BOOK_COVER_ENABLED, normalized.themeBookCoverEnabled);
     await store.put(AppThemeSettingsStore.KEY_THEME_APPLY_LAYOUT_ENABLED, normalized.themeApplyLayoutEnabled);
     await store.put(AppThemeSettingsStore.KEY_LIGHT_ACCENT_COLOR, normalized.lightAccentColor);
     await store.put(AppThemeSettingsStore.KEY_DARK_ACCENT_COLOR, normalized.darkAccentColor);
@@ -232,6 +277,17 @@ export class AppThemeSettingsStore {
       normalized.customLightStartupSubtitle);
     await store.put(AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_SUBTITLE,
       normalized.customDarkStartupSubtitle);
+    await store.put(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_IMAGE_PATH,
+      normalized.customLightMainBackgroundImagePath);
+    await store.put(AppThemeSettingsStore.KEY_CUSTOM_DARK_MAIN_BACKGROUND_IMAGE_PATH,
+      normalized.customDarkMainBackgroundImagePath);
+    await store.put(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_OPACITY,
+      normalized.customLightMainBackgroundOpacity);
+    await store.put(AppThemeSettingsStore.KEY_CUSTOM_DARK_MAIN_BACKGROUND_OPACITY,
+      normalized.customDarkMainBackgroundOpacity);
+    await store.put(AppThemeSettingsStore.KEY_MAIN_BACKGROUND_GLOBAL, normalized.mainBackgroundGlobal);
+    await store.put(AppThemeSettingsStore.KEY_MAIN_BACKGROUND_CARD_OPACITY,
+      normalized.mainBackgroundCardOpacity);
     await store.flush();
   }
 
@@ -257,8 +313,6 @@ export class AppThemeSettingsStore {
       normalized.darkButtonColor
     );
     AppStorage.setOrCreate(AppThemeSettingsStore.KEY_THEME_ID, normalized.themeId);
-    AppStorage.setOrCreate(AppThemeSettingsStore.KEY_THEME_BOOK_COVER_ENABLED,
-      normalized.themeBookCoverEnabled);
     AppStorage.setOrCreate(AppThemeSettingsStore.KEY_LIGHT_ACCENT_COLOR, normalized.lightAccentColor);
     AppStorage.setOrCreate(AppThemeSettingsStore.KEY_DARK_ACCENT_COLOR, normalized.darkAccentColor);
     AppStorage.setOrCreate(AppThemeSettingsStore.KEY_LIGHT_BUTTON_COLOR, normalized.lightButtonColor);
@@ -308,6 +362,18 @@ export class AppThemeSettingsStore {
       normalized.customLightStartupSubtitle);
     AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_SUBTITLE,
       normalized.customDarkStartupSubtitle);
+    AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_IMAGE_PATH,
+      normalized.customLightMainBackgroundImagePath);
+    AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_DARK_MAIN_BACKGROUND_IMAGE_PATH,
+      normalized.customDarkMainBackgroundImagePath);
+    AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_OPACITY,
+      normalized.customLightMainBackgroundOpacity);
+    AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_DARK_MAIN_BACKGROUND_OPACITY,
+      normalized.customDarkMainBackgroundOpacity);
+    AppStorage.setOrCreate(AppThemeSettingsStore.KEY_MAIN_BACKGROUND_GLOBAL,
+      normalized.mainBackgroundGlobal !== false);
+    AppStorage.setOrCreate(AppThemeSettingsStore.KEY_MAIN_BACKGROUND_CARD_OPACITY,
+      normalized.mainBackgroundCardOpacity);
   }
 
   static accentColor(darkMode: boolean): string {
@@ -362,7 +428,6 @@ export class AppThemeSettingsStore {
     const settings = AppThemeSettingsStore.defaultsForTheme(normalizedThemeId === ThemeIds.CUSTOM ?
       previous.customBaseThemeId : normalizedThemeId);
     settings.themeId = normalizedThemeId;
-    settings.themeBookCoverEnabled = previous.themeBookCoverEnabled;
     AppThemeSettingsStore.copyCustom(previous, settings);
     if (normalizedThemeId === ThemeIds.CUSTOM) {
       AppThemeSettingsStore.useCustomColors(settings);
@@ -385,7 +450,6 @@ export class AppThemeSettingsStore {
     const startupTheme = BuiltinThemeRegistry.findById(active.startupThemeId);
     const typographyTheme = BuiltinThemeRegistry.findById(active.typographyThemeId);
     const navigationTheme = BuiltinThemeRegistry.findById(active.navigationThemeId);
-    const bookTheme = BuiltinThemeRegistry.findById(active.bookThemeId);
     // Reader typography/layout is shared by both color modes. Keep light as the
     // canonical persisted source for backward-compatible custom-theme data.
     const layoutTheme = BuiltinThemeRegistry.findById(light.layoutThemeId);
@@ -394,7 +458,6 @@ export class AppThemeSettingsStore {
     theme.typography = typographyTheme.typography;
     theme.startup = startupTheme.startup;
     theme.navigation = navigationTheme.navigation;
-    theme.book = bookTheme.book;
     theme.readerLayout = layoutTheme.readerLayout;
     theme.radius = radiusTheme.radius;
     theme.glass = glassTheme.glass;
@@ -461,6 +524,14 @@ export class AppThemeSettingsStore {
 
   static normalizeThemeId(themeId: string): string {
     return BuiltinThemeRegistry.normalizeId(themeId);
+  }
+
+  /**
+   * 启动封面文案默认留空：只有用户显式填写时才在封面底部展示。
+   */
+  private static migrateStartupText(value: string): string {
+    const text = (value || '').trim();
+    return text === AppThemeSettingsStore.LEGACY_STARTUP_TITLE ? '' : text;
   }
 
   static normalizeColor(value: string, fallback: string): string {
@@ -542,12 +613,34 @@ export class AppThemeSettingsStore {
     return typeof value === 'boolean' ? value : fallback;
   }
 
+  private static async getNumber(
+    store: preferences.Preferences,
+    key: string,
+    fallback: number
+  ): Promise<number> {
+    const value = await store.get(key, fallback);
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  }
+
+  static normalizeMainBackgroundOpacity(value: number): number {
+    const numeric = typeof value === 'number' && Number.isFinite(value) ?
+      value : AppThemeSettingsStore.DEFAULT_MAIN_BACKGROUND_OPACITY;
+    return Math.max(AppThemeSettingsStore.MIN_MAIN_BACKGROUND_OPACITY,
+      Math.min(AppThemeSettingsStore.MAX_MAIN_BACKGROUND_OPACITY, Math.round(numeric)));
+  }
+
+  static normalizeMainBackgroundCardOpacity(value: number): number {
+    const numeric = typeof value === 'number' && Number.isFinite(value) ?
+      value : AppThemeSettingsStore.DEFAULT_MAIN_BACKGROUND_CARD_OPACITY;
+    return Math.max(AppThemeSettingsStore.MIN_MAIN_BACKGROUND_CARD_OPACITY,
+      Math.min(AppThemeSettingsStore.MAX_MAIN_BACKGROUND_CARD_OPACITY, Math.round(numeric)));
+  }
+
   private static clone(source: AppThemeSettings): AppThemeSettings {
     const settings = new AppThemeSettings();
     const currentThemeId = AppStorage.get<string>(AppThemeSettingsStore.KEY_THEME_ID) ||
       AppThemeSettingsStore.DEFAULT_THEME_ID;
     settings.themeId = AppThemeSettingsStore.normalizeThemeId(source.themeId || currentThemeId);
-    settings.themeBookCoverEnabled = source.themeBookCoverEnabled === true;
     settings.themeApplyLayoutEnabled = source.themeApplyLayoutEnabled === true;
     settings.customBaseThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.customBaseThemeId);
     settings.customLightSources = AppThemeSettingsStore.normalizeSources(
@@ -593,12 +686,21 @@ export class AppThemeSettingsStore {
     settings.customDarkReaderContentTone = source.customDarkReaderContentTone === 'light' ? 'light' : 'dark';
     settings.customLightStartupImagePath = source.customLightStartupImagePath || '';
     settings.customDarkStartupImagePath = source.customDarkStartupImagePath || '';
-    settings.customLightStartupTitle = source.customLightStartupTitle === undefined ?
-      '开源读书' : source.customLightStartupTitle;
-    settings.customDarkStartupTitle = source.customDarkStartupTitle === undefined ?
-      '开源读书' : source.customDarkStartupTitle;
+    settings.customLightStartupTitle = AppThemeSettingsStore.migrateStartupText(
+      source.customLightStartupTitle || '');
+    settings.customDarkStartupTitle = AppThemeSettingsStore.migrateStartupText(
+      source.customDarkStartupTitle || '');
     settings.customLightStartupSubtitle = source.customLightStartupSubtitle || '';
     settings.customDarkStartupSubtitle = source.customDarkStartupSubtitle || '';
+    settings.customLightMainBackgroundImagePath = source.customLightMainBackgroundImagePath || '';
+    settings.customDarkMainBackgroundImagePath = source.customDarkMainBackgroundImagePath || '';
+    settings.customLightMainBackgroundOpacity = AppThemeSettingsStore.normalizeMainBackgroundOpacity(
+      source.customLightMainBackgroundOpacity);
+    settings.customDarkMainBackgroundOpacity = AppThemeSettingsStore.normalizeMainBackgroundOpacity(
+      source.customDarkMainBackgroundOpacity);
+    settings.mainBackgroundGlobal = source.mainBackgroundGlobal !== false;
+    settings.mainBackgroundCardOpacity = AppThemeSettingsStore.normalizeMainBackgroundCardOpacity(
+      source.mainBackgroundCardOpacity);
     if (settings.themeId === ThemeIds.CUSTOM) {
       AppThemeSettingsStore.useCustomColors(settings);
     }
@@ -634,6 +736,15 @@ export class AppThemeSettingsStore {
     target.customDarkStartupTitle = source.customDarkStartupTitle;
     target.customLightStartupSubtitle = source.customLightStartupSubtitle;
     target.customDarkStartupSubtitle = source.customDarkStartupSubtitle;
+    target.customLightMainBackgroundImagePath = source.customLightMainBackgroundImagePath;
+    target.customDarkMainBackgroundImagePath = source.customDarkMainBackgroundImagePath;
+    target.customLightMainBackgroundOpacity =
+      AppThemeSettingsStore.normalizeMainBackgroundOpacity(source.customLightMainBackgroundOpacity);
+    target.customDarkMainBackgroundOpacity =
+      AppThemeSettingsStore.normalizeMainBackgroundOpacity(source.customDarkMainBackgroundOpacity);
+    target.mainBackgroundGlobal = source.mainBackgroundGlobal !== false;
+    target.mainBackgroundCardOpacity = AppThemeSettingsStore.normalizeMainBackgroundCardOpacity(
+      source.mainBackgroundCardOpacity);
   }
 
   private static async loadMigratedReaderAppearance(
@@ -755,6 +866,18 @@ export class AppThemeSettingsStore {
       settings.customLightStartupSubtitle);
     await store.put(AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_SUBTITLE,
       settings.customDarkStartupSubtitle);
+    await store.put(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_IMAGE_PATH,
+      settings.customLightMainBackgroundImagePath);
+    await store.put(AppThemeSettingsStore.KEY_CUSTOM_DARK_MAIN_BACKGROUND_IMAGE_PATH,
+      settings.customDarkMainBackgroundImagePath);
+    await store.put(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_MAIN_BACKGROUND_OPACITY,
+      settings.customLightMainBackgroundOpacity);
+    await store.put(AppThemeSettingsStore.KEY_CUSTOM_DARK_MAIN_BACKGROUND_OPACITY,
+      settings.customDarkMainBackgroundOpacity);
+    await store.put(AppThemeSettingsStore.KEY_MAIN_BACKGROUND_GLOBAL,
+      settings.mainBackgroundGlobal !== false);
+    await store.put(AppThemeSettingsStore.KEY_MAIN_BACKGROUND_CARD_OPACITY,
+      settings.mainBackgroundCardOpacity);
     await store.flush();
   }
 

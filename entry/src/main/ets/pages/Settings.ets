@@ -12,6 +12,7 @@ import { ReaderFontHelper, ReaderFontItem } from '../utils/ReaderFontHelper';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import { AdaptiveColorPicker } from '../components/AdaptiveColorPicker';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { EyeTurnController } from '../core/reader/EyeTurnController';
 import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import fs from '@ohos.file.fs';
@@ -146,6 +147,7 @@ struct SettingsPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
       Scroll() {
         Column() {
           this.sectionTitle('App 配色')
@@ -296,14 +298,14 @@ struct SettingsPage {
       .width('100%')
       .height('100%')
       .align(Alignment.TopStart)
-      .backgroundColor(this.pageColor())
+      .backgroundColor(this.pageColorBehind())
 
       this.titleBar()
 
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(this.pageColorBehind())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -1667,8 +1669,13 @@ struct SettingsPage {
     return ThemeRuntime.pageColor(this.appDarkMode);
   }
 
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   inputColor(): string {

@@ -6,6 +6,7 @@ import { QuickJsFingerprintStats, QuickJsMigrationSnapshot,
 import { QuickJsRuntimeMode } from '../core/script/QuickJsRuntimeStatus';
 import { QuickJsValidationStore } from '../core/script/QuickJsValidationStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { syncSystemBars } from '../utils/SystemBars';
 
 @Entry
@@ -32,6 +33,7 @@ struct QuickJsDiagnosticsPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
       Scroll() {
         Column({ space: 12 }) {
           this.infoCard()
@@ -73,7 +75,7 @@ struct QuickJsDiagnosticsPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(this.pageColorBehind())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -234,7 +236,12 @@ struct QuickJsDiagnosticsPage {
 
   private syncBars(): void { syncSystemBars(getContext(this), this.appDarkMode, this.pageColor()); }
   private pageColor(): string { return ThemeRuntime.pageColor(this.appDarkMode); }
-  private cardColor(): string { return ThemeRuntime.cardColor(this.appDarkMode); }
+
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+  private cardColor(): string { return ThemeRuntime.cardColorBehind(this.appDarkMode); }
   private primaryTextColor(): string { return ThemeRuntime.primaryTextColor(this.appDarkMode); }
   private subTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }
 }

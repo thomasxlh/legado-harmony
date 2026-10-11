@@ -444,7 +444,8 @@ export class BookGroup {
 }
 
 export class Bookmark {
-  id: number = 0;
+  /** 跨设备稳定主键：bookUrl#chapterIndex#pageIndex，端云同步按此合并。 */
+  bookmarkUrl: string = '';
   bookUrl: string = '';
   bookName: string = '';
   bookAuthor: string = '';

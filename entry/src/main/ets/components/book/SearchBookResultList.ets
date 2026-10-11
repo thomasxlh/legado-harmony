@@ -35,6 +35,7 @@ class SearchBookResultDataSource implements IDataSource {
 
 @Component
 export struct SearchBookResultList {
+  @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
   @StorageLink('bookshelfCoverAlbums') bookshelfCoverAlbums: string = '';
@@ -387,6 +388,8 @@ export struct SearchBookResultList {
   }
 
   isDarkMode(): boolean {
+    // 卡片色在铺了背景图时会变成半透明色值，不能只靠固定色值判断深浅。
+    if (this.appDarkMode) return true;
     return this.pageColor === '#101113' || this.cardColor === '#191B1F';
   }
 

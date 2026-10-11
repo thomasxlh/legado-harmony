@@ -3,6 +3,7 @@ import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import { STAGE_RUNTIME_POOL_SIZE } from '../core/book/BookSourceStageWebRuntime';
 import deviceInfo from '@ohos.deviceInfo';
@@ -37,6 +38,7 @@ import { ExploreCacheHit, ExploreResultCache } from '../utils/ExploreResultCache
 import { AppThemeSettingsStore } from '../utils/AppThemeSettingsStore';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { ThemeIds } from '../theme/ThemeModels';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { CloudSyncService } from '../utils/CloudSyncService';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
@@ -101,6 +103,7 @@ struct Index {
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
   @StorageLink('launchShortcutNonce') @Watch('onLaunchShortcutChanged') launchShortcutNonce: number = 0;
   @StorageLink('singleSourceSearchNonce') @Watch('onSingleSourceSearchRequested') singleSourceSearchNonce: number = 0;
+  @StorageLink('appThemeId') appThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @StorageLink('globalSearchPendingNonce') @Watch('onGlobalSearchRequested') globalSearchPendingNonce: number = 0;
   @StorageLink('bookSourceExploreRefreshNonce') @Watch('onBookSourceExploreRefreshRequested')
   bookSourceExploreRefreshNonce: number = 0;
@@ -377,6 +380,9 @@ struct Index {
 
   build() {
     Stack() {
+      // 背景图铺在页面最底层，由公共组件统一绘制（书架恒显示，其余页面跟随
+      // 方案里的「应用到全部页面」开关）。
+      AppBackgroundLayer({ always: true })
       if (this.supportsImmersiveTabs()) {
         if (this.hdsMaterialRenderBranch) {
           this.immersiveTabs()
@@ -651,7 +657,7 @@ struct Index {
     })
     .width('100%')
     .height('100%')
-    .backgroundColor(ThemeRuntime.pageColor(this.appDarkMode))
+    .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 
@@ -714,7 +720,7 @@ struct Index {
     }
     .barMode(BarMode.Fixed)
     .barHeight(this.bookshelfMultiSelectActive ? 0 : 56 + this.compatTabSafeHeight())
-    .barBackgroundColor(ThemeRuntime.cardColor(this.appDarkMode))
+    .barBackgroundColor(ThemeRuntime.cardColorBehind(this.appDarkMode))
     .scrollable(false)
     .onChange((index: number) => {
       this.currentIndex = index;
@@ -722,7 +728,7 @@ struct Index {
     })
     .width('100%')
     .height('100%')
-    .backgroundColor(ThemeRuntime.pageColor(this.appDarkMode))
+    .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 
@@ -814,7 +820,6 @@ struct Index {
   compatTabSafeHeight(): number {
     return this.navBarHeight > 0 ? this.navBarHeight : 24;
   }
-
 }
 
 @Component
@@ -848,7 +853,7 @@ struct FastBookshelfShell {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -889,7 +894,7 @@ struct FastBookshelfShell {
   }
 
   pageColor(): string {
-    return ThemeRuntime.pageColor(this.appDarkMode);
+    return ThemeRuntime.mainPageColor(this.appDarkMode);
   }
 
   primaryTextColor(): string {
@@ -906,7 +911,7 @@ struct BlankTabPage {
     Column()
       .width('100%')
       .height('100%')
-      .backgroundColor(ThemeRuntime.pageColor(this.appDarkMode))
+      .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 }
@@ -917,7 +922,6 @@ struct BookshelfPage {
   @Prop navBarHeight: number = 0;
   @Link isBookMultiSelect: boolean;
   @Link @Watch('onActiveShelfGroupChanged') activeShelfGroupId: number;
-  @StorageLink('appThemeBookCoverEnabled') themeBookCoverEnabled: boolean = false;
   @StorageLink('appThemeId') appThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @StorageLink('appCustomBaseThemeId') appCustomBaseThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @State books: Book[] = [];
@@ -2011,12 +2015,12 @@ struct BookshelfPage {
             .width('100%')
             .height('100%')
             .padding({ left: 16, right: 16 })
-            .backgroundColor(this.pageColor())
+            .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
               .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
             }
           }
           .layoutWeight(1)
-          .backgroundColor(this.pageColor())
+          .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
           .refreshOffset(64)
           .onStateChange((state: RefreshStatus) => {
             this.updateShelfRefreshPrompt(state);
@@ -2043,7 +2047,7 @@ struct BookshelfPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.pageColor())
+      .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
 
       if (this.books.length > 0 && this.shouldShowShelfRefreshStatus()) {
@@ -3631,7 +3635,7 @@ struct BookshelfPage {
     .columnsGap(this.shelfTileColumnGap())
     .rowsGap(this.shelfTileRowGap())
     .padding({ left: 20, right: 20, top: 10 })
-    .backgroundColor(this.pageColor())
+    .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
     .scrollBar(BarState.Off)
     .cachedCount(4)
     .translate({ x: this.tileGroupTransitionX })
@@ -3772,34 +3776,26 @@ struct BookshelfPage {
   @Builder
   shelfTileGroupFolder(group: BookGroup) {
     Column({ space: 4 }) {
-      // Use one outer surface for both the themed folder artwork and the
-      // four-cover preview so folders carry the same radius, border and shadow
-      // weight as ordinary shelf cards.
+      // Four-cover preview for shelf folders, sharing the same radius, border
+      // and shadow weight as ordinary shelf cards.
       Stack() {
-        if (this.shouldUseThemeBookCover()) {
-          Image(this.activeThemeShelfFolder())
-            .width('100%')
-            .height('100%')
-            .objectFit(ImageFit.Fill)
-        } else {
-          Grid() {
-            ForEach(this.getTileGroupPreviewBooks(group.groupId), (book: Book) => {
-              GridItem() {
-                this.coverView(book, '100%', '100%', ImageFit.Cover)
-              }
-            }, (book: Book) => this.shelfBookRenderKey(book, `group_${group.groupId}`))
-          }
-          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-          .width('100%')
-          .height('100%')
-          .columnsTemplate('1fr 1fr')
-          .rowsTemplate('1fr 1fr')
-          .columnsGap(6)
-          .rowsGap(6)
-          .padding(8)
-          .backgroundColor(this.glassCardColor())
-          .scrollBar(BarState.Off)
+        Grid() {
+          ForEach(this.getTileGroupPreviewBooks(group.groupId), (book: Book) => {
+            GridItem() {
+              this.coverView(book, '100%', '100%', ImageFit.Cover)
+            }
+          }, (book: Book) => this.shelfBookRenderKey(book, `group_${group.groupId}`))
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .width('100%')
+        .height('100%')
+        .columnsTemplate('1fr 1fr')
+        .rowsTemplate('1fr 1fr')
+        .columnsGap(6)
+        .rowsGap(6)
+        .padding(8)
+        .backgroundColor(this.glassCardColor())
+        .scrollBar(BarState.Off)
       }
       .width('100%')
       .aspectRatio(0.735)
@@ -4483,33 +4479,7 @@ struct BookshelfPage {
   @Builder
   coverView(book: Book, width: Length, height: Length, imageFit: ImageFit) {
     Stack() {
-      if (this.shouldUseThemeBookCover()) {
-        if (this.activeThemeBookCovers(book).length === 1) {
-          Image(this.activeThemeBookCovers(book)[0])
-            .width(width)
-            .height(height)
-            .objectFit(ImageFit.Fill)
-        } else {
-          Swiper() {
-            ForEach(this.activeThemeBookCovers(book), (cover: ResourceStr, index: number) => {
-              Image(cover)
-                .width(width)
-                .height(height)
-                .objectFit(ImageFit.Fill)
-            }, (_cover: ResourceStr, index: number) => `${book.bookUrl}_theme_${index}`)
-          }
-          .width(width)
-          .height(height)
-          .autoPlay(true)
-          .interval(this.themeBookCoverInterval(book))
-          .indicator(false)
-          .loop(true)
-        }
-        Image(this.activeThemeShelfFrame())
-          .width(width)
-          .height(height)
-          .objectFit(ImageFit.Fill)
-      } else if (this.getShelfCoverList(book).length === 0) {
+      if (this.getShelfCoverList(book).length === 0) {
         Column() {
           Text(book.name ? book.name.substring(0, 1) : '书')
             .fontSize(28)
@@ -4645,45 +4615,6 @@ struct BookshelfPage {
     if (BookTypeSupport.isAudio(book)) return '#D9822B';
     if (BookTypeSupport.isImage(book)) return '#8B5CF6';
     return '#3978C5';
-  }
-
-  activeThemeBookCovers(book: Book): ResourceStr[] {
-    const covers = ThemeAssetRegistry.themeBookCovers(ThemeRuntime.bookTokens(this.appDarkMode).coverAssetId);
-    if (covers.length <= 1) return covers;
-    const result: ResourceStr[] = [];
-    const seed = this.themeBookCoverSeed(book);
-    const start = seed % covers.length;
-    const direction = seed % 2 === 0 ? 1 : covers.length - 1;
-    for (let index = 0; index < covers.length; index++) {
-      result.push(covers[(start + index * direction) % covers.length]);
-    }
-    return result;
-  }
-
-  shouldUseThemeBookCover(): boolean {
-    return this.themeBookCoverEnabled &&
-      ThemeAssetRegistry.themeBookCovers(ThemeRuntime.bookTokens(this.appDarkMode).coverAssetId).length > 0;
-  }
-
-  themeBookCoverSeed(book: Book): number {
-    const key = `${book.bookUrl}|${book.name}|${book.author}`;
-    let hash = 17;
-    for (let index = 0; index < key.length; index++) {
-      hash = (hash * 31 + key.charCodeAt(index)) & 0x7FFFFFFF;
-    }
-    return hash;
-  }
-
-  themeBookCoverInterval(book: Book): number {
-    return 3200 + this.themeBookCoverSeed(book) % 5 * 420;
-  }
-
-  activeThemeShelfFrame(): ResourceStr {
-    return ThemeAssetRegistry.themeShelfFrame(ThemeRuntime.bookTokens(this.appDarkMode).shelfFrameAssetId);
-  }
-
-  activeThemeShelfFolder(): ResourceStr {
-    return ThemeAssetRegistry.themeShelfFolder(ThemeRuntime.bookTokens(this.appDarkMode).shelfFolderAssetId);
   }
 
   getShelfCover(book: Book): string {
@@ -7154,11 +7085,11 @@ struct BookshelfPage {
   }
 
   pageColor(): string {
-    return ThemeRuntime.pageColor(this.appDarkMode);
+    return ThemeRuntime.mainPageColor(this.appDarkMode);
   }
 
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   inputColor(): string {
@@ -7166,7 +7097,7 @@ struct BookshelfPage {
   }
 
   glassCardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   glassBorderColor(): string {
@@ -7861,7 +7792,7 @@ struct ExplorePage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.pageColor())
+      .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
 
       if (this.showExploreSourcePicker) {
@@ -7899,7 +7830,7 @@ struct ExplorePage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
     .onAreaChange((_oldValue: Area, newValue: Area) => {
       const width = typeof newValue.width === 'number' ? newValue.width : Number.parseFloat(`${newValue.width}`);
       if (Number.isFinite(width) && width > 0) {
@@ -9097,11 +9028,11 @@ struct ExplorePage {
   }
 
   pageColor(): string {
-    return ThemeRuntime.pageColor(this.appDarkMode);
+    return ThemeRuntime.mainPageColor(this.appDarkMode);
   }
 
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   inputColor(): string {
@@ -9109,7 +9040,7 @@ struct ExplorePage {
   }
 
   glassCardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   glassBorderColor(): string {
@@ -9915,7 +9846,7 @@ struct SearchPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.pageColor())
+      .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
 
       if (this.showSearchHistoryDropdown && this.searchHistory.length > 0) {
@@ -10845,11 +10776,11 @@ struct SearchPage {
   }
 
   pageColor(): string {
-    return ThemeRuntime.pageColor(this.appDarkMode);
+    return ThemeRuntime.mainPageColor(this.appDarkMode);
   }
 
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   glassCardColor(): string {
@@ -10957,6 +10888,10 @@ struct SettingsPage {
     if (this.cloudSyncStatus === CloudSyncService.STATUS_ERROR) {
       return this.dangerColor();
     }
+    if (this.cloudSyncStatus === CloudSyncService.STATUS_PAUSED ||
+      this.cloudSyncStatus === CloudSyncService.STATUS_SUBMITTED) {
+      return ThemeRuntime.warningColor(this.appDarkMode);
+    }
     if (this.cloudSyncLinked || this.cloudSyncLastSuccessAt > 0) {
       return this.accentColor();
     }
@@ -11015,7 +10950,7 @@ struct SettingsPage {
       .width('100%')
       .height('100%')
       .align(Alignment.TopStart)
-      .backgroundColor(this.pageColor())
+      .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
 
       Row() {
@@ -11034,7 +10969,7 @@ struct SettingsPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
+    .backgroundColor(ThemeRuntime.mainPageColor(this.appDarkMode))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -11118,7 +11053,7 @@ struct SettingsPage {
   }
 
   pageColor(): string {
-    return ThemeRuntime.pageColor(this.appDarkMode);
+    return ThemeRuntime.mainPageColor(this.appDarkMode);
   }
 
   primaryTextColor(): string {
@@ -11134,7 +11069,7 @@ struct SettingsPage {
   }
 
   glassCardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   /** 错误/失败态语义色：跟随主题，浅色/深色分别取值。 */

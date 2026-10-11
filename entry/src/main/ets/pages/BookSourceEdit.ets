@@ -4,6 +4,7 @@ import { BookSource } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { FormDraftStore } from '../utils/FormDraftStore';
 import { HdsFeedback } from '../utils/HdsFeedback';
@@ -182,6 +183,7 @@ struct BookSourceEditPage {
 
   build() {
     Stack() {
+      AppBackgroundLayer()
       Column() {
         Row() {
           ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
@@ -345,7 +347,7 @@ struct BookSourceEditPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.pageColor())
+      .backgroundColor(this.pageColorBehind())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
 
@@ -1109,8 +1111,13 @@ struct BookSourceEditPage {
     return ThemeRuntime.pageColor(this.appDarkMode);
   }
 
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+
   cardColor(): string {
-    return ThemeRuntime.cardColor(this.appDarkMode);
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
   }
 
   inputColor(): string {

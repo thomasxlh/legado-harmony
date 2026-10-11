@@ -46,7 +46,7 @@
         "description": "$string:EntryAbility_desc",
         "icon": "$media:icon",
         "label": "$string:EntryAbility_label",
-        "startWindowIcon": "$media:icon",
+        "startWindowIcon": "$media:start_window_blank",
         "startWindowBackground": "$color:start_window_background",
         "orientation": "auto_rotation_restricted",
         "launchType": "singleton",
