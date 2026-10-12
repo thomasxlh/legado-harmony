@@ -16,6 +16,8 @@ export struct ReaderTtsPlayerPanel {
   onClose: () => void = () => {};
   onOpenCatalog: () => void = () => {};
   onOpenVoice: () => void = () => ReaderTtsFloatingSession.openVoice();
+  showOpenReader: boolean = false;
+  onOpenReader: () => void = () => {};
 
   @StorageLink('globalTtsPaused') globalTtsPaused: boolean = false;
   @StorageLink('globalTtsBookName') globalTtsBookName: string = '';
@@ -113,6 +115,18 @@ export struct ReaderTtsPlayerPanel {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+      if (this.showOpenReader && this.globalTtsMode !== 'audio') {
+        Stack({ alignContent: Alignment.Center }) {
+          Circle().width(38).height(38).fill(this.darkMode ? '#20FFFFFF' : '#0D000000')
+          SymbolGlyph($r('sys.symbol.book'))
+            .fontSize(19)
+            .fontColor([this.primaryTextColor])
+        }
+        .width(38)
+        .height(38)
+        .accessibilityText('返回本书阅读界面')
+        .onClick(() => this.onOpenReader())
+      }
       SymbolGlyph($r('sys.symbol.chevron_down'))
         .fontSize(20)
         .fontColor([this.primaryTextColor])

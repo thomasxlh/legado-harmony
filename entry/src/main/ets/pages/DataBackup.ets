@@ -498,8 +498,8 @@ struct DataBackupPage {
     try {
       await this.awaitTempCleanup();
       const options = new picker.DocumentSaveOptions();
-      options.newFileNames = [`legado_harmony_${this.timestamp()}.qingyebak`];
-      options.fileSuffixChoices = ['应用数据备份|.qingyebak'];
+      options.newFileNames = [`legado_harmony_${this.timestamp()}.zip`];
+      options.fileSuffixChoices = ['应用数据备份|.zip'];
       const result = await new picker.DocumentViewPicker(getContext(this)).save(options);
       if (!result || result.length === 0) return;
       this.busyText = '正在整理备份数据...';
@@ -531,7 +531,7 @@ struct DataBackupPage {
       await this.awaitTempCleanup();
       const options = new picker.DocumentSelectOptions();
       options.maxSelectNumber = 1;
-      options.fileSuffixFilters = ['应用数据备份|.qingyebak', 'Android 阅读备份|.zip'];
+      options.fileSuffixFilters = ['应用数据备份|.zip', '应用数据备份|.qingyebak', 'Android 阅读备份|.zip'];
       const result = await new picker.DocumentViewPicker(getContext(this)).select(options);
       if (!result || result.length === 0) return;
       await AppDataBackupService.discardImport(this.importSession);

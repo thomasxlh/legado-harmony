@@ -5446,8 +5446,21 @@ struct ReadBookPage {
       bottomInset: this.navBarHeight,
       viewportHeight: this.pageViewHeight > 0 ? this.pageViewHeight : 720,
       onClose: () => localOwner ? this.closeTtsQuickPlayer() : this.closeGlobalTtsQuickPlayer(),
-      onOpenCatalog: () => this.openGlobalTtsCatalog()
+      onOpenCatalog: () => this.openGlobalTtsCatalog(),
+      showOpenReader: !localOwner && !!this.globalTtsBookUrl && this.globalTtsBookUrl !== this.bookUrl,
+      onOpenReader: () => this.openGlobalTtsReaderPage()
     })
+  }
+
+  openGlobalTtsReaderPage(): void {
+    const bookUrl = this.globalTtsBookUrl || AppStorage.get<string>('globalTtsBookUrl') || '';
+    if (!bookUrl) {
+      HdsFeedback.showToast('未能定位当前朗读书籍');
+      return;
+    }
+    router.pushUrl({ url: 'pages/ReadBook', params: { bookUrl: bookUrl } }).catch((error: Error) => {
+      console.warn('从听书面板返回朗读书籍阅读页失败:', error);
+    });
   }
 
   @Builder
@@ -5486,6 +5499,18 @@ struct ReadBookPage {
     }
     const source = this.ttsPanelOffsetSource();
     return this.cleanTtsPanelSlice(source.substring(this.ttsHighlightStart, this.ttsHighlightEnd));
+  }
+
+  ttsCurrentSentenceForPanel(): string {
+    const sentence = this.ttsCurrentSentence();
+    if (sentence) {
+      return sentence;
+    }
+    const chunk = this.ttsLastFocusChunk;
+    if (chunk && chunk.text) {
+      return this.cleanTtsPanelSlice(chunk.text);
+    }
+    return '';
   }
 
   ttsQuickSentencePreview(): string {
@@ -13430,7 +13455,7 @@ struct ReadBookPage {
       this.ttsFloatingSessionOwnerId,
       this.ttsPanelFollowingText() || this.ttsQuickSentencePreview(),
       this.ttsPanelTextBefore(),
-      this.ttsCurrentSentence(),
+      this.ttsCurrentSentenceForPanel(),
       this.ttsPanelTextAfter(),
       this.getTtsFloatingCover(),
       '',

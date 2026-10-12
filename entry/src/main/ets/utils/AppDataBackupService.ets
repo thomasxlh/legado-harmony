@@ -129,7 +129,6 @@ export class AppDataBackupService {
   static readonly CATEGORY_SEARCH_HISTORY: string = 'searchHistory';
 
   private static readonly SETTINGS_STORES: string[] = [
-    'app_icon_settings',
     'app_theme_mode',
     'app_theme_settings',
     'bookshelf_display_settings',
@@ -186,8 +185,7 @@ export class AppDataBackupService {
     const envelopeRoot = `${root}/encrypted`;
     const encryptedPayloadPath = `${envelopeRoot}/payload.bin`;
     // zlib.compressFile() produces a ZIP archive and requires a ZIP output
-    // path on some HarmonyOS versions. The user-facing picker can still save
-    // these bytes with the custom .qingyebak extension.
+    // path on some HarmonyOS versions, so the backup is saved as .zip.
     const archivePath = `${root}/legado_backup.zip`;
     const manifest = new AppDataBackupManifest();
     manifest.createdAt = Date.now();

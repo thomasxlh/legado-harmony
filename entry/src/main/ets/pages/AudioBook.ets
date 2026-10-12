@@ -183,7 +183,9 @@ struct AudioBookPage {
         viewportHeight: this.viewportHeight,
         onClose: () => this.closePage(),
         onOpenVoice: () => this.openVoiceDialog(),
-        onOpenCatalog: () => this.openChapterList()
+        onOpenCatalog: () => this.openChapterList(),
+        showOpenReader: true,
+        onOpenReader: () => this.openSharedReaderPage()
       })
 
       if (this.showChapterList) {
@@ -1097,6 +1099,17 @@ struct AudioBookPage {
       url: 'pages/AudioBook',
       params: { bookUrl: this.bookUrl, audioPanelAction: action }
     }).catch((error: Error) => console.warn('打开听书设置面板失败:', error));
+  }
+
+  openSharedReaderPage(): void {
+    const bookUrl = AppStorage.get<string>('globalTtsBookUrl') || this.book?.bookUrl || this.bookUrl;
+    if (!bookUrl) {
+      HdsFeedback.showToast('未能定位当前朗读书籍');
+      return;
+    }
+    router.pushUrl({ url: 'pages/ReadBook', params: { bookUrl: bookUrl } }).catch((error: Error) => {
+      console.warn('从听书面板返回阅读页失败:', error);
+    });
   }
 
   scheduleProgressSave(): void {

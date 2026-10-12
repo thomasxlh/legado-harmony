@@ -1168,7 +1168,7 @@ struct WebDavPage {
           this.busyProgress = Math.floor(percent * 0.65);
         });
       archivePath = backup.archivePath;
-      const remoteName = `legado_harmony_${this.timestamp()}.qingyebak`;
+      const remoteName = `legado_harmony_${this.timestamp()}.zip`;
       this.busyText = '正在上传 WebDAV...';
       await new WebDavClient(this.connection, this.password).uploadBackup(
         getContext(this), backup.archivePath, remoteName,
@@ -1200,7 +1200,7 @@ struct WebDavPage {
     this.busy = true;
     this.busyText = '正在下载备份...';
     this.busyProgress = 1;
-    const sourcePath = `${getContext(this).tempDir}/webdav_restore_${Date.now()}.qingyebak`;
+    const sourcePath = `${getContext(this).tempDir}/webdav_restore_${Date.now()}.zip`;
     let keepSourceForPassword: boolean = false;
     try {
       await new WebDavClient(this.connection, this.password).downloadBackup(entry.relativePath, sourcePath,

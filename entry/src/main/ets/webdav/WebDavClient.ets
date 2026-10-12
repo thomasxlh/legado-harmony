@@ -282,7 +282,10 @@ export class WebDavClient {
     if (response.statusCode === 404) return [];
     if (response.statusCode !== 207) throw new Error(this.statusMessage(response.statusCode));
     return this.parseMultiStatus(response.body, '')
-      .filter((item: WebDavEntry): boolean => !item.directory && item.name.toLowerCase().endsWith('.qingyebak'))
+      .filter((item: WebDavEntry): boolean => {
+        const lower = item.name.toLowerCase();
+        return !item.directory && (lower.endsWith('.zip') || lower.endsWith('.qingyebak'));
+      })
       .sort((left: WebDavEntry, right: WebDavEntry): number => right.lastModified - left.lastModified);
   }
 

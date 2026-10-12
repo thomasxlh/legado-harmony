@@ -22,7 +22,6 @@
     "pages/QuickJsDiagnostics",
     "pages/QuickJsRegression",
     "pages/DataBackup",
-    "pages/AppIconSettings",
     "pages/ThemeColorSettings",
     "pages/ThemeSettings",
     "pages/DataSync",

@@ -9,7 +9,6 @@ import { ReaderSettingsStore } from '../utils/ReaderSettingsStore';
 import { AppThemeSettingsStore } from '../utils/AppThemeSettingsStore';
 import { GlassSettingsStore } from '../utils/GlassSettingsStore';
 import { AppThemeModeStore } from '../utils/AppThemeModeStore';
-import { AppIconSettingsStore } from '../utils/AppIconSettingsStore';
 import { ReaderFontBootstrap } from '../utils/ReaderFontBootstrap';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import { TtsSettingsStore } from '../utils/TtsSettingsStore';
@@ -158,7 +157,9 @@ export default class EntryAbility extends UIAbility {
     PersistentStorage.persistProp('appDarkButtonColor', '#3F8CFF');
     // Immersive light strength: adaptive follows the system by default.
     PersistentStorage.persistProp('immersiveLightLevel', 'adaptive');
-    PersistentStorage.persistProp('appIconId', AppIconSettingsStore.DEFAULT_ICON_ID);
+    // 底部 Tab 选中色：留空表示跟随主题强调色，浅色与深色模式各存一份。
+    PersistentStorage.persistProp('appTabBarLightColor', '');
+    PersistentStorage.persistProp('appTabBarDarkColor', '');
     PersistentStorage.persistProp('explorePlatform', '');
     PersistentStorage.persistProp('exploreSourceUrl', '');
     CoverGalleryStore.load(this.context).then((snapshot) => {
@@ -205,11 +206,6 @@ export default class EntryAbility extends UIAbility {
       return Promise.resolve();
     }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Sync reader settings failed: %{public}s', JSON.stringify(e));
-    });
-    AppIconSettingsStore.load(this.context).then((settings) => {
-      AppIconSettingsStore.applyToStorage(settings);
-    }).catch((e: Error) => {
-      hilog.warn(0x0000, 'testTag', 'Sync app icon settings failed: %{public}s', JSON.stringify(e));
     });
     this.handleLaunchWant(want);
   }

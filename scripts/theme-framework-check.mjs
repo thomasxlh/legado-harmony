@@ -40,7 +40,6 @@ const customSchemeStore = read('entry/src/main/ets/utils/CustomThemeSchemeStore.
 const otherSettingsPage = read('entry/src/main/ets/pages/OtherSettings.ets');
 const bookSourcePage = read('entry/src/main/ets/pages/BookSource.ets');
 const searchCoordinator = read('entry/src/main/ets/core/book/SearchCoordinator.ts');
-const appIconManager = read('entry/src/main/ets/utils/AppIconManager.ets');
 const fontBootstrap = read('entry/src/main/ets/utils/ReaderFontBootstrap.ets');
 const entryAbility = read('entry/src/main/ets/entryability/EntryAbility.ets');
 const pages = JSON.parse(read('entry/src/main/resources/base/profile/main_pages.json'));
@@ -222,8 +221,7 @@ assert(themeStore.includes('loadMigratedReaderAppearance') &&
 assert(themePage.includes('AppThemeSettingsStore.customTheme(scheme.settings, this.appDarkMode)') &&
   themePage.includes('this.activeVariant(theme).reader.backgroundColor'),
   'Custom theme preview does not use the persisted reader background');
-assert(!themeColorPage.includes("'pages/AppIconSettings'") &&
-  !themeColorPage.includes("'pages/FontSettings'") &&
+assert(!themeColorPage.includes("'pages/FontSettings'") &&
   !themeStore.includes('updateCustomFont') && !themeStore.includes('updateCustomDesktopIcon'),
   'Theme and appearance must remain independent from fonts and desktop icons');
 assert(themePage.includes('this.customThemeSectionTitle()') &&
@@ -336,21 +334,6 @@ assert(!themePage.includes("'衬线字体'") && !themePage.includes("'清晰字�
 assert(pages.src.includes('pages/ThemeSettings'), 'Theme settings page is not registered');
 assert(moduleConfig.includes('"orientation": "auto_rotation_restricted"'),
   'Entry ability orientation must respect the system rotation lock');
-
-const desktopThemeIcons = [
-  'classic_blue', 'warm_paper', 'forest_mist', 'ink_wash', 'neon_night'
-];
-for (const iconName of desktopThemeIcons) {
-  const fileName = `ic_app_theme_${iconName}.png`;
-  const filePath = path.join(mediaRoot, fileName);
-  assert(fs.existsSync(filePath), `Theme desktop icon is missing: ${fileName}`);
-  const png = fs.readFileSync(filePath);
-  assert(png.length < 500 * 1024, `Theme desktop icon exceeds 500 KB: ${fileName}`);
-  assert(png.readUInt32BE(16) === 216 && png.readUInt32BE(20) === 216,
-    `Theme desktop icon must be 216x216: ${fileName}`);
-  assert(appIconManager.includes(`app.media.ic_app_theme_${iconName}`),
-    `Theme desktop icon is not available in app settings: ${fileName}`);
-}
 
 const requiredFiles = [
   'theme/ThemeModels.ets', 'theme/BuiltinThemeRegistry.ets', 'theme/ThemeRuntime.ets',

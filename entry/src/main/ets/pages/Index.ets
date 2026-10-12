@@ -101,6 +101,8 @@ struct Index {
   @StorageLink('appDarkMode') @Watch('onAppDarkModeChanged') appDarkMode: boolean = false;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
+  @StorageLink('appTabBarLightColor') appTabBarLightColor: string = '';
+  @StorageLink('appTabBarDarkColor') appTabBarDarkColor: string = '';
   @StorageLink('launchShortcutNonce') @Watch('onLaunchShortcutChanged') launchShortcutNonce: number = 0;
   @StorageLink('singleSourceSearchNonce') @Watch('onSingleSourceSearchRequested') singleSourceSearchNonce: number = 0;
   @StorageLink('appThemeId') appThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
@@ -235,6 +237,17 @@ struct Index {
     this.showGlobalTtsCatalog = false;
     animateTo({ duration: 190, curve: Curve.EaseIn }, () => {
       this.showGlobalTtsPanel = false;
+    });
+  }
+
+  openGlobalTtsReaderPage(): void {
+    const bookUrl = AppStorage.get<string>('globalTtsBookUrl') || '';
+    if (!bookUrl) {
+      HdsFeedback.showToast('未能定位当前朗读书籍');
+      return;
+    }
+    router.pushUrl({ url: 'pages/ReadBook', params: { bookUrl: bookUrl } }).catch((error: Error) => {
+      console.warn('从听书面板返回阅读页失败:', error);
     });
   }
 
@@ -406,7 +419,9 @@ struct Index {
           bottomInset: this.navBarHeight,
           viewportHeight: this.globalTtsViewportHeight,
           onClose: () => this.closeGlobalTtsPanel(),
-          onOpenCatalog: () => this.openGlobalTtsCatalog()
+          onOpenCatalog: () => this.openGlobalTtsCatalog(),
+          showOpenReader: true,
+          onOpenReader: () => this.openGlobalTtsReaderPage()
         })
       }
       if (this.globalTtsActive && this.showGlobalTtsPanel && this.showGlobalTtsCatalog) {
@@ -802,6 +817,11 @@ struct Index {
   }
 
   tabBarActiveColor(): string {
+    // 用户单独设置的底部 Tab 选中色优先；留空或非法时回退主题强调色。
+    const override = (this.appDarkMode ? this.appTabBarDarkColor : this.appTabBarLightColor).trim();
+    if (/^#?[0-9a-fA-F]{6}$/.test(override)) {
+      return override.startsWith('#') ? override.toUpperCase() : `#${override.toUpperCase()}`;
+    }
     return ThemeRuntime.accentColor(this.appDarkMode);
   }
 
