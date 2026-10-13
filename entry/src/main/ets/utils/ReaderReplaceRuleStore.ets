@@ -36,6 +36,11 @@ export class ReaderReplaceRuleStore {
   private static readonly RULES_KEY: string = 'rulesV1';
   private static cachedRules: ReaderReplaceRule[] | null = null;
 
+  /** 云端偏好应用后失效内存缓存，下次 load() 重新读 Preferences。 */
+  static invalidateCache(): void {
+    ReaderReplaceRuleStore.cachedRules = null;
+  }
+
   static async load(context: Context, force: boolean = false): Promise<ReaderReplaceRule[]> {
     if (!force && ReaderReplaceRuleStore.cachedRules) {
       return ReaderReplaceRuleStore.cloneRules(ReaderReplaceRuleStore.cachedRules);

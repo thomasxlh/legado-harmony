@@ -563,6 +563,14 @@ export struct ColorCodePicker {
       }
 
       Row({ space: 12 }) {
+        Button('取消')
+          .height(42)
+          .fontColor(this.subTextColor())
+          .backgroundColor(Color.Transparent)
+          .layoutWeight(1)
+          .onClick(() => {
+            this.pickerVisible = false;
+          })
         Button('预置颜色')
           .height(42)
           .fontColor(this.accentColor)

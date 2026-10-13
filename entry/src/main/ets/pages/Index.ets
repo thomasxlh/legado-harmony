@@ -103,6 +103,8 @@ struct Index {
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
   @StorageLink('appTabBarLightColor') appTabBarLightColor: string = '';
   @StorageLink('appTabBarDarkColor') appTabBarDarkColor: string = '';
+  @StorageLink('appTabBarUnselectedLightColor') appTabBarUnselectedLightColor: string = '';
+  @StorageLink('appTabBarUnselectedDarkColor') appTabBarUnselectedDarkColor: string = '';
   @StorageLink('launchShortcutNonce') @Watch('onLaunchShortcutChanged') launchShortcutNonce: number = 0;
   @StorageLink('singleSourceSearchNonce') @Watch('onSingleSourceSearchRequested') singleSourceSearchNonce: number = 0;
   @StorageLink('appThemeId') appThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
@@ -826,6 +828,12 @@ struct Index {
   }
 
   tabBarTextColor(): string {
+    // 用户单独设置的底部 Tab 未选中色优先；留空或非法时回退主题次级文字色。
+    const override =
+      (this.appDarkMode ? this.appTabBarUnselectedDarkColor : this.appTabBarUnselectedLightColor).trim();
+    if (/^#?[0-9a-fA-F]{6}$/.test(override)) {
+      return override.startsWith('#') ? override.toUpperCase() : `#${override.toUpperCase()}`;
+    }
     return ThemeRuntime.subTextColor(this.appDarkMode);
   }
 

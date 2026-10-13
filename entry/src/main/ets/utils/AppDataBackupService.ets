@@ -149,6 +149,7 @@ export class AppDataBackupService {
     'reader_fonts',
     'reader_backgrounds',
     'theme_startups',
+    'main_backgrounds',
     'cover_albums',
     'covers'
   ];

@@ -14,6 +14,7 @@ export class TtsAvAudioPlayer {
   private playerOwnerGeneration: number = 0;
   private paused: boolean = false;
   private interruptPaused: boolean = false;
+  private interruptedChangeListener: (() => void) | null = null;
   private resumeWaiters: Array<() => void> = [];
 
   /**
@@ -202,6 +203,45 @@ export class TtsAvAudioPlayer {
     return this.paused;
   }
 
+  isInterrupted(): boolean {
+    return this.interruptPaused;
+  }
+
+  setOnInterruptedChangeListener(listener: () => void): void {
+    this.interruptedChangeListener = listener;
+  }
+
+  /**
+   * Clears an external-audio interruption marked by `interruptPaused` and retries
+   * playback. Used when the user resumes from the floating capsule while the
+   * system has not sent INTERRUPT_HINT_RESUME yet.
+   */
+  async clearSystemInterrupt(): Promise<void> {
+    if (!this.interruptPaused) {
+      return;
+    }
+    this.interruptPaused = false;
+    const player = this.player;
+    if (player && !this.paused &&
+      (player.state === 'paused' || player.state === 'prepared')) {
+      try {
+        await TtsAudioSession.acquire(this.activeAudioSessionOwner);
+        player.setVolume(1);
+        await player.play();
+      } catch (error) {
+        console.warn('[TTS] clear av interrupt resume failed:', error);
+      }
+    }
+    this.notifyInterruptedChange();
+  }
+
+  private notifyInterruptedChange(): void {
+    const listener = this.interruptedChangeListener;
+    if (listener) {
+      listener();
+    }
+  }
+
   debugState(): string {
     return this.player ? `avPlayer=${this.player.state},paused=${this.paused},generation=${this.playGeneration}` :
       `avPlayer=none,paused=${this.paused}`;
@@ -291,6 +331,7 @@ export class TtsAvAudioPlayer {
       if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE && player.state === 'playing') {
         player.pause().catch(() => {});
       }
+      this.notifyInterruptedChange();
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_STOP) {
@@ -305,6 +346,7 @@ export class TtsAvAudioPlayer {
       } else {
         this.interruptPaused = false;
       }
+      this.notifyInterruptedChange();
     }
   }
 

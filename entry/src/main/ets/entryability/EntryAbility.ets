@@ -14,6 +14,8 @@ import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import { TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ReaderProgressCheckpoint } from '../utils/ReaderProgressCheckpoint';
 import { CloudSyncService } from '../utils/CloudSyncService';
+import { PreferenceCloudSyncService } from '../utils/PreferenceCloudSyncService';
+import { ThemeAssetSyncService } from '../utils/ThemeAssetSyncService';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ThemeIds } from '../theme/ThemeModels';
 import { QuickJsDiagnostics } from '../core/script/QuickJsDiagnostics';
@@ -160,6 +162,9 @@ export default class EntryAbility extends UIAbility {
     // 底部 Tab 选中色：留空表示跟随主题强调色，浅色与深色模式各存一份。
     PersistentStorage.persistProp('appTabBarLightColor', '');
     PersistentStorage.persistProp('appTabBarDarkColor', '');
+    // 底部 Tab 未选中色：留空表示跟随主题次级文字色，浅色与深色模式各存一份。
+    PersistentStorage.persistProp('appTabBarUnselectedLightColor', '');
+    PersistentStorage.persistProp('appTabBarUnselectedDarkColor', '');
     PersistentStorage.persistProp('explorePlatform', '');
     PersistentStorage.persistProp('exploreSourceUrl', '');
     CoverGalleryStore.load(this.context).then((snapshot) => {
@@ -207,6 +212,14 @@ export default class EntryAbility extends UIAbility {
     }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Sync reader settings failed: %{public}s', JSON.stringify(e));
     });
+    // 阅读偏好/主题设置的端云同步桥：注册各偏好 store 的变更监听与云同步
+    // 会话回调。attach 幂等，失败只影响偏好上云，不影响主流程。
+    PreferenceCloudSyncService.attach(this.context).catch((e: Error) => {
+      hilog.warn(0x0000, 'testTag', 'Attach preference cloud sync failed: %{public}s', JSON.stringify(e));
+    });
+    // 主题/背景图片的端云同步桥：注册会话回调并安排启动对账（镜像入库/下行落盘）。
+    // attach 幂等，失败只影响图片上云，不影响主流程。
+    ThemeAssetSyncService.attach(this.context);
     this.handleLaunchWant(want);
   }
 
@@ -289,8 +302,11 @@ export default class EntryAbility extends UIAbility {
         hilog.warn(0x0000, 'testTag', 'Restart LAN reader failed: %{public}s', JSON.stringify(e));
       });
     }
-    // 云同步为受控去抖模式：回到前台时择机合并上传本地变更。
-    CloudSyncService.requestAutoSync();
+    // 云同步为受控去抖模式：回到前台时择机合并上传本地变更。先跑一轮主题图片
+    // 对账（镜像新增图片、应用云端下行），让本轮会话带上这些行变更。
+    ThemeAssetSyncService.reconcileNow().finally(() => {
+      CloudSyncService.requestAutoSync();
+    });
     this.syncSystemColorMode(this.context.config);
   }
 
@@ -332,7 +348,10 @@ export default class EntryAbility extends UIAbility {
     });
     // 退后台时合并上传一次本地变更：这是本轮最后一次上传机会（听书进度更新不会
     // 实时上云），因此绕过去抖窗口；受去抖丢弃的历史请求由服务内部补传。
-    CloudSyncService.requestAutoSync(true);
+    // 先跑一轮主题图片对账，把本轮会话内新增/变更的图片行并入这次上传。
+    ThemeAssetSyncService.reconcileNow().finally(() => {
+      CloudSyncService.requestAutoSync(true);
+    });
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {

@@ -22,6 +22,11 @@ export class CoverGalleryStore {
   private static readonly KEY_COVER_MODE: string = 'bookshelfCoverMode';
   private static cachedSnapshot: CoverGallerySnapshot | null = null;
 
+  /** 云端偏好应用后失效内存缓存，下次 load() 重新读 Preferences。 */
+  static invalidateCache(): void {
+    CoverGalleryStore.cachedSnapshot = null;
+  }
+
   static async saveFromStorage(context: Context): Promise<void> {
     const snapshot = CoverGalleryStore.snapshotFromStorage();
     if (!CoverGalleryStore.hasAlbumPayload(snapshot.albumsRaw)) {

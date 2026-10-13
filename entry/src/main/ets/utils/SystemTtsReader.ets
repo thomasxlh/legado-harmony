@@ -587,12 +587,22 @@ export class SystemTtsReader {
   }
 
   async resume(): Promise<boolean> {
-    if (!this.active || !this.paused) {
-      return this.active && !this.paused;
+    if (!this.active) {
+      return false;
     }
-    this.paused = false;
-    await this.pcmPlayer.resume();
-    await this.httpReader.resume();
+    if (this.paused) {
+      this.paused = false;
+      await this.pcmPlayer.resume();
+      await this.httpReader.resume();
+    } else if (this.pcmPlayer.isInterrupted() || this.httpReader.isInterrupted()) {
+      // Resume from an external interruption without a user pause: the player-level
+      // resume above never runs, so the interrupt flag would keep blocking playback
+      // until the system sends INTERRUPT_HINT_RESUME. Clear it and retry directly.
+      await this.pcmPlayer.clearSystemInterrupt();
+      await this.httpReader.clearSystemInterrupt();
+    } else {
+      return true;
+    }
     if (this.ttsPcmPlayType === 1 && this.engine && !this.currentRequestId) {
       this.speakNext(this.readGeneration);
     }
@@ -601,6 +611,15 @@ export class SystemTtsReader {
 
   isPaused(): boolean {
     return this.active && this.paused;
+  }
+
+  isInterrupted(): boolean {
+    return this.pcmPlayer.isInterrupted() || this.httpReader.isInterrupted();
+  }
+
+  setOnInterruptedChangeListener(listener: () => void): void {
+    this.pcmPlayer.setOnInterruptedChangeListener(listener);
+    this.httpReader.setOnInterruptedChangeListener(listener);
   }
 
   stop(): void {

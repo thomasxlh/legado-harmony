@@ -430,6 +430,12 @@ export class ReaderSettingsStore {
     return await ReaderSettingsStore.load(context);
   }
 
+  /** 云端偏好应用后失效内存缓存，下次 load() 重新读 Preferences。 */
+  static invalidateCache(): void {
+    ReaderSettingsStore.cachedSettings = null;
+    ReaderSettingsStore.cachedThemeId = '';
+  }
+
   static async switchThemeProfile(context: Context, previousThemeId: string,
     nextThemeId: string): Promise<ReaderSettings> {
     const store = await preferences.getPreferences(context, ReaderSettingsStore.STORE_NAME);

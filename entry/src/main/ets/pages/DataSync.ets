@@ -45,7 +45,9 @@ struct DataSyncPage {
         'book_sources': '书源',
         'book_groups': '分组',
         'search_keywords': '搜索历史',
-        'bookmarks': '书签'
+        'bookmarks': '书签',
+        'app_preferences': '阅读偏好',
+        'theme_assets': '主题图片'
       };
       let total = 0;
       let biggestTable = '';
@@ -85,7 +87,9 @@ struct DataSyncPage {
             this.infoItem('在线书架与分组', '书籍信息、阅读进度、分组与排序', true)
             this.infoItem('书源', '书源配置、分组、排序与启用状态', true)
             this.infoItem('搜索历史', '搜索过的关键词记录', true)
-            this.infoItem('书签', '阅读时添加的书签与划线摘录', this.syncSizeText !== '')
+            this.infoItem('书签', '阅读时添加的书签与划线摘录', true)
+            this.infoItem('阅读偏好与外观', '阅读设置、主题、字体大小、替换规则与听书偏好', true)
+            this.infoItem('主题图片', '启动封面、主界面背景、阅读背景与封面相册', this.syncSizeText !== '')
             if (this.syncSizeText !== '') {
               this.infoItem('同步数据量', this.syncSizeText, false)
             }
@@ -111,7 +115,7 @@ struct DataSyncPage {
           .clip(true)
           .backgroundColor(this.cardColor())
 
-          Text('云空间同步需要 HarmonyOS 6.1.0 及以上版本、设备已登录华为账号，并在“设置-云空间”中开启本应用的同步开关，仅支持中国大陆。本地书文件、正文缓存以及阅读偏好不参与云同步，可使用 WebDAV 备份。')
+          Text('云空间同步需要 HarmonyOS 6.1.0 及以上版本、设备已登录华为账号，并在“设置-云空间”中开启本应用的同步开关，仅支持中国大陆。本地书文件、正文缓存以及字体文件等资源文件不参与云同步，可使用 WebDAV 备份。')
             .fontSize(12)
             .fontColor(this.subTextColor())
             .lineHeight(18)

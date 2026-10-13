@@ -138,6 +138,11 @@ export class GlassSettingsStore {
     AppStorage.setOrCreate(ThemeRuntime.KEY_THEME_REVISION, revision + 1);
   }
 
+  /** 云端偏好应用后失效内存缓存，下次 load() 重新读 Preferences。 */
+  static invalidateCache(): void {
+    GlassSettingsStore.cached = null;
+  }
+
   static preset(id: string): GlassSettings {
     const settings = new GlassSettings();
     settings.preset = id;

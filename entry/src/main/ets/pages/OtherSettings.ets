@@ -5,7 +5,6 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
-import { AdaptiveColorPicker } from '../components/AdaptiveColorPicker';
 import { lanReaderServer } from '../core/lan/LanReaderServer';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
@@ -17,8 +16,6 @@ struct OtherSettingsPage {
   @StorageLink('immersiveLightLevel') immersiveLightLevel: string = 'adaptive';
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
-  @StorageLink('appTabBarLightColor') appTabBarLightColor: string = '';
-  @StorageLink('appTabBarDarkColor') appTabBarDarkColor: string = '';
   @StorageLink('lanReaderEnabled') lanReaderEnabled: boolean = false;
   @StorageLink('lanReaderAddress') lanReaderAddress: string = '';
   @StorageLink('lanReaderStatus') lanReaderStatus: string = '已关闭';
@@ -110,7 +107,6 @@ struct OtherSettingsPage {
               router.pushUrl({ url: 'pages/GlassSettings' });
             })
             this.immersiveLightLevelItem()
-            this.tabBarColorItem()
             this.menuItem('字体设置', '全局字体 / 自定义字体', false, () => {
               router.pushUrl({ url: 'pages/FontSettings' });
             })
@@ -413,76 +409,6 @@ struct OtherSettingsPage {
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
     .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
-  tabBarColorItem() {
-    Stack() {
-      Row() {
-        Column() {
-          Text('底部Tab选中色')
-            .fontSize(16)
-            .fontColor(this.primaryTextColor())
-          Text(this.appDarkMode ? '深色模式下选中Tab的图标与文字颜色' : '浅色模式下选中Tab的图标与文字颜色')
-            .fontSize(12)
-            .fontColor(this.subTextColor())
-            .margin({ top: 4 })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-
-        Row()
-          .width(30)
-          .height(30)
-          .borderRadius(15)
-          .backgroundColor(this.effectiveTabBarColor())
-          .border({ width: 2, color: this.appDarkMode ? '#55FFFFFF' : '#22000000' })
-      }
-      .width('100%')
-      .height('100%')
-      .alignItems(VerticalAlign.Center)
-
-      AdaptiveColorPicker({
-        value: this.currentTabBarColor(),
-        placeholder: this.accentColor(),
-        appDarkMode: this.appDarkMode,
-        accentColor: this.accentColor(),
-        allowEmpty: true,
-        optionTitle: '底部Tab选中色',
-        hideOptionTrigger: true,
-        onColorChange: (color: string) => this.setTabBarColor(color)
-      })
-    }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
-    .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
-    .alignContent(Alignment.Center)
-  }
-
-  currentTabBarColor(): string {
-    return this.appDarkMode ? this.appTabBarDarkColor : this.appTabBarLightColor;
-  }
-
-  effectiveTabBarColor(): string {
-    const override = this.currentTabBarColor().trim();
-    if (/^#?[0-9a-fA-F]{6}$/.test(override)) {
-      return override.startsWith('#') ? override.toUpperCase() : `#${override.toUpperCase()}`;
-    }
-    return this.accentColor();
-  }
-
-  setTabBarColor(color: string): void {
-    const normalized = color.trim();
-    const value = /^#?[0-9a-fA-F]{6}$/.test(normalized) ?
-      (normalized.startsWith('#') ? normalized.toUpperCase() : `#${normalized.toUpperCase()}`) : '';
-    if (this.appDarkMode) {
-      this.appTabBarDarkColor = value;
-    } else {
-      this.appTabBarLightColor = value;
-    }
   }
 
   @Builder

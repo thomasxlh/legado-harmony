@@ -21,7 +21,17 @@ struct ThemeColorOption {
   @Prop cardColor: string = '#FFFFFF';
   @Prop primaryTextColor: string = '#1F1F1F';
   @Prop accentColor: string = '#007DFF';
+  // 允许留空：留空表示跟随回退色（默认强调色），色块回落显示该回退色。
+  @Prop allowEmpty: boolean = false;
+  @Prop emptyFallbackColor: string = '';
   onColorChange: (color: string) => void = (_color: string): void => {};
+
+  displayColor(): string {
+    if (this.allowEmpty && !this.color) {
+      return this.emptyFallbackColor || this.accentColor;
+    }
+    return this.color;
+  }
 
   build() {
     Stack() {
@@ -34,7 +44,7 @@ struct ThemeColorOption {
           .width(30)
           .height(30)
           .borderRadius(15)
-          .backgroundColor(this.color)
+          .backgroundColor(this.displayColor())
           .border({ width: 2, color: this.appDarkMode ? '#55FFFFFF' : '#22000000' })
       }
       .width('calc(100% - 32vp)')
@@ -47,9 +57,10 @@ struct ThemeColorOption {
 
       AdaptiveColorPicker({
         value: this.color,
-        placeholder: this.color,
+        placeholder: this.displayColor(),
         appDarkMode: this.appDarkMode,
         accentColor: this.accentColor,
+        allowEmpty: this.allowEmpty,
         optionTitle: this.title,
         hideOptionTrigger: true,
         onColorChange: (color: string) => {
@@ -70,6 +81,10 @@ struct ThemeColorSettingsPage {
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
+  @StorageLink('appTabBarLightColor') appTabBarLightColor: string = '';
+  @StorageLink('appTabBarDarkColor') appTabBarDarkColor: string = '';
+  @StorageLink('appTabBarUnselectedLightColor') appTabBarUnselectedLightColor: string = '';
+  @StorageLink('appTabBarUnselectedDarkColor') appTabBarUnselectedDarkColor: string = '';
   @State selectedMode: string = 'light';
   @State lightAccentColor: string = '#007DFF';
   @State darkAccentColor: string = '#4E9BFF';
@@ -428,6 +443,40 @@ struct ThemeColorSettingsPage {
     return this.selectedMode === 'dark' ? this.darkButtonColor : this.lightButtonColor;
   }
 
+  currentTabBarColor(): string {
+    return this.selectedMode === 'dark' ? this.appTabBarDarkColor : this.appTabBarLightColor;
+  }
+
+  setTabBarColor(color: string): void {
+    const normalized = color.trim();
+    const value = /^#?[0-9a-fA-F]{6}$/.test(normalized) ?
+      (normalized.startsWith('#') ? normalized.toUpperCase() : `#${normalized.toUpperCase()}`) : '';
+    if (this.selectedMode === 'dark') {
+      this.appTabBarDarkColor = value;
+    } else {
+      this.appTabBarLightColor = value;
+    }
+  }
+
+  currentTabBarUnselectedColor(): string {
+    return this.selectedMode === 'dark' ? this.appTabBarUnselectedDarkColor : this.appTabBarUnselectedLightColor;
+  }
+
+  tabUnselectedFallbackColor(): string {
+    return ThemeRuntime.subTextColor(this.selectedMode === 'dark');
+  }
+
+  setTabBarUnselectedColor(color: string): void {
+    const normalized = color.trim();
+    const value = /^#?[0-9a-fA-F]{6}$/.test(normalized) ?
+      (normalized.startsWith('#') ? normalized.toUpperCase() : `#${normalized.toUpperCase()}`) : '';
+    if (this.selectedMode === 'dark') {
+      this.appTabBarUnselectedDarkColor = value;
+    } else {
+      this.appTabBarUnselectedLightColor = value;
+    }
+  }
+
   pageColor(): string {
     return ThemeRuntime.pageColor(this.appDarkMode);
   }
@@ -560,6 +609,31 @@ struct ThemeColorSettingsPage {
           this.setCurrentAccentColor(color);
         }
       })
+      ThemeColorOption({
+        title: '底部Tab选中色',
+        color: $appTabBarDarkColor,
+        appDarkMode: this.appDarkMode,
+        cardColor: this.cardColor(),
+        primaryTextColor: this.primaryTextColor(),
+        accentColor: this.darkAccentColor,
+        allowEmpty: true,
+        onColorChange: (color: string) => {
+          this.setTabBarColor(color);
+        }
+      })
+      ThemeColorOption({
+        title: '底部Tab未选中色',
+        color: $appTabBarUnselectedDarkColor,
+        appDarkMode: this.appDarkMode,
+        cardColor: this.cardColor(),
+        primaryTextColor: this.primaryTextColor(),
+        accentColor: this.darkAccentColor,
+        allowEmpty: true,
+        emptyFallbackColor: this.tabUnselectedFallbackColor(),
+        onColorChange: (color: string) => {
+          this.setTabBarUnselectedColor(color);
+        }
+      })
     } else {
       ThemeColorOption({
         title: '按钮色',
@@ -581,6 +655,31 @@ struct ThemeColorSettingsPage {
         accentColor: this.lightAccentColor,
         onColorChange: (color: string) => {
           this.setCurrentAccentColor(color);
+        }
+      })
+      ThemeColorOption({
+        title: '底部Tab选中色',
+        color: $appTabBarLightColor,
+        appDarkMode: this.appDarkMode,
+        cardColor: this.cardColor(),
+        primaryTextColor: this.primaryTextColor(),
+        accentColor: this.lightAccentColor,
+        allowEmpty: true,
+        onColorChange: (color: string) => {
+          this.setTabBarColor(color);
+        }
+      })
+      ThemeColorOption({
+        title: '底部Tab未选中色',
+        color: $appTabBarUnselectedLightColor,
+        appDarkMode: this.appDarkMode,
+        cardColor: this.cardColor(),
+        primaryTextColor: this.primaryTextColor(),
+        accentColor: this.lightAccentColor,
+        allowEmpty: true,
+        emptyFallbackColor: this.tabUnselectedFallbackColor(),
+        onColorChange: (color: string) => {
+          this.setTabBarUnselectedColor(color);
         }
       })
     }

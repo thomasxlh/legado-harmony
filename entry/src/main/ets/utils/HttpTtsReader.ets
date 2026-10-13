@@ -164,6 +164,20 @@ export class HttpTtsReader {
     return this.pcmPlayer.isPaused() || this.avPlayer.isPaused();
   }
 
+  isInterrupted(): boolean {
+    return this.pcmPlayer.isInterrupted() || this.avPlayer.isInterrupted();
+  }
+
+  setOnInterruptedChangeListener(listener: () => void): void {
+    this.pcmPlayer.setOnInterruptedChangeListener(listener);
+    this.avPlayer.setOnInterruptedChangeListener(listener);
+  }
+
+  async clearSystemInterrupt(): Promise<void> {
+    await this.pcmPlayer.clearSystemInterrupt();
+    await this.avPlayer.clearSystemInterrupt();
+  }
+
   stop(): void {
     this.generation++;
     const clients = this.currentClients.slice();

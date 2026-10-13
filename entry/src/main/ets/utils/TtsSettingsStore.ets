@@ -24,6 +24,11 @@ export class TtsSettingsStore {
   private static readonly STORE_NAME: string = 'tts_settings';
   private static cachedSettings: TtsSettings | null = null;
 
+  /** 云端偏好应用后失效内存缓存，下次 load() 重新读 Preferences。 */
+  static invalidateCache(): void {
+    TtsSettingsStore.cachedSettings = null;
+  }
+
   static async load(context: Context): Promise<TtsSettings> {
     if (TtsSettingsStore.cachedSettings) {
       return TtsSettingsStore.clone(TtsSettingsStore.cachedSettings);

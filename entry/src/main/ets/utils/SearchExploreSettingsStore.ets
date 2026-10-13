@@ -48,6 +48,11 @@ export class SearchExploreSettingsStore {
   private static readonly MIN_SEARCH_CONCURRENCY: number = 1;
   private static cachedSettings: SearchExploreSettings | null = null;
 
+  /** 云端偏好应用后失效内存缓存，下次 load() 重新读 Preferences。 */
+  static invalidateCache(): void {
+    SearchExploreSettingsStore.cachedSettings = null;
+  }
+
   static async load(context: Context): Promise<SearchExploreSettings> {
     if (SearchExploreSettingsStore.cachedSettings) {
       return SearchExploreSettingsStore.clone(SearchExploreSettingsStore.cachedSettings);

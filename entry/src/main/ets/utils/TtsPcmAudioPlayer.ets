@@ -48,6 +48,7 @@ export class TtsPcmAudioPlayer {
   private paused: boolean = false;
   private systemInterrupted: boolean = false;
   private systemDucked: boolean = false;
+  private interruptedChangeListener: (() => void) | null = null;
   private resumeWaiters: Array<() => void> = [];
   private playbackWaiters: Array<() => void> = [];
 
@@ -328,6 +329,38 @@ export class TtsPcmAudioPlayer {
 
   isPaused(): boolean {
     return this.paused;
+  }
+
+  isInterrupted(): boolean {
+    return this.systemInterrupted;
+  }
+
+  setOnInterruptedChangeListener(listener: () => void): void {
+    this.interruptedChangeListener = listener;
+  }
+
+  /**
+   * Clears a forced external interruption and retries the renderer, for a user
+   * resume issued before the system delivered INTERRUPT_HINT_RESUME.
+   */
+  async clearSystemInterrupt(): Promise<void> {
+    if (!this.systemInterrupted) {
+      return;
+    }
+    this.systemInterrupted = false;
+    this.systemDucked = false;
+    const renderer = this.renderer;
+    if (renderer) {
+      await this.resumeRendererAfterInterrupt(renderer);
+    }
+    this.notifyInterruptedChange();
+  }
+
+  private notifyInterruptedChange(): void {
+    const listener = this.interruptedChangeListener;
+    if (listener) {
+      listener();
+    }
   }
 
   stop(): void {
@@ -728,12 +761,14 @@ export class TtsPcmAudioPlayer {
       }
       this.systemInterrupted = true;
       this.updatePlaybackTimeline(this.playGeneration);
+      this.notifyInterruptedChange();
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
       this.systemInterrupted = false;
       this.systemDucked = false;
       this.resumeRendererAfterInterrupt(renderer);
+      this.notifyInterruptedChange();
     }
   }
 

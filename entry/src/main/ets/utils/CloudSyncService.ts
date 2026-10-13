@@ -37,7 +37,8 @@ export class CloudSyncOutcome {
 
 export class CloudSyncService {
   static readonly SYNC_TABLES: string[] =
-    ['books', 'book_sources', 'book_groups', 'search_keywords', 'bookmarks'];
+    ['books', 'book_sources', 'book_groups', 'search_keywords', 'bookmarks', 'app_preferences',
+      'theme_assets'];
 
   /**
    * 端云分布式表的 autoSync 取值，**必须为 true**。
@@ -92,6 +93,11 @@ export class CloudSyncService {
   private static pendingSince: number = 0;
   private static autoSyncTriggerRegistered: boolean = false;
   private static followUpTimer: number = -1;
+  /**
+   * 云同步会话终局的监听者（如偏好同步桥：会话定稿后对 app_preferences 行做
+   * 双向对账）。监听回调必须自行幂等：迟到终态会让 applyOutcome 二次触发。
+   */
+  private static sessionListeners: Array<(outcome: CloudSyncOutcome) => void> = [];
 
   static readonly AUTO_SYNC_MIN_INTERVAL_MS: number = 5 * 60 * 1000;
   /** 槽位陈旧阈值：远超单次同步的最坏耗时，用于兜底回收。 */
@@ -169,6 +175,22 @@ export class CloudSyncService {
       const err = error as BusinessError;
       hilog.warn(0x0000, 'CloudSync', 'onAutoSyncTrigger failed: %{public}d %{public}s',
         err.code, err.message);
+    }
+  }
+
+  /** 注册云同步会话终局监听。重复注册同一监听不会被去重，调用方自行保证只注册一次。 */
+  static addSessionListener(listener: (outcome: CloudSyncOutcome) => void): void {
+    CloudSyncService.sessionListeners.push(listener);
+  }
+
+  /** 通知所有会话监听者；单个监听者异常不影响其余监听与主流程。 */
+  private static notifySessionListeners(outcome: CloudSyncOutcome): void {
+    for (const listener of CloudSyncService.sessionListeners) {
+      try {
+        listener(outcome);
+      } catch (error) {
+        hilog.warn(0x0000, 'CloudSync', 'session listener failed: %{public}s', `${error}`);
+      }
     }
   }
 
@@ -665,6 +687,7 @@ export class CloudSyncService {
       outcome.status, outcome.uploadDone, outcome.uploadTotal,
       outcome.downloadDone, outcome.downloadTotal, outcome.failedRows);
     CloudSyncService.setStatus(outcome.status, outcome.message);
+    CloudSyncService.notifySessionListeners(outcome);
   }
 
   /** 最近一次会话的传输行数落到 device_meta，跨冷启动保留，供界面展示。 */
@@ -734,7 +757,11 @@ export class CloudSyncService {
       'book_groups': ['groupName'],
       'search_keywords': ['keyword'],
       'bookmarks': ['bookmarkUrl', 'bookUrl', 'bookName', 'bookAuthor',
-        'chapterName', 'content']
+        'chapterName', 'content'],
+      'app_preferences': ['prefValue'],
+      // ASSET 列（file）的二进制不落 SQL 表（在分布式文件区），SQL 侧只统计 assetKey
+      // 本身，图片本体的占用见端云资产实际存储，不在此列。
+      'theme_assets': ['assetKey']
     };
     let total = 0;
     for (const table of CloudSyncService.SYNC_TABLES) {

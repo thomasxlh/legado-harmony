@@ -24,6 +24,13 @@ export class BookSourceLocal {
   rawSourceJson: string = '';
 }
 
+/** theme_assets 行：主题/背景图片的端云同步镜像，file 为 ASSET 列。 */
+export class ThemeAssetRow {
+  assetKey: string = '';
+  deletedAt: number = 0;
+  asset: relationalStore.Asset | null = null;
+}
+
 /**
  * 书籍 variable 中"只对本机有意义"的键。这些键留在 books 行里会随端云同步上传：
  * 本地绝对路径在另一台设备上不存在，WebDAV 引用指向本机配置，登录态属于凭据。
@@ -393,6 +400,33 @@ export class AppDatabase {
         bookUrl TEXT PRIMARY KEY,
         variable TEXT DEFAULT '{}',
         updatedAt INTEGER DEFAULT 0
+      )
+    `);
+
+    // 阅读偏好/主题设置的端云同步镜像：每个偏好 store（Preferences 文件）一行，
+    // prefValue 为该 store getAll() 的规范化 JSON 快照，由 PreferenceCloudSyncService
+    // 在偏好写入（防抖后）与云同步会话定稿后做双向对账。prefKey 即 store 文件名，
+    // 跨设备稳定，可直接作主键；updatedAt 仅作诊断用，不参与方向判定。
+    await this.store.executeSql(`
+      CREATE TABLE IF NOT EXISTS app_preferences (
+        prefKey TEXT PRIMARY KEY,
+        prefValue TEXT DEFAULT '',
+        updatedAt INTEGER DEFAULT 0
+      )
+    `);
+
+    // 主题/背景图片的端云同步镜像：assetKey 为 filesDir 下相对路径（目录名/文件名，
+    // 含 cover_albums 的相册子目录），跨设备稳定；file 为 ASSET 列，由
+    // ThemeAssetSyncService 把 filesDir 图片镜像到 distributedFilesDir 后入库上云；
+    // deletedAt 为删除墓碑——行保留以传播删除意图（防止其他设备据本地文件复活行），
+    // 资产状态置 ASSET_DELETE 让云端释放文件本体。端云同步表要求资产文件位于
+    // 分布式文件路径（distributedFilesDir）下，故入库前先镜像。
+    await this.store.executeSql(`
+      CREATE TABLE IF NOT EXISTS theme_assets (
+        assetKey TEXT PRIMARY KEY,
+        file ASSET,
+        updatedAt INTEGER DEFAULT 0,
+        deletedAt INTEGER DEFAULT 0
       )
     `);
 
@@ -3159,6 +3193,117 @@ export class AppDatabase {
     } catch (e) {
       console.warn('迁移书签主键失败:', e);
     }
+  }
+
+  /** app_preferences 全表读取：prefKey → prefValue，供偏好同步桥对账。 */
+  async getAppPreferenceRows(): Promise<Map<string, string>> {
+    const rows = new Map<string, string>();
+    if (!this.store) return rows;
+    const resultSet = await this.store.querySql('SELECT prefKey, prefValue FROM app_preferences');
+    try {
+      while (resultSet.goToNextRow()) {
+        const key = this.getStringColumn(resultSet, 'prefKey');
+        if (!key) continue;
+        rows.set(key, this.getStringColumn(resultSet, 'prefValue'));
+      }
+    } finally {
+      resultSet.close();
+    }
+    return rows;
+  }
+
+  /** 写入/覆盖一行偏好镜像并汇报云同步待上传。 */
+  async upsertAppPreferenceRow(prefKey: string, prefValue: string): Promise<void> {
+    if (!this.store || !prefKey) return;
+    await this.store.executeSql(
+      'INSERT OR REPLACE INTO app_preferences (prefKey, prefValue, updatedAt) VALUES (?, ?, ?)',
+      [prefKey, prefValue, Date.now()]);
+    CloudSyncService.notifyLocalChange();
+  }
+
+  /** 读 device_meta 的某个键；不存在时返回 undefined。 */
+  async getDeviceMetaValue(key: string): Promise<string | undefined> {
+    if (!this.store || !key) return undefined;
+    const resultSet = await this.store.querySql('SELECT value FROM device_meta WHERE key = ?', [key]);
+    try {
+      if (resultSet.goToFirstRow()) {
+        return this.getStringColumn(resultSet, 'value');
+      }
+      return undefined;
+    } finally {
+      resultSet.close();
+    }
+  }
+
+  /** 写 device_meta 的某个键。device_meta 不参与云同步，无需汇报变更。 */
+  async setDeviceMetaValue(key: string, value: string): Promise<void> {
+    if (!this.store || !key) return;
+    await this.store.executeSql('INSERT OR REPLACE INTO device_meta (key, value) VALUES (?, ?)',
+      [key, value]);
+  }
+
+  /** theme_assets 全表读取：assetKey → 行（含 ASSET 列元数据），供主题图片同步对账。 */
+  async getThemeAssetRows(): Promise<Map<string, ThemeAssetRow>> {
+    const rows = new Map<string, ThemeAssetRow>();
+    if (!this.store) return rows;
+    const resultSet = await this.store.querySql('SELECT assetKey, file, deletedAt FROM theme_assets');
+    try {
+      const fileIndex = resultSet.getColumnIndex('file');
+      while (resultSet.goToNextRow()) {
+        const key = this.getStringColumn(resultSet, 'assetKey');
+        if (!key) continue;
+        const row = new ThemeAssetRow();
+        row.assetKey = key;
+        row.deletedAt = this.getLongColumn(resultSet, 'deletedAt');
+        try {
+          row.asset = resultSet.getAsset(fileIndex);
+        } catch (e) {
+          // 资产元数据缺失/尚未下载：留空，由对账逻辑按行自行处理。
+          row.asset = null;
+        }
+        rows.set(key, row);
+      }
+    } finally {
+      resultSet.close();
+    }
+    return rows;
+  }
+
+  /** 写入/覆盖一行主题图片资产（file 为 ASSET 值）并汇报云同步待上传。 */
+  async upsertThemeAssetRow(assetKey: string, asset: relationalStore.Asset): Promise<void> {
+    if (!this.store || !assetKey) return;
+    const bucket: relationalStore.ValuesBucket = {
+      assetKey: assetKey,
+      file: asset,
+      updatedAt: Date.now()
+    };
+    const predicates = new relationalStore.RdbPredicates('theme_assets');
+    predicates.equalTo('assetKey', assetKey);
+    const changed = await this.store.update(bucket, predicates);
+    if (changed === 0) {
+      await this.store.insert('theme_assets', bucket);
+    }
+    CloudSyncService.notifyLocalChange();
+  }
+
+  /**
+   * 标记一行主题图片资产为已删除（墓碑）：置 deletedAt 传播删除意图，
+   * 资产状态置 ASSET_DELETE 让云端释放文件本体。行本身保留。
+   */
+  async tombstoneThemeAssetRow(assetKey: string, asset: relationalStore.Asset | null): Promise<void> {
+    if (!this.store || !assetKey) return;
+    const bucket: relationalStore.ValuesBucket = {
+      deletedAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    if (asset) {
+      asset.status = relationalStore.AssetStatus.ASSET_DELETE;
+      bucket['file'] = asset;
+    }
+    const predicates = new relationalStore.RdbPredicates('theme_assets');
+    predicates.equalTo('assetKey', assetKey);
+    await this.store.update(bucket, predicates);
+    CloudSyncService.notifyLocalChange();
   }
 }
 

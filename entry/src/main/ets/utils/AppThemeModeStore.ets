@@ -39,4 +39,9 @@ export class AppThemeModeStore {
     }
     return 'system';
   }
+
+  /** 云端偏好应用后失效内存缓存，下次 load() 重新读 Preferences。 */
+  static invalidateCache(): void {
+    AppThemeModeStore.cachedMode = '';
+  }
 }

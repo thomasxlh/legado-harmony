@@ -788,6 +788,11 @@ struct ReadBookPage {
     this.scheduleReaderLoadingSlowHint();
     ReaderProgressCheckpoint.attach(this.ttsFloatingSessionOwnerId,
       (): Promise<void> => this.flushReadingProgressCheckpoint());
+    // External audio interruptions (calls, other media apps) only flip flags inside the
+    // players. Republish the floating session so the capsule reflects the paused state.
+    this.ttsReader.setOnInterruptedChangeListener(() => {
+      this.updateTtsFloatingSession();
+    });
     this.readerPageVisible = true;
     this.readerObservedBackgroundRevision = AppStorage.get<number>('appLifecycleBackgroundRevision') || 0;
     this.applyReaderStatusBarSafeHeight(this.storedStatusBarHeight);
@@ -13397,9 +13402,9 @@ struct ReadBookPage {
       this.bookUrl,
       this.book?.name || '正在朗读',
       this.getChapterTitle(),
-      this.isTtsPaused,
+      this.isTtsPaused || this.ttsReader.isInterrupted(),
       () => this.toggleTtsReading(),
-      () => this.isTtsPaused || this.ttsReader.isPaused(),
+      () => this.isTtsPaused || this.ttsReader.isPaused() || this.ttsReader.isInterrupted(),
       () => this.stopTtsFloatingSession()
     );
     ReaderTtsFloatingSession.configureControls(
@@ -13446,7 +13451,7 @@ struct ReadBookPage {
       this.ttsFloatingSessionOwnerId,
       this.book?.name || '正在朗读',
       this.getChapterTitle(),
-      this.isTtsPaused
+      this.isTtsPaused || this.ttsReader.isInterrupted()
     );
     // Keeps the floating catalog highlight on the chapter being read. Availability
     // published here is recomputed identically by updateDetails below.
@@ -13489,7 +13494,7 @@ struct ReadBookPage {
         return;
       }
       try {
-        if (this.isTtsPaused || this.ttsReader.isPaused()) {
+        if (this.isTtsPaused || this.ttsReader.isPaused() || this.ttsReader.isInterrupted()) {
           this.isTtsPaused = false;
           if (await this.ttsReader.resume()) {
             this.isTtsSpeaking = true;
@@ -14232,7 +14237,7 @@ struct ReadBookPage {
 
   registerTtsAvSessionCommands(session: avSession.AVSession): void {
     session.on('play', () => {
-      if (this.isTtsPaused || this.ttsReader.isPaused()) {
+      if (this.isTtsPaused || this.ttsReader.isPaused() || this.ttsReader.isInterrupted()) {
         this.toggleTtsReading();
       } else if (!this.isTtsSpeaking && !this.ttsReader.isSpeaking()) {
         this.startTtsReadingFromCurrentPosition(false);

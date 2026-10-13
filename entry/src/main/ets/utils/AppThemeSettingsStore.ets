@@ -106,6 +106,11 @@ export class AppThemeSettingsStore {
   private static readonly STORE_NAME: string = 'app_theme_settings';
   private static cachedSettings: AppThemeSettings | null = null;
 
+  /** 云端偏好应用后失效内存缓存，下次 load() 重新读 Preferences。 */
+  static invalidateCache(): void {
+    AppThemeSettingsStore.cachedSettings = null;
+  }
+
   static async load(context: Context): Promise<AppThemeSettings> {
     if (AppThemeSettingsStore.cachedSettings) {
       return AppThemeSettingsStore.clone(AppThemeSettingsStore.cachedSettings);
