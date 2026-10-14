@@ -1,11 +1,11 @@
-# 开源读书
+# 轻观如是
 
-开源读书是一款使用 ArkTS / ArkUI 开发的 HarmonyOS NEXT 本地阅读应用，面向手机、平板和 PC/2in1，提供书架、搜索、发现、书源管理、正文阅读、漫画、有声书、朗读与个性化设置等能力。
+轻观如是是一款使用 ArkTS / ArkUI 开发的 HarmonyOS NEXT 本地阅读应用，面向手机、平板和 PC/2in1，提供书架、搜索、发现、书源管理、正文阅读、漫画、有声书、朗读与个性化设置等能力。
 
 | 项目 | 信息 |
 | --- | --- |
 | 应用包名 | `legado.intrimple.com` |
-| 当前版本 | `4.0.5`（以 `AppScope/app.json5` 为准） |
+| 当前版本 | `4.0.6`（以 `AppScope/app.json5` 为准） |
 | 支持设备 | `phone`、`tablet`、`2in1` |
 | 最低 API | HarmonyOS API 12 |
 | 目标 API | HarmonyOS API 26 |
@@ -181,8 +181,8 @@ legado-harmony/
 | --- | --- |
 | 主模块 | `entry` |
 | 入口 Ability | `EntryAbility` |
-| `versionName` | `4.0.5` |
-| `versionCode` / `buildVersion` | `4000005` |
+| `versionName` | `4.0.6` |
+| `versionCode` / `buildVersion` | `4000006` |
 | `minAPIVersion` | `12` |
 | `targetAPIVersion` | `26` |
 | 权限 | `INTERNET`、`GET_NETWORK_INFO`、`KEEP_BACKGROUND_RUNNING`、`CAMERA`（仅在用户启用眼动翻页时请求） |
@@ -283,7 +283,7 @@ node --experimental-strip-types scripts/replace-rule-import-check.mjs
 
 ## 隐私政策
 
-开源读书本地优先：无账号系统、无广告、无统计 SDK、无崩溃上报，阅读数据默认仅存储在本机。数据处理方式详见 [PRIVACY.md](PRIVACY.md)。
+轻观如是本地优先：无账号系统、无广告、无统计 SDK、无崩溃上报，阅读数据默认仅存储在本机。数据处理方式详见 [PRIVACY.md](PRIVACY.md)。
 
 ## 合规与免责声明
 
@@ -299,7 +299,7 @@ node --experimental-strip-types scripts/replace-rule-import-check.mjs
 
 本项目采用 [GPL-3.0](LICENSE) 许可证。
 
-- 项目名称：开源读书 / legado-harmony
+- 项目名称：轻观如是 / legado-harmony
 - 版权所有：Copyright © 2026 legado-harmony contributors
 - 上游项目：[wip3l/legado-harmony](https://github.com/wip3l/legado-harmony)（GPL-3.0），本项目基于其二次开发；书源规则格式兼容 [gedoor/legado 开源阅读](https://github.com/gedoor/legado)（GPL-3.0）
 

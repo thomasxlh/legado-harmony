@@ -1,6 +1,6 @@
 # 主题开发指南
 
-开源读书的主题由编译期 `ThemePack`、运行时 `ThemeRuntime` 和持久化兼容层组成。当前内置主题只保留默认主题 `plain-default`，其余外观由用户自建的自定义主题方案（最多 5 套）承载。主题选择保存稳定的 `themeId` 与用户颜色覆盖值；`Resource` 与图标由资源注册表解析，不进入 Preferences。
+轻观如是的主题由编译期 `ThemePack`、运行时 `ThemeRuntime` 和持久化兼容层组成。当前内置主题只保留默认主题 `plain-default`，其余外观由用户自建的自定义主题方案（最多 5 套）承载。主题选择保存稳定的 `themeId` 与用户颜色覆盖值；`Resource` 与图标由资源注册表解析，不进入 Preferences。
 
 ## 目录与职责
 
@@ -106,7 +106,7 @@ HarmonyOS 的 `startWindowIcon` 与 `startWindowBackground` 不可缺省，因�
 
 - 自定义主题上传了启动封面，或填写了主/副标题时，`EntryAbility` 加载 `pages/Startup`，由 `ThemeStartupCover` 绘制封面与文案。
 - 两者都为空时不绘制业务启动页，`EntryAbility` 直接加载 `pages/Index`。
-- 封面主/副标题默认留空，只有用户显式填写才展示。历史上被强制写入的默认值「开源读书」会在 `AppThemeSettingsStore` 读取时迁移为空字符串。
+- 封面主/副标题默认留空，只有用户显式填写才展示。历史上被强制写入的默认值「轻观如是」会在 `AppThemeSettingsStore` 读取时迁移为空字符串。
 
 ## 主界面背景
 

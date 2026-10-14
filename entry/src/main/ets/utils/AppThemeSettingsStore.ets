@@ -100,9 +100,9 @@ export class AppThemeSettingsStore {
   static readonly DEFAULT_MAIN_BACKGROUND_OPACITY: number = 100;
   static readonly MIN_MAIN_BACKGROUND_OPACITY: number = 10;
   static readonly MAX_MAIN_BACKGROUND_OPACITY: number = 100;
-  // 早期版本把「开源读书」作为启动封面主标题的强制默认值写入存储。文案改为留空
+  // 早期版本把「轻观如是」作为启动封面主标题的强制默认值写入存储。文案改为留空
   // 之后，需要把它当作“未填写”，否则老用户仍会被强制显示底部标题。
-  private static readonly LEGACY_STARTUP_TITLE: string = '开源读书';
+  private static readonly LEGACY_STARTUP_TITLE: string = '轻观如是';
   private static readonly STORE_NAME: string = 'app_theme_settings';
   private static cachedSettings: AppThemeSettings | null = null;
 

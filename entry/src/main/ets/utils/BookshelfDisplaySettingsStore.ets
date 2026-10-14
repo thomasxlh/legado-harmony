@@ -6,9 +6,9 @@ export class BookshelfDisplaySettings {
   showSource: boolean = true;
   showIntro: boolean = true;
   showFullIntro: boolean = false;
-  showProgressBar: boolean = false;
+  showProgressBar: boolean = true;
   showLastReadTime: boolean = true;
-  showLastReadChapter: boolean = false;
+  showLastReadChapter: boolean = true;
   showTypeBadge: boolean = true;
   layoutMode: string = 'compact';
   lastReadLeafMode: string = 'adaptive';
@@ -45,11 +45,11 @@ export class BookshelfDisplaySettingsStore {
     settings.showFullIntro = await BookshelfDisplaySettingsStore.getBoolean(
       store, BookshelfDisplaySettingsStore.KEY_SHOW_FULL_INTRO, false);
     settings.showProgressBar = await BookshelfDisplaySettingsStore.getBoolean(
-      store, BookshelfDisplaySettingsStore.KEY_SHOW_PROGRESS_BAR, false);
+      store, BookshelfDisplaySettingsStore.KEY_SHOW_PROGRESS_BAR, true);
     settings.showLastReadTime = await BookshelfDisplaySettingsStore.getBoolean(
       store, BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_TIME, true);
     settings.showLastReadChapter = await BookshelfDisplaySettingsStore.getBoolean(
-      store, BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_CHAPTER, false);
+      store, BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_CHAPTER, true);
     settings.showTypeBadge = await BookshelfDisplaySettingsStore.getBoolean(
       store, BookshelfDisplaySettingsStore.KEY_SHOW_TYPE_BADGE, true);
     settings.layoutMode = BookshelfDisplaySettingsStore.normalizeLayoutMode(await BookshelfDisplaySettingsStore.getString(
@@ -106,9 +106,9 @@ export class BookshelfDisplaySettingsStore {
     settings.showSource = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_SOURCE) ?? true;
     settings.showIntro = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_INTRO) ?? true;
     settings.showFullIntro = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_FULL_INTRO) ?? false;
-    settings.showProgressBar = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_PROGRESS_BAR) ?? false;
+    settings.showProgressBar = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_PROGRESS_BAR) ?? true;
     settings.showLastReadTime = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_TIME) ?? true;
-    settings.showLastReadChapter = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_CHAPTER) ?? false;
+    settings.showLastReadChapter = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_CHAPTER) ?? true;
     settings.showTypeBadge = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_TYPE_BADGE) ?? true;
     settings.layoutMode = BookshelfDisplaySettingsStore.normalizeLayoutMode(
       AppStorage.get<string>(BookshelfDisplaySettingsStore.KEY_LAYOUT_MODE) ?? 'compact');

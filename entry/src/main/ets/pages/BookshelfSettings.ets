@@ -20,9 +20,9 @@ struct BookshelfSettingsPage {
   @StorageLink('bookshelfShowSource') bookshelfShowSource: boolean = true;
   @StorageLink('bookshelfShowIntro') bookshelfShowIntro: boolean = true;
   @StorageLink('bookshelfShowFullIntro') bookshelfShowFullIntro: boolean = false;
-  @StorageLink('bookshelfShowProgressBar') bookshelfShowProgressBar: boolean = false;
+  @StorageLink('bookshelfShowProgressBar') bookshelfShowProgressBar: boolean = true;
   @StorageLink('bookshelfShowLastReadTime') bookshelfShowLastReadTime: boolean = true;
-  @StorageLink('bookshelfShowLastReadChapter') bookshelfShowLastReadChapter: boolean = false;
+  @StorageLink('bookshelfShowLastReadChapter') bookshelfShowLastReadChapter: boolean = true;
   @StorageLink('bookshelfShowTypeBadge') bookshelfShowTypeBadge: boolean = true;
   @StorageLink('bookshelfLayoutMode') bookshelfLayoutMode: string = 'compact';
   @StorageLink('bookshelfLastReadLeafMode') bookshelfLastReadLeafMode: string = 'adaptive';

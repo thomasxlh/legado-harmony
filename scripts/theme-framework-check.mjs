@@ -73,7 +73,7 @@ assert(entryAbility.includes('customStartupText'),
   'Cold start must skip the startup page when neither cover nor text is configured');
 
 // Startup cover text is opt-in: the legacy forced default title must be gone.
-assert(!themeStore.includes("customLightStartupTitle: string = '开源读书'"),
+assert(!themeStore.includes("customLightStartupTitle: string = '轻观如是'"),
   'Startup cover title must default to empty');
 assert(themeStore.includes('migrateStartupText'), 'Legacy startup title migration is missing');
 assert(themeColorPage.includes('setSchemeName'), 'Custom theme name editing is missing');

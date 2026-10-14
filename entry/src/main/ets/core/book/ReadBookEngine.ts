@@ -445,6 +445,17 @@ export class ReadBookEngine {
     return await this.fetchContent(idx);
   }
 
+  /**
+   * 拉取指定章节的最新正文：绕过内存/磁盘缓存且不回写缓存。
+   * 书架拉取刷新用它统计当前阅读章节的联网最新字数。
+   */
+  async fetchFreshChapterContent(idx: number): Promise<string> {
+    if (idx < 0 || idx >= this.chapters.length || !this.book || !this.source) return '';
+    const chapter = this.chapters[idx];
+    const text = await this.webBook.getContent(this.source, this.book, chapter);
+    return text || '';
+  }
+
   getCachedContent(idx: number): string {
     if (idx < 0 || idx >= this.chapters.length) return '';
 

@@ -128,9 +128,9 @@ export default class EntryAbility extends UIAbility {
     PersistentStorage.persistProp('bookshelfShowSource', true);
     PersistentStorage.persistProp('bookshelfShowIntro', true);
     PersistentStorage.persistProp('bookshelfShowFullIntro', false);
-    PersistentStorage.persistProp('bookshelfShowProgressBar', false);
+    PersistentStorage.persistProp('bookshelfShowProgressBar', true);
     PersistentStorage.persistProp('bookshelfShowLastReadTime', true);
-    PersistentStorage.persistProp('bookshelfShowLastReadChapter', false);
+    PersistentStorage.persistProp('bookshelfShowLastReadChapter', true);
     PersistentStorage.persistProp('bookshelfLayoutMode', 'compact');
     PersistentStorage.persistProp('bookshelfLastReadLeafMode', 'adaptive');
     PersistentStorage.persistProp('bookshelfBookOpenAnimation', true);

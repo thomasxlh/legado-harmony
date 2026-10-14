@@ -48,6 +48,7 @@ import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { WebBookService } from '../core/book/WebBookService';
 import { ChapterWordCountMeasurer } from '../core/book/ChapterWordCountMeasurer';
 import { BookChangeSourceDialog } from '../components/BookChangeSourceDialog';
+import { WordCountFormatter } from '../utils/WordCountFormatter';
 import { BookFieldSanitizer } from '../utils/BookFieldSanitizer';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
@@ -1054,9 +1055,9 @@ struct BookshelfPage {
   @StorageLink('bookshelfShowSource') bookshelfShowSource: boolean = true;
   @StorageLink('bookshelfShowIntro') bookshelfShowIntro: boolean = true;
   @StorageLink('bookshelfShowFullIntro') bookshelfShowFullIntro: boolean = false;
-  @StorageLink('bookshelfShowProgressBar') bookshelfShowProgressBar: boolean = false;
+  @StorageLink('bookshelfShowProgressBar') bookshelfShowProgressBar: boolean = true;
   @StorageLink('bookshelfShowLastReadTime') bookshelfShowLastReadTime: boolean = true;
-  @StorageLink('bookshelfShowLastReadChapter') bookshelfShowLastReadChapter: boolean = false;
+  @StorageLink('bookshelfShowLastReadChapter') bookshelfShowLastReadChapter: boolean = true;
   @StorageLink('bookshelfShowTypeBadge') bookshelfShowTypeBadge: boolean = true;
   @StorageLink('bookshelfLayoutMode') bookshelfLayoutMode: string = 'compact';
   @StorageLink('bookshelfLastReadLeafMode') bookshelfLastReadLeafMode: string = 'adaptive';
@@ -1569,9 +1570,12 @@ struct BookshelfPage {
     // the retained card keeps rendering the old percentage until the whole bookshelf is recreated.
     const progressChapterIndex = book.getVariable('readProgressChapterIndex');
     const progressPageCount = book.getVariable('readProgressPageCount');
+    // 拉取刷新只更新实测字数变量，章节进度不变；不进 key 的话 LazyForEach 会继续渲染无字数的旧卡片。
+    const wordCount = book.getVariable('durChapterWordCount');
     return `${prefix}_${book.bookUrl}_pin_${book.isPinned ? '1' : '0'}_` +
       `read_${book.durChapterTime}_${book.durChapterIndex}_${book.durChapterPos}_` +
-      `${progressChapterIndex}_${progressPageCount}_cover_${this.shelfCoverRenderVersions.get(book.bookUrl) || 0}`;
+      `${progressChapterIndex}_${progressPageCount}_wc_${wordCount}_` +
+      `cover_${this.shelfCoverRenderVersions.get(book.bookUrl) || 0}`;
   }
 
   openCustomNetworkCoverDialog(): void {
@@ -6194,6 +6198,9 @@ struct BookshelfPage {
             const keepNewUpdate = hasNewUpdate && acknowledgedAt < refreshStartedAt;
             refreshedBook.putVariable(SHELF_UPDATE_BADGE_VARIABLE,
               keepPendingUpdate || keepNewUpdate ? '1' : '');
+            if (!silent) {
+              await this.measureShelfChapterWordCount(db, engine, refreshedBook);
+            }
             await db.updateBook(refreshedBook);
             if (hasNewUpdate) {
               updated++;
@@ -6228,6 +6235,27 @@ struct BookshelfPage {
         const message = skippedFinished > 0 ? `没有可刷新的连载书籍，已跳过${skippedFinished}本完结` : '没有可刷新的网络书籍';
         HdsFeedback.showToast(message);
       }
+    }
+  }
+
+  /**
+   * 拉取刷新时实测当前阅读章节的联网最新字数（绕过正文缓存），
+   * 正文请求失败时回退磁盘缓存里的旧正文长度，两者都拿不到则保留原有记录。
+   */
+  async measureShelfChapterWordCount(db: AppDatabase, engine: ReadBookEngine, book: Book): Promise<void> {
+    try {
+      if (!book.bookUrl || !Book.hasStartedReading(book)) return;
+      const chapterIndex = book.durChapterIndex;
+      if (chapterIndex < 0 || chapterIndex >= engine.chapters.length) return;
+      const cached = await db.getCachedChapterContent(book.bookUrl, chapterIndex);
+      const fresh = await engine.fetchFreshChapterContent(chapterIndex);
+      const content = fresh.length > 0 ? fresh : cached;
+      const count = content.length;
+      if (count <= 0) return;
+      book.putVariable('durChapterWordCountIndex', `${chapterIndex}`);
+      book.putVariable('durChapterWordCount', `${count}`);
+    } catch (e) {
+      console.warn('统计书架当前章节字数失败:', book.name, e);
     }
   }
 
@@ -6917,11 +6945,24 @@ struct BookshelfPage {
     }
     if (this.bookshelfShowLastReadChapter) {
       const chapterText = this.getReadChapterText(book);
-      if (chapterText) {
-        parts.push(chapterText);
+      const wordCountText = this.getCurrentChapterWordCountText(book);
+      if (chapterText && wordCountText) {
+        parts.push(`${chapterText} · ${wordCountText}`);
+      } else if (chapterText || wordCountText) {
+        parts.push(chapterText || wordCountText);
       }
     }
     return parts.join(' · ');
+  }
+
+  /** 拉取刷新实测的当前阅读章节字数；章节进度变化后旧值作废。 */
+  getCurrentChapterWordCountText(book: Book): string {
+    const chapterIndex = Number.parseInt(book.getVariable('durChapterWordCountIndex'));
+    const count = Number.parseInt(book.getVariable('durChapterWordCount'));
+    if (chapterIndex !== book.durChapterIndex || !(count > 0)) {
+      return '';
+    }
+    return WordCountFormatter.formatWithUnit(count);
   }
 
   getReadChapterText(book: Book): string {
