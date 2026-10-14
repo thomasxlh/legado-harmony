@@ -3370,7 +3370,8 @@ struct BookshelfPage {
   }
 
   shelfProgressPanelHeight(): number {
-    return this.shelfSmallTextLineHeight() + 4 + 3;
+    // 「字数 · 章节」独立行在进度面板内恒定预留（实测字数不随章节开关隐藏），封面才能对齐。
+    return this.shelfSmallTextLineHeight() + 4 + this.shelfSmallTextLineHeight() + 4 + 3;
   }
 
   /** 信息块最后一行的高度——封面底部与它对齐。 */
@@ -6896,6 +6897,10 @@ struct BookshelfPage {
   @Builder
   readProgressPanel(book: Book) {
     Column({ space: 4 }) {
+      if (this.hasChapterWordCountLine(book)) {
+        this.chapterWordCountLine(book, false)
+      }
+
       Text(this.getReadProgressInfoText(book))
         .fontSize(12)
         // 行高固定，shelfProgressPanelHeight() 才能算出与封面一致的高度。
@@ -6918,6 +6923,10 @@ struct BookshelfPage {
   @Builder
   looseReadProgressPanel(book: Book) {
     Column({ space: 4 }) {
+      if (this.hasChapterWordCountLine(book)) {
+        this.chapterWordCountLine(book, true)
+      }
+
       Progress({ value: this.getReadProgressValue(book), total: 100, type: ProgressType.Linear })
         .width('100%')
         .height(3)
@@ -6943,16 +6952,44 @@ struct BookshelfPage {
     if (this.bookshelfShowLastReadTime) {
       parts.push(this.getLastReadTimeText(book));
     }
-    if (this.bookshelfShowLastReadChapter) {
-      const chapterText = this.getReadChapterText(book);
-      const wordCountText = this.getCurrentChapterWordCountText(book);
-      if (chapterText && wordCountText) {
-        parts.push(`${chapterText} · ${wordCountText}`);
-      } else if (chapterText || wordCountText) {
-        parts.push(chapterText || wordCountText);
+    return parts.join(' · ');
+  }
+
+  /** 字数行是否出现：实测字数不受「显示最后阅读章节」开关约束，章节标题仍随开关。 */
+  hasChapterWordCountLine(book: Book): boolean {
+    if (!Book.hasStartedReading(book)) {
+      return false;
+    }
+    if (this.getCurrentChapterWordCountText(book)) {
+      return true;
+    }
+    return this.bookshelfShowLastReadChapter && !!this.getReadChapterText(book);
+  }
+
+  /** 字数是重点数据：主题色+中等字重置于行首，章节标题保持次级色，过长时只在末尾省略。 */
+  @Builder
+  chapterWordCountLine(book: Book, center: boolean) {
+    Text() {
+      if (this.getCurrentChapterWordCountText(book)) {
+        Span(this.getCurrentChapterWordCountText(book))
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.accentColor())
+        if (this.bookshelfShowLastReadChapter && this.getReadChapterText(book)) {
+          Span(' · ')
+        }
+      }
+      if (this.bookshelfShowLastReadChapter && this.getReadChapterText(book)) {
+        Span(this.getReadChapterText(book))
       }
     }
-    return parts.join(' · ');
+    .fontSize(12)
+    // 行高固定，shelfProgressPanelHeight() 才能算出与封面一致的高度。
+    .lineHeight(this.shelfSmallTextLineHeight())
+    .fontColor(this.subTextColor())
+    .width('100%')
+    .textAlign(center ? TextAlign.Center : TextAlign.Start)
+    .maxLines(1)
+    .textOverflow({ overflow: TextOverflow.Ellipsis })
   }
 
   /** 拉取刷新实测的当前阅读章节字数；章节进度变化后旧值作废。 */
