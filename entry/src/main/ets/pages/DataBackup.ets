@@ -518,7 +518,12 @@ struct DataBackupPage {
       console.error('导出应用数据失败:', e);
       HdsFeedback.showToast(`导出失败：${e instanceof Error ? e.message : String(e)}`);
     } finally {
-      await AppDataBackupService.discardExport(archivePath);
+      try {
+        await AppDataBackupService.discardExport(archivePath);
+      } catch (cleanupError) {
+        // 临时目录被外部破坏等边缘场景下清理会抛错；不能让它跳过 busy 复位把页面卡在“正在处理”。
+        console.warn('清理导出临时目录失败:', cleanupError);
+      }
       this.busy = false;
       this.busyText = '';
       this.busyProgress = 0;
@@ -631,7 +636,12 @@ struct DataBackupPage {
         });
       HdsFeedback.showToast(`导入完成：${result.summary()}`);
       this.importDescription = `导入完成：${result.summary()}。设置项重启应用后完全生效。`;
-      await AppDataBackupService.discardImport(this.importSession);
+      try {
+        await AppDataBackupService.discardImport(this.importSession);
+      } catch (cleanupError) {
+        // 临时数据清理失败不能把成功的导入误报成“导入失败”。
+        console.warn('清理导入临时数据失败:', cleanupError);
+      }
       this.importSession = null;
       this.importReady = false;
     } catch (e) {

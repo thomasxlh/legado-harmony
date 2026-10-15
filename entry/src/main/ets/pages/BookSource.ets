@@ -25,6 +25,7 @@ import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
+import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
 import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
 import { request } from '@kit.BasicServicesKit';
 import { webview } from '@kit.ArkWeb';
@@ -1134,7 +1135,7 @@ struct BookSourcePage {
         })
       }
 
-      if (this.webImportActive) {
+      if (this.webImportActive && WebRuntimeAvailability.isAvailable()) {
         Web({ src: 'about:blank', controller: this.webImportController })
           .width(1)
           .height(1)
@@ -1154,22 +1155,26 @@ struct BookSourcePage {
       // Keep one JS runtime mounted for the lifetime of this page. Creating a new
       // controller for every click can fire onControllerAttached before about:blank
       // is ready, leaving runJavaScript pending forever on some Harmony devices.
-      Web({ src: 'about:blank', controller: this.loginRuntimeController })
-        .width(1)
-        .height(1)
-        .opacity(0.01)
-        .javaScriptAccess(true)
-        .domStorageAccess(true)
-        .onPageBegin(() => {
-          this.loginRuntimeReady = false;
-        })
-        .onPageEnd(() => {
-          this.loginRuntimeReady = true;
-          const pageResolve = this.loginRuntimeWebViewPageResolve;
-          this.loginRuntimeWebViewPageResolve = null;
-          if (pageResolve) pageResolve();
-          this.continueLoginRuntime();
-        })
+      // Gate the mount: without ArkWeb capability constructing this node throws
+      // "undefined is not callable" and blanks the whole source-manager page.
+      if (WebRuntimeAvailability.isAvailable()) {
+        Web({ src: 'about:blank', controller: this.loginRuntimeController })
+          .width(1)
+          .height(1)
+          .opacity(0.01)
+          .javaScriptAccess(true)
+          .domStorageAccess(true)
+          .onPageBegin(() => {
+            this.loginRuntimeReady = false;
+          })
+          .onPageEnd(() => {
+            this.loginRuntimeReady = true;
+            const pageResolve = this.loginRuntimeWebViewPageResolve;
+            this.loginRuntimeWebViewPageResolve = null;
+            if (pageResolve) pageResolve();
+            this.continueLoginRuntime();
+          })
+      }
 
       if (this.isImporting) {
         Column() {
@@ -6449,6 +6454,10 @@ struct BookSourcePage {
   fetchImportUrlViaWeb(url: string): Promise<string> {
     const origin = this.importUrlOrigin(url);
     if (!origin) return Promise.reject(new Error('网页取数仅支持 HTTP/HTTPS 地址'));
+    if (!WebRuntimeAvailability.isAvailable()) {
+      // 宿主不会挂载（见 build 中的门控），立即失败而不是等下载超时。
+      return Promise.reject(new Error('当前设备不支持网页组件，无法通过浏览器取数'));
+    }
     if (this.webImportResolve || this.webImportReject) {
       return Promise.reject(new Error('已有网页取数任务正在运行'));
     }

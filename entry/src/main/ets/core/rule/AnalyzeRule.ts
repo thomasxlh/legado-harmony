@@ -19,6 +19,15 @@ const MAX_HTML_PARSE_LENGTH = 4 * 1024 * 1024;
  */
 export const TOC_HTML_PARSE_LENGTH = 12 * 1024 * 1024;
 
+/**
+ * 单条规则最多返回的元素数。原 5000 会把超过 5000 章的目录静默截断（且 push-then-check
+ * 实际保留 5001 条），与 Android Legado（无上限）行为不一致；提升到 20000 覆盖
+ * 已知最长网文目录，超出部分仍截断以防止 OOM。
+ */
+const MAX_RULE_ITEMS = 20000;
+/** 深度扫描（..key / 递归下降）的节点访问预算，需大于 MAX_RULE_ITEMS 以免先于条目数截断。 */
+const MAX_DEEP_SCAN_NODES = 80000;
+
 export class AnalyzeRule {
   private content: string = '';
   private baseUrl: string = '';
@@ -208,7 +217,7 @@ export class AnalyzeRule {
           } else {
             concatenated += match[0] || '';
           }
-          if (values.length > 5000) break;
+          if (values.length >= MAX_RULE_ITEMS) break;
           if ((match[0] || '').length === 0) regex.lastIndex++;
         }
         if (last) return values;
@@ -1055,13 +1064,13 @@ export class AnalyzeRule {
     const values: Object[] = [];
     const stack: Object[] = [obj];
     let visited = 0;
-    while (stack.length > 0 && visited < 20000 && values.length < 5000) {
+    while (stack.length > 0 && visited < MAX_DEEP_SCAN_NODES && values.length < MAX_RULE_ITEMS) {
       const current = stack.pop();
       visited++;
       if (Array.isArray(current)) {
         const array = current as Object[];
         for (let i = array.length - 1; i >= 0; i--) {
-          if (stack.length >= 20000) break;
+          if (stack.length >= MAX_DEEP_SCAN_NODES) break;
           stack.push(array[i]);
         }
       } else if (typeof current === 'object' && current !== null) {
@@ -1072,7 +1081,7 @@ export class AnalyzeRule {
           childKeys.push(childKey);
         }
         for (let i = childKeys.length - 1; i >= 0; i--) {
-          if (stack.length >= 20000) break;
+          if (stack.length >= MAX_DEEP_SCAN_NODES) break;
           stack.push(rec[childKeys[i]]);
         }
       }
@@ -1085,13 +1094,13 @@ export class AnalyzeRule {
     for (const value of values) {
       if (Array.isArray(value)) {
         for (const item of value as Object[]) {
-          if (flattened.length >= 5000) break;
+          if (flattened.length >= MAX_RULE_ITEMS) break;
           flattened.push(item);
         }
       } else {
         flattened.push(value);
       }
-      if (flattened.length >= 5000) break;
+      if (flattened.length >= MAX_RULE_ITEMS) break;
     }
     if (!index || index === '*') return flattened;
     const idx = parseInt(index);
@@ -1101,13 +1110,13 @@ export class AnalyzeRule {
   private deepFind(obj: Object, key: string): Object | string | undefined {
     const stack: Object[] = [obj];
     let visited = 0;
-    while (stack.length > 0 && visited < 20000) {
+    while (stack.length > 0 && visited < MAX_DEEP_SCAN_NODES) {
       const current = stack.pop();
       visited++;
       if (Array.isArray(current)) {
         const array = current as Object[];
         for (let i = array.length - 1; i >= 0; i--) {
-          if (stack.length >= 20000) break;
+          if (stack.length >= MAX_DEEP_SCAN_NODES) break;
           stack.push(array[i]);
         }
       } else if (typeof current === 'object' && current !== null) {
@@ -1118,7 +1127,7 @@ export class AnalyzeRule {
           childKeys.push(childKey);
         }
         for (let i = childKeys.length - 1; i >= 0; i--) {
-          if (stack.length >= 20000) break;
+          if (stack.length >= MAX_DEEP_SCAN_NODES) break;
           stack.push(rec[childKeys[i]]);
         }
       }
@@ -1207,14 +1216,14 @@ export class AnalyzeRule {
       const pending: Object[] = [root];
       let pendingIndex = 0;
       let visited = 0;
-      while (pendingIndex < pending.length && visited < 20000 && result.length < 5000) {
+      while (pendingIndex < pending.length && visited < MAX_DEEP_SCAN_NODES && result.length < MAX_RULE_ITEMS) {
         const candidate = pending[pendingIndex++];
         visited++;
         if (Array.isArray(candidate)) {
           const values = JsonPathEvaluator.evaluate(candidate, filterPath);
           for (const item of values) {
             result.push(item);
-            if (result.length >= 5000) break;
+            if (result.length >= MAX_RULE_ITEMS) break;
           }
           if (values.length === 0 && existenceParts.length > 0) {
             for (const item of candidate as Object[]) {
@@ -1227,7 +1236,7 @@ export class AnalyzeRule {
                 current = (current as Record<string, Object>)[part];
               }
               if (current !== undefined && current !== null) result.push(item);
-              if (result.length >= 5000) break;
+              if (result.length >= MAX_RULE_ITEMS) break;
             }
           }
           // Once an array satisfies the filter it is the intended list. Avoid returning
@@ -1732,7 +1741,7 @@ export class AnalyzeRule {
         if (this.matchExcludedAttrs(attrText, parsed.notAttrs)) continue;
         if (!this.matchNthPseudo(html, m.index, m[1], parsed.nthChild, parsed.nthOfType)) continue;
         res.push(this.sliceWholeElement(html, m.index, fullStartTag, m[1]));
-        if (res.length > 5000) break;
+        if (res.length >= MAX_RULE_ITEMS) break;
       }
       let filtered = parsed.excludeIndices.length === 0 ? res : this.excludeIndices(res, parsed.excludeIndices);
       if (containsText) filtered = filtered.filter(item => this.stripHtml(item).includes(containsText));
@@ -2077,7 +2086,7 @@ export class AnalyzeRule {
     let m: RegExpExecArray | null;
     while ((m = re.exec(inner)) !== null) {
       children.push(this.sliceWholeElement(inner, m.index, m[0], m[1]));
-      if (children.length > 5000) break;
+      if (children.length >= MAX_RULE_ITEMS) break;
       re.lastIndex = m.index + children[children.length - 1].length;
     }
     return children;
@@ -2097,7 +2106,7 @@ export class AnalyzeRule {
         } else {
           values.push(m[0]);
         }
-        if (values.length > 5000) break;
+          if (values.length >= MAX_RULE_ITEMS) break;
         if (m[0].length === 0) re.lastIndex++;
       }
       return values;

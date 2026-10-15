@@ -1,6 +1,8 @@
 import taskpool from '@ohos.taskpool';
 import { Book } from '../../model/data/Book';
 import { ReaderReplaceRule } from '../../utils/ReaderReplaceRuleStore';
+import { JavaRegexCompat } from '../rule/JavaRegexCompat';
+import { RegexSafetyGuard } from '../rule/RegexSafetyGuard';
 
 /**
  * Pure TaskPool entry. It deliberately owns no UI or database state so a pathological imported
@@ -30,7 +32,7 @@ function applyReaderRulesInTask(text: string, rulesJson: string, scopeText: stri
     const rule = rules[index];
     if (rule['enabled'] === false || rule['applyToContent'] === false) continue;
     const pattern = String(rule['pattern'] || '');
-    if (!pattern || pattern.length > 4096) continue;
+    if (!pattern) continue;
 
     let scopeAllowed = true;
     const includeTokens = String(rule['scope'] || '').split(/[\n,，;；]+/)
@@ -81,23 +83,35 @@ function applyReaderRulesInTask(text: string, rulesJson: string, scopeText: stri
     if (excluded) continue;
 
     try {
-      const replacement = String(rule['replacement'] || '');
+      const rawReplacement = String(rule['replacement'] || '');
       let matcher: RegExp | null = null;
       let plain = '';
+      let replacement = rawReplacement;
       if (rule['isRegex'] !== false) {
-        // Nested unbounded quantifiers are a common source of catastrophic backtracking. Imported
-        // rules with this shape are skipped instead of occupying a TaskPool worker indefinitely.
-        if (/(?:\([^)]*[+*][^)]*\)|\[[^\]]+\][+*])[+*{]/.test(pattern)) continue;
-        matcher = new RegExp(pattern, 'g');
+        // 与主线程预览路径保持同一语义：Java 方言先经 JavaRegexCompat 转换（内联标志、
+        // 占有量词、\Q..\E、$0 替换串等），否则导入的 Android 规则在阅读时要么静默失效、
+        // 要么把 `$0`/`\n` 字面写进正文。
+        if (RegexSafetyGuard.isLikelyCatastrophic(pattern)) {
+          console.warn(`[ReaderPreprocessor] 替换净化规则存在灾难性回溯风险，已跳过: ${pattern}`);
+          continue;
+        }
+        matcher = JavaRegexCompat.compile(pattern, 'g');
+        replacement = JavaRegexCompat.convertReplacement(rawReplacement);
       } else {
         plain = pattern;
       }
+      // 误删防护：单条规则把整章替换为空而原文非空时，视为误删，回滚该规则。
+      const snapshot: string[] = segments.slice();
       // Even indices are plain text; odd indices are captured markers kept out of rule scope.
       for (let si = 0; si < segments.length; si += 2) {
         const segment = segments[si];
         if (!segment) continue;
         if (matcher !== null) segments[si] = segment.replace(matcher, replacement);
         else segments[si] = segment.split(plain).join(replacement);
+      }
+      if (!segments.join('').trim() && (text || '').trim()) {
+        console.warn(`[ReaderPreprocessor] 替换净化规则把整章清空，已回滚: ${pattern}`);
+        for (let si = 0; si < snapshot.length; si++) segments[si] = snapshot[si];
       }
     } catch (_) {
     }
@@ -106,6 +120,9 @@ function applyReaderRulesInTask(text: string, rulesJson: string, scopeText: stri
 }
 
 export class ReaderContentPreprocessor {
+  /** TaskPool 净化的兜底时限：守卫漏拦的灾难性回溯最多占用一个 worker 这么久。 */
+  static readonly TASK_TIMEOUT_MS: number = 10000;
+
   static hasActiveContentRules(rules: ReaderReplaceRule[]): boolean {
     return rules.some((rule: ReaderReplaceRule): boolean =>
       rule.enabled !== false && rule.applyToContent !== false && !!rule.pattern);
@@ -115,9 +132,25 @@ export class ReaderContentPreprocessor {
     if (!text || !ReaderContentPreprocessor.hasActiveContentRules(rules)) return text;
     const scopeText = book ? `${book.name || ''}\n${book.author || ''}\n${book.originName || ''}\n` +
       `${book.origin || ''}\n${book.bookUrl || ''}` : '';
+    let timedOut = false;
+    const deadline = new Promise<boolean>((resolve) => {
+      setTimeout((): void => {
+        timedOut = true;
+        resolve(true);
+      }, ReaderContentPreprocessor.TASK_TIMEOUT_MS);
+    });
     try {
-      const value = await taskpool.execute(applyReaderRulesInTask, text, JSON.stringify(rules), scopeText);
-      return typeof value === 'string' ? value : text;
+      // taskpool 不支持中断执行中的同步正则；超时后放弃等待并保留原文，
+      // 避免守卫漏拦的灾难性回溯把 await 永久挂起（章节永远“正在加载”）。
+      const winner = await Promise.race([
+        taskpool.execute(applyReaderRulesInTask, text, JSON.stringify(rules), scopeText),
+        deadline
+      ]);
+      if (timedOut) {
+        console.warn('[ReaderPreprocessor] 替换净化执行超时，保留原文（规则可能存在灾难性回溯）');
+        return text;
+      }
+      return typeof winner === 'string' ? winner : text;
     } catch (error) {
       console.warn('[ReaderPreprocessor] TaskPool failed, keep original content:', error);
       return text;

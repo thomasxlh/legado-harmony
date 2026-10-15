@@ -468,6 +468,7 @@ struct SearchBookDetailPage {
       const requestKey = BookIdentity.keyOfUrl(this.bookUrl, this.origin);
       const existing = await db.getBook(this.bookUrl) || await this.findShelfBookByKey(requestKey);
       if (existing) {
+        this.repairThinParsedIdentity(existing);
         const nextCoverUrl = CoverUrlNormalizer.prefer(this.coverUrl, existing.coverUrl);
         if (nextCoverUrl && existing.coverUrl !== nextCoverUrl) {
           existing.coverUrl = nextCoverUrl;
@@ -811,6 +812,7 @@ struct SearchBookDetailPage {
       await db.initWithContext(getContext(this));
       const pendingBook = await db.getBook(this.pendingAddToShelfBookUrl);
       if (pendingBook) {
+        this.repairThinParsedIdentity(pendingBook);
         SearchExplorePendingBook.clearPendingAddToShelf(pendingBook);
         await db.updateBook(pendingBook, true, 'temporary_read_kept');
         this.syncStateFromBook(pendingBook);
@@ -918,7 +920,7 @@ struct SearchBookDetailPage {
   }
 
   private mergeResolvedDetailIntoBook(book: Book): boolean {
-    let changed = false;
+    let changed = this.repairThinParsedIdentity(book);
     const kind = BookFieldSanitizer.prefer(this.kind, book.kind);
     const status = BookFieldSanitizer.prefer(this.status, book.status);
     const intro = BookFieldSanitizer.prefer(this.intro, book.intro);
@@ -955,6 +957,22 @@ struct SearchBookDetailPage {
     }
     if (this.bookVariable && this.bookVariable !== book.variable) {
       book.variable = this.bookVariable;
+      changed = true;
+    }
+    return changed;
+  }
+
+  private repairThinParsedIdentity(book: Book): boolean {
+    // 早期“错误页薄解析”曾把题材栏文字写进书名，同时作者、封面全空。当前页面身份来自
+    // 列表参数与成功的详情抓取，比这类残缺记录可靠：残缺记录的身份字段直接采纳当前值。
+    let changed = false;
+    if (this.name && book.name !== this.name &&
+      (!book.name || (!book.author && !book.coverUrl))) {
+      book.name = this.name;
+      changed = true;
+    }
+    if (this.author && !book.author) {
+      book.author = this.author;
       changed = true;
     }
     return changed;

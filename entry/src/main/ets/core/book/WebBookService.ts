@@ -11,6 +11,7 @@ import { BookUrlResolver } from './BookUrlResolver';
 import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
 import { AjaxRuleCompat } from '../rule/AjaxRuleCompat';
 import { JavaRegexCompat } from '../rule/JavaRegexCompat';
+import { RegexSafetyGuard } from '../rule/RegexSafetyGuard';
 import { ReaderImageMarker } from './ReaderImageMarker';
 import { JsRuntime } from '../rule/JsRuntime';
 import { ScriptEngine, ScriptEngineContext } from '../rule/ScriptEngine';
@@ -182,8 +183,20 @@ export class WebBookService {
     } finally {
       RuleExecutionService.get().clearOwner(fieldRequest.ownerId);
     }
-    book.name = BookFieldSanitizer.prefer(fieldValues['name'] || '', book.name);
-    book.author = BookFieldSanitizer.cleanAuthor(BookFieldSanitizer.prefer(fieldValues['author'] || '', book.author));
+    const fetchedName = (fieldValues['name'] || '').trim();
+    const fetchedAuthor = (fieldValues['author'] || '').trim();
+    const fetchedCoverUrl = (fieldValues['coverUrl'] || '').trim();
+    const fetchedIntro = (fieldValues['intro'] || '').trim();
+    const fetchedLastChapter = (fieldValues['lastChapter'] || '').trim();
+    // 冷启动首抓可能落在非详情页（隐藏 Web 传输尚未挂载完成、站点把无会话请求重定向回首页/分类页）：
+    // 此时 name 规则会匹配到题材栏文字（如“都市言情”），而作者、封面、简介、最新章节全部为空。
+    // 只解析出书名、其余字段全空视为“薄解析”，不可信——保留调用方传入的列表书名，避免错误页
+    // 文本覆盖正确身份；带任意其他字段的解析仍按原逻辑采纳详情页数据。
+    const thinDetailParse = !!fetchedName && !fetchedAuthor && !fetchedCoverUrl &&
+      !fetchedIntro && !fetchedLastChapter;
+    book.name = thinDetailParse ? BookFieldSanitizer.prefer(book.name, fetchedName) :
+      BookFieldSanitizer.prefer(fetchedName, book.name);
+    book.author = BookFieldSanitizer.cleanAuthor(BookFieldSanitizer.prefer(fetchedAuthor, book.author));
     const infoCoverUrl = BookSourceDataUrlSupport.normalizeCoverUrl(source,
       fieldValues['coverUrl'] || '', baseUrl);
     book.coverUrl = book.coverUrl || infoCoverUrl;
@@ -2182,11 +2195,22 @@ export class WebBookService {
       pattern = this.expandRuleTemplate(pattern.replace(/\\##/g, '##'), ctx);
       replacement = this.expandRuleTemplate(replacement.replace(/\\##/g, '##'), ctx);
       if (pattern) {
-        try {
-          // 书源的正文替换净化沿用 Android 的 Java 正则方言。
-          value = value.replace(JavaRegexCompat.compile(pattern, 'g'),
-            JavaRegexCompat.convertReplacement(replacement));
-        } catch (_) {
+        // 灾难性回溯守卫：书源 replaceRegex 在主线程同步执行，嵌套量词会冻结 UI，直接跳过。
+        if (!RegexSafetyGuard.isLikelyCatastrophic(pattern)) {
+          try {
+            // 书源的正文替换净化沿用 Android 的 Java 正则方言。
+            const replaced = value.replace(JavaRegexCompat.compile(pattern, 'g'),
+              JavaRegexCompat.convertReplacement(replacement));
+            // 误删防护：替换结果为空而替换前文本非空时视为误删，保留替换前文本。
+            if (replaced.trim() || !value.trim()) {
+              value = replaced;
+            } else {
+              console.warn(`书源 replaceRegex 把整章清空，已回滚: ${pattern}`);
+            }
+          } catch (_) {
+          }
+        } else {
+          console.warn(`书源 replaceRegex 存在灾难性回溯风险，已跳过: ${pattern}`);
         }
       }
     }

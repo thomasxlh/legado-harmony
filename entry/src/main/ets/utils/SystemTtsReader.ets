@@ -146,6 +146,9 @@ export class SystemTtsReader {
   private systemDrainScheduled: boolean = false;
   private systemLastWritePromise: Promise<void> = Promise.resolve();
   private systemBufferedSegmentCount: number = 0;
+  // Chapter handoff reuses a warm AudioRenderer; one synthesized segment is enough runway there,
+  // so playback does not wait for a second engine round trip after every chapter boundary.
+  private systemStartBufferSegments: number = SystemTtsReader.SYSTEM_TTS_START_BUFFER_SEGMENTS;
   private systemAudioSessionOwner: string = '';
   private keepAudioOutputOnFinish: boolean = false;
   private pcmOutputReleaseTimerId: number = -1;
@@ -372,6 +375,8 @@ export class SystemTtsReader {
     if (reusingPcmOutput) {
       console.info(`[TTS] reusing pcm output across chapter handoff: ${this.pcmPlayer.debugState()}`);
     }
+    this.systemStartBufferSegments = reusingPcmOutput ? 1 :
+      SystemTtsReader.SYSTEM_TTS_START_BUFFER_SEGMENTS;
     const cleanText = this.normalizeText(text);
     if (this.active || this.currentRequestId || this.chunks.length > 0) {
       this.stop();
@@ -517,7 +522,24 @@ export class SystemTtsReader {
         if (this.readGeneration !== generation || !this.active) {
           return;
         }
-        this.finish(false);
+        // 引擎自发 onStop（系统打断/引擎被杀）不能走 finish(false)——它不派发 onFinished，
+        // ReadBook 侧零恢复，表现为锁屏朗读无声卡死而 UI 仍显示朗读中。改为原地恢复。
+        console.warn('[TTS] unexpected engine onStop, recovering active read');
+        if (this.currentRequestId && this.currentFocusChunkIndex >= 0) {
+          if (this.ttsPcmPlayType === 1) {
+            // 直播模式下 onStart 已证明本 chunk 已提交引擎播出；onStop 代替 onComplete
+            // 到达时按完成处理，继续后续 chunk，避免会话无声终结。
+            this.completeCurrentChunk(generation, this.currentRequestId);
+            return;
+          }
+          if (this.currentFocusAudioWritten) {
+            // PCM 已全部写入播放器，引擎侧提前 onStop：按该 chunk 完成处理并继续。
+            this.completeCurrentChunk(generation, this.currentRequestId);
+            return;
+          }
+          this.recoverStalledSpeak(generation, this.currentFocusChunkIndex);
+        }
+        // 无在飞请求（chunk 间隙或纯缓冲播放阶段）：既有 watchdog 兜底，不终结会话。
       },
       onError: (utteranceId: string, errorCode: number, errorMessage: string) => {
         if (this.readGeneration !== generation || !this.active || utteranceId !== this.currentRequestId) {
@@ -1071,7 +1093,7 @@ export class SystemTtsReader {
     }
     if (!this.systemPlaybackStarted) {
       if (!this.systemSynthesisFinished &&
-        this.systemReadySegments.length < SystemTtsReader.SYSTEM_TTS_START_BUFFER_SEGMENTS) {
+        this.systemReadySegments.length < this.systemStartBufferSegments) {
         return;
       }
       this.systemPlaybackStarted = true;

@@ -93,6 +93,7 @@ import { ReaderV2Color, ReaderV2SpanStyleRange } from '../core/reader/ReaderV2St
 import { ReaderV2PageNodeController } from '../core/reader/ReaderV2RenderNode';
 import { ReaderV2GestureRouter, ReaderV2TapResult } from '../core/reader/ReaderV2Interaction';
 import { ReaderOpenTrace } from '../utils/ReaderOpenTrace';
+import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
 import { EyeTurnCalibration, EyeTurnController, EyeTurnSample } from '../core/reader/EyeTurnController';
 import { ArEyeSignal, ArEyeTurnHost } from '../core/reader/ArEyeTypes';
 import { FullTextCacheCancelCoordinator, FullTextCacheCancelSignal } from '../utils/FullTextCacheCancelCoordinator';
@@ -487,6 +488,9 @@ struct ReadBookPage {
   @State pageTurnIncomingRenderVersion: number = 0;
   private bookLoadSerial: number = 0;
   private contentLoadSerial: number = 0;
+  // 正在执行的 loadContent/refreshCurrentChapter 数量。isLoading 的清除以该计数归零为准，
+  // 不再依赖 serial 相等判断，避免并发静默加载顶掉 serial 后非静默跳章的加载遮罩永久卡死。
+  private readerContentLoadInFlight: number = 0;
   private isPageTurning: boolean = false;
   private queuedPageTurnDirection: number = 0;
   private queuedPageTurnStyle: string = '';
@@ -1504,6 +1508,7 @@ struct ReadBookPage {
     if (engine.book?.bookUrl !== (this.book?.bookUrl || this.bookUrl)) return false;
     const chapterIndex = this.clampChapterIndex(targetChapterIndex);
     const loadSerial = ++this.contentLoadSerial;
+    this.readerContentLoadInFlight++;
     const showLoading = !silent && !engine.hasCachedContent(chapterIndex);
     if (showLoading) {
       this.isLoading = true;
@@ -1576,7 +1581,8 @@ struct ReadBookPage {
       }
       return false;
     } finally {
-      if (loadSerial === this.contentLoadSerial && !silent) {
+      this.readerContentLoadInFlight = Math.max(0, this.readerContentLoadInFlight - 1);
+      if (this.readerContentLoadInFlight === 0) {
         this.isLoading = false;
         this.loadStatus = '';
       }
@@ -1596,6 +1602,7 @@ struct ReadBookPage {
     // source happened to keep the same cache identity,正文 could reset to page one but TTS rectangles were still
     // resolved through the detached document and stayed invisible even after a page turn.
     const refreshSerial = ++this.contentLoadSerial;
+    this.readerContentLoadInFlight++;
     this.isLoading = true;
     this.loadStatus = '正在刷新本章...';
     // Mark the refresh busy before stopping TTS so its delayed sentence checkpoint cannot race the explicit
@@ -1656,11 +1663,12 @@ struct ReadBookPage {
       console.error('刷新本章失败:', e);
       HdsFeedback.showToast('刷新本章失败');
     } finally {
-      if (refreshSerial === this.contentLoadSerial) {
+      this.readerContentLoadInFlight = Math.max(0, this.readerContentLoadInFlight - 1);
+      if (this.readerContentLoadInFlight === 0) {
         this.isLoading = false;
         this.loadStatus = '';
-        this.updatePendingVerification();
       }
+      this.updatePendingVerification();
     }
   }
 
@@ -2343,6 +2351,7 @@ struct ReadBookPage {
   cancelReaderLoading(): void {
     this.bookLoadSerial++;
     this.contentLoadSerial++;
+    this.readerContentLoadInFlight = 0;
     this.isLoading = false;
     this.loadStatus = '';
     this.cancelReaderLoadingSlowHint();
@@ -2497,10 +2506,13 @@ struct ReadBookPage {
       .width('100%')
       .height('100%')
       // In continuous reading the configured vertical margins describe the viewport, not only the first and
-      // last pagination fragment. Keep every scrolled line inside those edges and avoid adding a second reserve.
+      // last pagination fragment. Keep every scrolled line inside those edges. The bottom edge must also
+      // reserve the footer band: the footer is a transparent overlay, so without the reserve the last line
+      // can never be scrolled clear of the footer text and they permanently overlap.
       .padding({
         top: this.isReaderNovelContinuousScrollModeActive() ? this.getEffectiveReaderMarginTop() : 0,
-        bottom: this.isReaderNovelContinuousScrollModeActive() ? this.getEffectiveReaderMarginBottom() : 0
+        bottom: this.isReaderNovelContinuousScrollModeActive() ?
+          this.getEffectiveReaderMarginBottom() + this.getReaderContentBottomReserve() : 0
       })
       .enableScrollInteraction(!this.readerTextSelectionActive)
       .scrollBar(BarState.Off)
@@ -6531,8 +6543,14 @@ struct ReadBookPage {
   }
 
   getReaderHeaderInfoBarHeight(): number {
-    // 页眉采用固定单行高度，避免首次测量后再次触发整章分页。
-    return 18;
+    // 页眉高度必须随系统字体缩放：12fp 单行文本在大字号下行盒会超过固定 18vp，向上下
+    // 溢出吃掉仅 4vp 的预留间隙，与正文首行相贴/重叠。仍为确定性公式（不依赖测量回调），
+    // 避免首次测量后再次触发整章分页。
+    try {
+      return Math.max(18, px2vp(Math.max(1, fp2px(12))) * 1.4);
+    } catch (_) {
+      return 18;
+    }
   }
 
   getReaderHeaderOverlayTopInset(): number {
@@ -8700,7 +8718,8 @@ struct ReadBookPage {
     // Used only for the first layout pass. The rendered Text reports its real one-line box below,
     // including the current device's font scale, and immediately replaces this conversion.
     try {
-      return px2vp(Math.max(1, fp2px(fallbackHeight)));
+      // 12fp 单行文本的行盒按字号缩放并含行高系数；进度条（2vp）+ 间距（3vp）不随字体缩放。
+      return px2vp(Math.max(1, fp2px(12))) * 1.4 + (this.readerFooterShowProgressBar ? 5 : 0);
     } catch (_) {
       return fallbackHeight;
     }
@@ -8722,7 +8741,9 @@ struct ReadBookPage {
     if (!this.readerFooterEnabled || this.isReaderComicModeActive()) return 0;
     let footerHeight = 12 + (this.readerFooterShowProgressBar ? 5 : 0);
     try {
-      footerHeight = px2vp(Math.max(1, fp2px(12)));
+      // 旧公式只按 12fp 字号估算且丢掉了进度条的 +5vp，守卫偏小 5-10vp：V2 分页的
+      // 最后一行会压到页脚进度条/文字上。改为行盒（字号×行高系数）+ 进度条分别估算。
+      footerHeight = px2vp(Math.max(1, fp2px(12))) * 1.4 + (this.readerFooterShowProgressBar ? 5 : 0);
     } catch (_) {
       footerHeight = 12 + (this.readerFooterShowProgressBar ? 5 : 0);
     }
@@ -13615,6 +13636,11 @@ struct ReadBookPage {
       } else {
         this.preloadReaderContent();
       }
+      // Publish the floating session before the AVSession/background-task awaits. The panel that
+      // opened on the first 听书 tap reads globalTtsCanPrevious/globalTtsCanNext from AppStorage;
+      // with the publish left after these awaits both chapter buttons stayed disabled for the
+      // whole first-launch startup window, and a tap on them was silently dropped.
+      this.publishTtsFloatingSession();
       const backgroundStarted = await this.startTtsBackgroundRunning();
       if (!backgroundStarted && showToast) {
         HdsFeedback.showToast('后台朗读任务启动失败，息屏后可能中断');
@@ -13627,7 +13653,6 @@ struct ReadBookPage {
         if (!manualPageTurnResume) this.stopTtsReading(false);
         return;
       }
-      this.publishTtsFloatingSession();
       await this.ttsReader.start(text, {
         onFinished: () => {
           this.continueTtsReading(token).catch((e: Error) => {
@@ -14025,17 +14050,6 @@ struct ReadBookPage {
     } finally {
       this.ttsChapterSwitching = false;
     }
-  }
-
-  async advanceTtsReadingTarget(): Promise<boolean> {
-    if (this.chapters.length === 0) {
-      return false;
-    }
-    if (this.canTurnPage(1)) {
-      await this.runTtsPageTurnAnimation(1);
-      return true;
-    }
-    return false;
   }
 
   finishTtsReading(): void {
@@ -18622,6 +18636,11 @@ struct ReadBookPage {
   }
 
   openReaderCommentPanel(url: string, title: string, marker: string, sourceHtml: string = ''): void {
+    if (!WebRuntimeAvailability.isAvailable()) {
+      // 段评面板依赖 ArkWeb；宿主缺失时挂载 Web 会抛错并白屏，直接拒绝打开。
+      HdsFeedback.showToast('当前设备不支持网页组件，无法打开段评');
+      return;
+    }
     const normalizedUrl = (url || '').trim();
     if (!/^https?:\/\//i.test(normalizedUrl)) {
       HdsFeedback.showToast('评论地址无效');
@@ -21615,8 +21634,16 @@ struct ReadBookPage {
     return true;
   }
 
+  /**
+   * 连续朗读（含锁屏/后台）时 onPageHide 置 false 的 readerPageVisible 不能挡住下一章预排版，
+   * 否则每到章末切换都要现场联网取文加排版，听书出现长静默。
+   */
+  isReaderPreloadBlockedByVisibility(): boolean {
+    return !this.readerPageVisible && !this.isTtsContinuousPreloadActive();
+  }
+
   preloadNextChapterPaginationLater(delayMs: number = 520): void {
-    if (!this.readerPageVisible || !this.readerPreloadEnabled || !this.hasPagedReaderArea() ||
+    if (this.isReaderPreloadBlockedByVisibility() || !this.readerPreloadEnabled || !this.hasPagedReaderArea() ||
       this.currentChapterIndex >= this.chapters.length - 1) {
       return;
     }
@@ -21631,14 +21658,14 @@ struct ReadBookPage {
     this.adjacentPaginationPreloadActiveSerial = serial;
     this.adjacentPaginationPreloadActiveKey = activeKey;
     setTimeout(() => {
-      if (!this.readerPageVisible || serial !== this.adjacentPaginationPreloadSerial ||
+      if (this.isReaderPreloadBlockedByVisibility() || serial !== this.adjacentPaginationPreloadSerial ||
         !this.isCurrentReaderEngineBook(sessionBookUrl) ||
         (this.currentChapterIndex !== sourceChapterIndex && this.currentChapterIndex !== targetChapterIndex)) {
         return;
       }
       ReadBookEngine.get().peekContent(targetChapterIndex)
         .then(async (body: string): Promise<void> => {
-          if (!body || !this.readerPageVisible || serial !== this.adjacentPaginationPreloadSerial ||
+          if (!body || this.isReaderPreloadBlockedByVisibility() || serial !== this.adjacentPaginationPreloadSerial ||
             !this.isCurrentReaderEngineBook(sessionBookUrl) ||
             (this.currentChapterIndex !== sourceChapterIndex && this.currentChapterIndex !== targetChapterIndex)) {
             if (serial === this.adjacentPaginationPreloadSerial && !body) {
@@ -21647,7 +21674,7 @@ struct ReadBookPage {
             return;
           }
           const processed = await this.prepareReaderContentRules(body, targetChapterIndex);
-          if (!this.readerPageVisible || serial !== this.adjacentPaginationPreloadSerial ||
+          if (this.isReaderPreloadBlockedByVisibility() || serial !== this.adjacentPaginationPreloadSerial ||
             !this.isCurrentReaderEngineBook(sessionBookUrl) ||
             (this.currentChapterIndex !== sourceChapterIndex && this.currentChapterIndex !== targetChapterIndex)) {
             return;
@@ -21681,7 +21708,7 @@ struct ReadBookPage {
     const batchDelay = ReaderActionMarker.has(result.source) ?
       READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS : READER_PAGINATION_BATCH_DELAY_MS;
     const runBatch = (): void => {
-      if (!this.readerPageVisible || serial !== this.adjacentPaginationPreloadSerial ||
+      if (this.isReaderPreloadBlockedByVisibility() || serial !== this.adjacentPaginationPreloadSerial ||
         this.currentChapterIndex !== sourceChapterIndex ||
         this.readerPaginationCache.get(key) !== result) {
         // Same hygiene as the previous-chapter session: a silently aborted run must not keep the
@@ -21948,7 +21975,11 @@ struct ReadBookPage {
   }
 
   preloadReaderContent(): void {
-    if (!this.readerPageVisible || this.chapters.length === 0 || !this.readerPreloadEnabled) {
+    // 锁屏/后台连续朗读时 onPageHide 会把 readerPageVisible 置 false，若照常短路返回，
+    // 每到章末才现场联网取正文（正文拉取超时上限 45s），听书切章出现长静默等待。
+    // 连续朗读期间放行正文预载；排版预载（pagination）仍依赖可见阅读区域，由各自入口自行短路。
+    if ((!this.readerPageVisible && !this.isTtsContinuousPreloadActive()) ||
+      this.chapters.length === 0 || !this.readerPreloadEnabled) {
       return;
     }
     // Current-page recovery is user-visible work. Do not let speculative adjacent Paragraph sessions compete
@@ -21962,6 +21993,10 @@ struct ReadBookPage {
     engine.preloadAround(this.currentChapterIndex, this.normalizePreloadChapterCount(this.readerPreloadChapterCount), 0);
     this.preloadNextChapterPaginationLater();
     this.preloadPreviousChapterPaginationLater();
+  }
+
+  isTtsContinuousPreloadActive(): boolean {
+    return this.isTtsSpeaking && this.ttsAutoContinue;
   }
 
   normalizePreloadChapterCount(count: number): number {

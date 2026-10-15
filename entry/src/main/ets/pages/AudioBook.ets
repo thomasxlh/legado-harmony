@@ -695,7 +695,7 @@ struct AudioBookPage {
         this.statusText = this.stateLabel(this.playback.state);
         this.publishFloatingSession();
       } else {
-        await this.playCurrentChapter(this.book.durChapterPos);
+        await this.playCurrentChapter(this.resolveAudioResumePositionMs());
       }
       this.applyPendingPanelAction();
     } catch (error) {
@@ -1129,12 +1129,15 @@ struct AudioBookPage {
     const chapterTitle = chapter.title;
     const chapterTime = Date.now();
     book.durChapterIndex = chapterIndex;
-    book.durChapterPos = chapterPosition;
+    // durChapterPos 只承载阅读器页码语义。听书音频位置（毫秒）改存独立变量，
+    // 避免毫秒值污染页码导致阅读器恢复到错误页、听书从错误位置续播。
+    book.putVariable('audioBookPosChapterIndex', String(chapterIndex));
+    book.putVariable('audioBookPositionMs', String(chapterPosition));
     book.durChapterTitle = chapterTitle;
     book.durChapterTime = chapterTime;
     book.putVariable('readStarted', '1');
     book.putVariable('lastReadTime', String(chapterTime));
-    // 正文片段已移入本地快照表；剥离旧版本/云端下行行残留键，避免随 books 行上云。
+    // 正文片段已移至本地快照表；剥离旧版本/云端下行行残留键，避免随 books 行上云。
     book.removeVariable('lastReadPageText');
     book.removeVariable('lastReadPageImage');
     const bookUrl = book.bookUrl;
@@ -1143,7 +1146,7 @@ struct AudioBookPage {
     const previous = this.progressSaveQueue.catch(() => {});
     const next = previous.then(async () => {
       await AppDatabase.getInstance().updateBookReadingProgress(
-        bookUrl, chapterTitle, chapterIndex, chapterPosition, chapterTime, variable,
+        bookUrl, chapterTitle, chapterIndex, book.durChapterPos, chapterTime, variable,
         syncRelevant && notifyShelf);
       if (notifyShelf) AppStorage.setOrCreate('shelfUpdateTime', Date.now());
     });
@@ -1153,6 +1156,21 @@ struct AudioBookPage {
     } catch (error) {
       console.warn('保存听书进度失败:', error);
     }
+  }
+
+  resolveAudioResumePositionMs(): number {
+    const book = this.book;
+    if (!book) return 0;
+    const chapterRaw = book.getVariable('audioBookPosChapterIndex');
+    const positionRaw = book.getVariable('audioBookPositionMs');
+    if (chapterRaw.length > 0 && positionRaw.length > 0) {
+      if (Number(chapterRaw) !== this.chapterIndex) return 0;
+      const position = Number(positionRaw);
+      return Number.isFinite(position) ? Math.max(0, Math.floor(position)) : 0;
+    }
+    // 兼容旧版本写入 durChapterPos 的毫秒听书位置：页码不会达到千级，超过即视为历史毫秒值。
+    const legacy = book.durChapterPos;
+    return legacy > 1000 ? Math.floor(legacy) : 0;
   }
 
   queueBookStateSave(book: Book): Promise<void> {

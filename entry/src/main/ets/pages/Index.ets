@@ -4714,15 +4714,34 @@ struct BookshelfPage {
   @Builder
   cacheDialogContent() {
     Column() {
-      Text(`缓存《${this.cacheTargetBook?.name || '当前书籍'}》`)
-        .fontSize(17)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
-        .textAlign(TextAlign.Center)
-        .margin({ bottom: 8 })
+      Row() {
+        Text(`缓存《${this.cacheTargetBook?.name || '当前书籍'}》`)
+          .fontSize(17)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        // Closing never stops a running cache task; "取消缓存" below is the only task-cancel entry.
+        ImmersiveBackButton({
+          icon: $r('sys.symbol.xmark'),
+          iconOffsetX: 0,
+          iconColor: this.primaryTextColor(),
+          darkMode: this.appDarkMode,
+          buttonSize: 40,
+          containerWidth: 40,
+          containerHeight: 40,
+          startInset: 0,
+          materialScale: 0.83,
+          compactLayout: true,
+          accessibilityLabel: '关闭',
+          onBack: () => this.closeCacheDialog()
+        })
+      }
+      .width('100%')
+      .height(46)
+      .alignItems(VerticalAlign.Center)
+      .margin({ bottom: 8 })
 
       if (this.cacheStatus) {
         Text(this.cacheStatus)
@@ -4754,13 +4773,17 @@ struct BookshelfPage {
         this.clearCachedChapters();
       })
 
-      Button('取消')
+      // While a background task runs, the bottom button doubles as the task's cancel entry.
+      Button(this.isCacheTargetBookCaching() ? '取消缓存' : '取消')
         .width('100%')
         .height(44)
         .margin({ top: 10 })
         .backgroundColor(this.appDarkMode ? '#24272D' : '#F5F5F5')
-        .fontColor(this.primaryTextColor())
+        .fontColor(this.isCacheTargetBookCaching() ? this.dangerColor() : this.primaryTextColor())
         .onClick(() => {
+          if (this.isCacheTargetBookCaching()) {
+            this.cancelCacheTargetBookTask();
+          }
           this.closeCacheDialog();
         })
     }
@@ -5172,6 +5195,18 @@ struct BookshelfPage {
 
   isCacheTargetBookCaching(): boolean {
     return this.isBookCaching(this.cacheTargetBook);
+  }
+
+  /**
+   * Dialog-initiated cancellation. Routes through the coordinator so the running task, its
+   * notification, and the "正在停止缓存…" hint all update exactly as a notification-bar cancel would.
+   */
+  cancelCacheTargetBookTask(): void {
+    const bookUrl = this.cacheTargetBook?.bookUrl || '';
+    const task = this.getShelfFullTextCacheTask(bookUrl);
+    if (task) {
+      FullTextCacheCancelCoordinator.request(task.taskKey, task.bookUrl);
+    }
   }
 
   isBookCaching(book: Book | null): boolean {

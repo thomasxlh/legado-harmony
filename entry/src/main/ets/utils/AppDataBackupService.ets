@@ -1543,15 +1543,23 @@ export class AppDataBackupService {
 
   private static async removeDirectory(path: string): Promise<void> {
     if (!AppDataBackupService.exists(path)) return;
-    const names = await fs.listFile(path);
-    for (const name of names) {
-      const child = `${path}/${name}`;
-      const stat = await fs.stat(child);
-      if (stat.isDirectory()) {
-        await AppDataBackupService.removeDirectory(child);
-      } else {
-        await AppDataBackupService.removeFile(child);
+    try {
+      const names = await fs.listFile(path);
+      for (const name of names) {
+        const child = `${path}/${name}`;
+        try {
+          const stat = await fs.stat(child);
+          if (stat.isDirectory()) {
+            await AppDataBackupService.removeDirectory(child);
+          } else {
+            await AppDataBackupService.removeFile(child);
+          }
+        } catch (_) {
+          // 单个条目被外部删除/占用不应中断整个临时目录清理。
+        }
       }
+    } catch (_) {
+      // 目录被外部破坏时直接尝试删掉目录本身。
     }
     try { await fs.rmdir(path); } catch (_) {}
   }

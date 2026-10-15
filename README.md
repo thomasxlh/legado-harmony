@@ -5,7 +5,7 @@
 | 项目 | 信息 |
 | --- | --- |
 | 应用包名 | `legado.intrimple.com` |
-| 当前版本 | `4.0.7`（以 `AppScope/app.json5` 为准） |
+| 当前版本 | `4.0.8`（以 `AppScope/app.json5` 为准） |
 | 支持设备 | `phone`、`tablet`、`2in1` |
 | 最低 API | HarmonyOS API 12 |
 | 目标 API | HarmonyOS API 26 |
@@ -181,8 +181,8 @@ legado-harmony/
 | --- | --- |
 | 主模块 | `entry` |
 | 入口 Ability | `EntryAbility` |
-| `versionName` | `4.0.7` |
-| `versionCode` / `buildVersion` | `4000007` |
+| `versionName` | `4.0.8` |
+| `versionCode` / `buildVersion` | `4000008` |
 | `minAPIVersion` | `12` |
 | `targetAPIVersion` | `26` |
 | 权限 | `INTERNET`、`GET_NETWORK_INFO`、`KEEP_BACKGROUND_RUNNING`、`CAMERA`（仅在用户启用眼动翻页时请求） |

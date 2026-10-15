@@ -11,6 +11,7 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
 
 /**
  * Restricted bridge used only by HTML passed to java.showBrowser(). Remote pages do not receive
@@ -148,6 +149,7 @@ struct VerifyWebPage {
   @State currentUrl: string = '';
   @State progress: number = 0;
   @State requireLoginCookie: boolean = false;
+  @State webRuntimeAvailable: boolean = true;
   private readerCommentMode: boolean = false;
   private controller: webview.WebviewController = new webview.WebviewController();
   private browserAwaitToken: string = '';
@@ -173,6 +175,9 @@ struct VerifyWebPage {
     'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
   aboutToAppear(): void {
     this.syncBars();
+    // 缺少 ArkWeb 能力时挂载 Web 组件会抛 "undefined is not callable" 并白屏；
+    // 本页是 8 个入口（书源登录/验证/段评/浏览器取数）的共同落点，统一在此降级。
+    this.webRuntimeAvailable = WebRuntimeAvailability.isAvailable();
     const params = router.getParams() as Record<string, string>;
     const initialUrl = params?.['url'] || AppStorage.get<string>('pendingVerificationUrl') || 'about:blank';
     this.title = params?.['title'] || AppStorage.get<string>('pendingVerificationTitle') || '网页验证';
@@ -277,46 +282,64 @@ struct VerifyWebPage {
             .color(this.accentColor())
         }
 
-        Web({ src: this.url, controller: this.controller })
+        if (this.webRuntimeAvailable) {
+          Web({ src: this.url, controller: this.controller })
+            .width('100%')
+            .layoutWeight(1)
+            .javaScriptAccess(true)
+            .domStorageAccess(true)
+            .onlineImageAccess(true)
+            .imageAccess(true)
+            .mixedMode(MixedMode.All)
+            .userAgent(this.browserUserAgent())
+            .javaScriptProxy({
+              object: this.browserJavaBridge,
+              name: 'java',
+              methodList: [
+                'toast', 'longToast', 'startBrowser', 'startBrowserDp', 'open', 'openUrl',
+                'getCookie', 'setCookie', 'removeCookie', 'getVariable', 'putVariable', 'reLoginView'
+              ],
+              controller: this.controller
+            })
+            .onControllerAttached(() => {
+              this.loadBrowserPayload();
+            })
+            .onLoadIntercept((event?: OnLoadInterceptEvent): boolean => {
+              return this.handleBrowserLoadIntercept(event);
+            })
+            .onPageBegin((event?: OnPageBeginEvent) => {
+              if (event?.url) this.currentUrl = event.url;
+            })
+            .onPageEnd((event?: OnPageEndEvent) => {
+              if (event?.url) {
+                this.currentUrl = event.url;
+                if (!this.readerCommentMode) {
+                  this.saveCookies(event.url);
+                  this.syncDocumentCookies(event.url);
+                }
+              }
+              if (!this.readerCommentMode) this.injectBrowserPayloadScript();
+            })
+            .onProgressChange((event?: OnProgressChangeEvent) => {
+              this.progress = event?.newProgress || 0;
+            })
+        } else {
+          Column({ space: 12 }) {
+            Text('当前设备不支持网页组件')
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.primaryTextColor())
+            Text('无法打开网页验证与登录页，请返回后重试或改用其他验证方式。')
+              .fontSize(13)
+              .fontColor(this.subTextColor())
+              .textAlign(TextAlign.Center)
+              .padding({ left: 32, right: 32 })
+          }
           .width('100%')
           .layoutWeight(1)
-          .javaScriptAccess(true)
-          .domStorageAccess(true)
-          .onlineImageAccess(true)
-          .imageAccess(true)
-          .mixedMode(MixedMode.All)
-          .userAgent(this.browserUserAgent())
-          .javaScriptProxy({
-            object: this.browserJavaBridge,
-            name: 'java',
-            methodList: [
-              'toast', 'longToast', 'startBrowser', 'startBrowserDp', 'open', 'openUrl',
-              'getCookie', 'setCookie', 'removeCookie', 'getVariable', 'putVariable', 'reLoginView'
-            ],
-            controller: this.controller
-          })
-          .onControllerAttached(() => {
-            this.loadBrowserPayload();
-          })
-          .onLoadIntercept((event?: OnLoadInterceptEvent): boolean => {
-            return this.handleBrowserLoadIntercept(event);
-          })
-          .onPageBegin((event?: OnPageBeginEvent) => {
-            if (event?.url) this.currentUrl = event.url;
-          })
-          .onPageEnd((event?: OnPageEndEvent) => {
-            if (event?.url) {
-              this.currentUrl = event.url;
-              if (!this.readerCommentMode) {
-                this.saveCookies(event.url);
-                this.syncDocumentCookies(event.url);
-              }
-            }
-            if (!this.readerCommentMode) this.injectBrowserPayloadScript();
-          })
-          .onProgressChange((event?: OnProgressChangeEvent) => {
-            this.progress = event?.newProgress || 0;
-          })
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        }
       }
       .width('100%')
       .height('100%')

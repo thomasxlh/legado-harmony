@@ -3,6 +3,7 @@ import preferences from '@ohos.data.preferences';
 import { Book } from '../model/data/Book';
 import { JavaRegexCompat } from '../core/rule/JavaRegexCompat';
 import { ImportedReplaceRule } from '../core/rule/ReplaceRuleImport';
+import { RegexSafetyGuard } from '../core/rule/RegexSafetyGuard';
 
 export class ReaderReplaceRule {
   id: number = 0;
@@ -91,6 +92,13 @@ export class ReaderReplaceRuleStore {
       result.valid = false;
       return result;
     }
+    if (rule.isRegex && RegexSafetyGuard.isLikelyCatastrophic(rule.pattern)) {
+      // 灾难性回溯的正则会在主线程/TaskPool 同步执行时冻结界面或永久占用 worker，直接标记无效。
+      result.state = 'invalid';
+      result.label = '规则无效：嵌套量词或重叠分支存在灾难性回溯风险，已跳过执行';
+      result.valid = false;
+      return result;
+    }
     result.scopeMatched = ReaderReplaceRuleStore.matchesBookScope(rule, book);
     if (!result.scopeMatched) {
       result.state = 'outOfScope';
@@ -157,8 +165,19 @@ export class ReaderReplaceRuleStore {
       const startedAt = Date.now();
       try {
         if (rule.isRegex) {
-          result = result.replace(JavaRegexCompat.compile(rule.pattern, 'g'),
+          if (RegexSafetyGuard.isLikelyCatastrophic(rule.pattern)) {
+            // 守卫拦截的规则在预览/主线程路径同样跳过，避免灾难性回溯冻结 UI。
+            console.warn(`替换净化规则存在灾难性回溯风险，已跳过: ${rule.name || rule.pattern}`);
+            continue;
+          }
+          const replaced = result.replace(JavaRegexCompat.compile(rule.pattern, 'g'),
             JavaRegexCompat.convertReplacement(rule.replacement));
+          // 误删防护：单条规则把全文清空而原文非空时视为误删，回滚该规则。
+          if (replaced.trim() || !result.trim()) {
+            result = replaced;
+          } else {
+            console.warn(`替换净化规则把全文清空，已回滚: ${rule.name || rule.pattern}`);
+          }
         } else {
           result = result.split(rule.pattern).join(rule.replacement);
         }

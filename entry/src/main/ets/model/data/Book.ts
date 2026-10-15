@@ -1,3 +1,6 @@
+import { JavaRegexCompat } from '../../core/rule/JavaRegexCompat';
+import { RegexSafetyGuard } from '../../core/rule/RegexSafetyGuard';
+
 export class Book {
   bookUrl: string = '';
   tocUrl: string = '';
@@ -252,14 +255,23 @@ export class BookChapter {
     }
     let title = this.title;
     for (const rule of replaceRules) {
+      if (!rule.isEnabled) {
+        continue;
+      }
       if (rule.isRegex) {
+        if (!rule.pattern || RegexSafetyGuard.isLikelyCatastrophic(rule.pattern)) {
+          continue;
+        }
         try {
-          const regex = new RegExp(rule.pattern, rule.replacement);
-          title = title.replace(regex, rule.replacement);
+          const replaced = title.replace(JavaRegexCompat.compile(rule.pattern, 'g'),
+            JavaRegexCompat.convertReplacement(rule.replacement));
+          if (replaced.trim() || !title.trim()) {
+            title = replaced;
+          }
         } catch (e) {
           // 忽略无效的正则表达式
         }
-      } else {
+      } else if (rule.pattern) {
         title = title.split(rule.pattern).join(rule.replacement);
       }
     }
