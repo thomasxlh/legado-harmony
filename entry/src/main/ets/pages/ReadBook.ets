@@ -96,6 +96,8 @@ import { ReaderV2GestureRouter, ReaderV2TapResult } from '../core/reader/ReaderV
 import { ReaderOpenTrace } from '../utils/ReaderOpenTrace';
 import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
 import { EyeTurnCalibration, EyeTurnController, EyeTurnSample } from '../core/reader/EyeTurnController';
+import { AutoPageTurnController, AutoPageTurnOptions } from '../core/reader/AutoPageTurnController';
+import { AutoPageTurnIntervalDialogContent } from '../components/AutoPageTurnIntervalDialog';
 import { ArEyeSignal, ArEyeTurnHost } from '../core/reader/ArEyeTypes';
 import { FullTextCacheCancelCoordinator, FullTextCacheCancelSignal } from '../utils/FullTextCacheCancelCoordinator';
 import { ReaderComicPageDataSource } from '../core/reader/ReaderDataSources';
@@ -628,6 +630,15 @@ struct ReadBookPage {
   @StorageLink('readerEyeTurnNextEnabled') readerEyeTurnNextEnabled: boolean = true;
   @StorageLink('readerEyeTurnPreviousDwellMs') readerEyeTurnPreviousDwellMs: number = 850;
   @StorageLink('readerEyeTurnNextDwellMs') readerEyeTurnNextDwellMs: number = 650;
+  // 自动翻页：间隔随阅读设置持久化并云同步；开关为会话级状态，仅存于 AppStorage，不落盘。
+  @StorageLink('readerAutoPageTurnActive') @Watch('onAutoPageTurnActiveChanged') autoPageTurnActive: boolean = false;
+  @StorageLink('readerAutoPageTurnIntervalSec') @Watch('onAutoPageTurnIntervalChanged')
+  autoPageTurnIntervalSec: number = 15;
+  @State autoPageTurnRingProgress: number = 1;
+  @State autoPageTurnUserPaused: boolean = false;
+  private autoPageTurnController: AutoPageTurnController = new AutoPageTurnController();
+  private autoPageTurnIntervalDialogSession: SystemDialogSession = new SystemDialogSession();
+  @State @Watch('onSystemDialogFlagChanged') showAutoPageTurnIntervalDialog: boolean = false;
   @StorageLink('readerScreenTimeoutMinutes') readerScreenTimeoutMinutes: number =
     ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM;
   @StorageLink('readerExtendToStatusBar') @Watch('onReaderExtendToStatusBarChanged') readerExtendToStatusBar: boolean = false;
@@ -854,6 +865,9 @@ struct ReadBookPage {
       this.isLoading = false;
     } finally {
       this.readerEntryInitializing = false;
+      if (this.autoPageTurnActive) {
+        this.startAutoPageTurn();
+      }
     }
   }
 
@@ -906,6 +920,9 @@ struct ReadBookPage {
     this.syncTtsFocusAfterResumeLater(0);
     this.syncTtsFocusAfterResumeLater(180);
     this.startReaderEyeTurnIfReady();
+    if (this.autoPageTurnActive) {
+      this.startAutoPageTurn();
+    }
   }
 
   onGlobalTtsActiveChanged(): void {
@@ -1036,6 +1053,7 @@ struct ReadBookPage {
     AppStorage.setOrCreate<boolean>('shelfReaderDirectTransition', false);
     this.resetReaderScreenOrientation();
     this.readerPageVisible = false;
+    this.autoPageTurnController.stop();
     this.cancelReaderLoadingSlowHint();
     this.stopArEyeTurnHost();
     this.readerEyeTurnController.stop().catch((error: Error): void => {
@@ -1102,6 +1120,7 @@ struct ReadBookPage {
   onPageHide(): void {
     this.shortcutRoutingActive = false;
     this.readerPageVisible = false;
+    this.autoPageTurnController.stop();
     this.stopArEyeTurnHost();
     this.readerEyeTurnController.stop().catch((error: Error): void => {
       console.warn('[EyeTurn] reader background release failed:', error.message);
@@ -2964,6 +2983,11 @@ struct ReadBookPage {
         this.readerCurrentPageBookmarkMarker()
       }
 
+      if (this.autoPageTurnActive && this.readerInitialPageReady && !this.showMenu && !this.showToc &&
+        !this.showSettings && !this.showReaderCommentPanel && !this.isLoading) {
+        this.readerAutoPageTurnIndicator()
+      }
+
       if (this.showMenu && !this.showToc && !this.showSettings) {
         this.menuDismissLayer()
       }
@@ -4544,6 +4568,9 @@ struct ReadBookPage {
     if (!this.showReaderCacheDialog) this.readerCacheDialogSession.close(this.getUIContext());
     if (!this.showReaderChapterCacheDialog) this.chapterCacheDialogSession.close(this.getUIContext());
     if (!this.showTapZoneSettings) this.tapZoneDialogSession.close(this.getUIContext());
+    if (!this.showAutoPageTurnIntervalDialog) {
+      this.autoPageTurnIntervalDialogSession.close(this.getUIContext());
+    }
     if (!this.showReaderCustomThemeDeleteConfirm) this.readerCustomThemeDeleteDialogSession.close(this.getUIContext());
   }
 
@@ -10666,6 +10693,7 @@ struct ReadBookPage {
     if (this.showMenu || this.showToc || this.showSettings || this.chapters.length === 0) {
       return;
     }
+    this.resetAutoPageTurnCountdown();
     const point = event.changedTouches && event.changedTouches.length > 0 ? event.changedTouches[0] :
       (event.touches && event.touches.length > 0 ? event.touches[0] : null);
     if (!point) {
@@ -11535,6 +11563,13 @@ struct ReadBookPage {
           this.setReaderVolumeTurnPage(checked);
         })
 
+      this.readerSwitchSettingItem('自动翻页', '开启后按设定间隔自动翻到下一页，点击屏幕右下角圆环可暂停或恢复',
+        this.autoPageTurnActive, (checked: boolean) => {
+          this.setAutoPageTurnActive(checked);
+        })
+
+      this.readerAutoPageTurnIntervalSettingItem()
+
       this.readerSwitchSettingItem('快速添加书签', '正文下拉时快速添加或删除当前页书签', this.readerQuickBookmarkEnabled,
         (checked: boolean) => {
           this.setReaderQuickBookmarkEnabled(checked);
@@ -12390,6 +12425,77 @@ struct ReadBookPage {
     .width('100%')
     .constraintSize({ minHeight: 56 })
     .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  readerAutoPageTurnIntervalSettingItem() {
+    Row() {
+      Column() {
+        Text('自动翻页间隔')
+          .fontSize(15)
+          .fontColor(this.getTextColor())
+        Text('自动翻到下一页前等待的秒数，随阅读设置云同步')
+          .fontSize(12)
+          .fontColor(this.getSubTextColor())
+          .margin({ top: 4 })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Button(`${this.autoPageTurnIntervalSec} 秒`)
+        .height(36)
+        .fontSize(13)
+        .backgroundColor(this.customThemeFieldColor())
+        .fontColor(this.getTextColor())
+        .onClick((): void => this.presentAutoPageTurnIntervalDialog())
+    }
+    .width('100%')
+    .constraintSize({ minHeight: 56 })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  readerAutoPageTurnIndicator() {
+    Column() {
+      Blank()
+      Row() {
+        Blank()
+        Stack({ alignContent: Alignment.Center }) {
+          Progress({
+            value: Math.round(this.autoPageTurnRingProgress * 100),
+            total: 100,
+            type: ProgressType.Ring
+          })
+            .width(30)
+            .height(30)
+            .style({ strokeWidth: 3 })
+            .color(this.accentColor())
+            .backgroundColor(this.autoPageTurnUserPaused ?
+              (this.isReaderThemeDark() ? '#33FFFFFF' : '#14000000') :
+              (this.isReaderThemeDark() ? '#33FFFFFF' : '#22000000'))
+          Text(this.autoPageTurnUserPaused ? '▶' : '❚❚')
+            .fontSize(10)
+            .fontColor(this.getTextColor())
+            .opacity(this.autoPageTurnUserPaused ? 0.95 : 0.7)
+        }
+        .width(38)
+        .height(38)
+        .borderRadius(19)
+        .backgroundColor(this.isReaderThemeDark() ? '#59000000' : '#33000000')
+        .opacity(this.autoPageTurnUserPaused ? 0.72 : 1)
+        .margin({ right: 16, bottom: 12 + this.navBarHeight })
+        .onClick(() => {
+          this.autoPageTurnController.toggleUserPause();
+        })
+        .gesture(LongPressGesture({ repeat: false }).onAction(() => {
+          this.presentAutoPageTurnIntervalDialog();
+        }))
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .height('100%')
+    .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
@@ -22377,6 +22483,7 @@ struct ReadBookPage {
   }
 
   async turnNext() {
+    this.resetAutoPageTurnCountdown();
     if (this.isReaderContinuousScrollSurfaceActive()) {
       this.scrollReaderComicByPage(1);
       return;
@@ -22385,11 +22492,140 @@ struct ReadBookPage {
   }
 
   async turnPrev() {
+    this.resetAutoPageTurnCountdown();
     if (this.isReaderContinuousScrollSurfaceActive()) {
       this.scrollReaderComicByPage(-1);
       return;
     }
     await this.runPageTurnAnimation(-1, this.readerEffectivePageTurnMode() === 1 ? 'slide' : 'tap');
+  }
+
+  setAutoPageTurnActive(enabled: boolean): void {
+    if (!enabled) {
+      this.autoPageTurnActive = false;
+      return;
+    }
+    if (this.isTtsSpeaking || this.ttsReader.isSpeaking() || ReaderTtsFloatingSession.isActive()) {
+      HdsFeedback.showToast('朗读中无法开启自动翻页');
+      return;
+    }
+    if (this.chapters.length === 0) {
+      HdsFeedback.showToast('书籍尚未加载完成');
+      return;
+    }
+    this.autoPageTurnActive = true;
+  }
+
+  onAutoPageTurnActiveChanged(): void {
+    if (this.autoPageTurnActive) {
+      this.startAutoPageTurn();
+    } else {
+      this.stopAutoPageTurn(false);
+    }
+  }
+
+  onAutoPageTurnIntervalChanged(): void {
+    if (this.autoPageTurnController.isRunning()) {
+      this.autoPageTurnController.setIntervalMs(this.autoPageTurnIntervalSec * 1000);
+    }
+  }
+
+  configureAutoPageTurnController(): void {
+    const options: AutoPageTurnOptions = {
+      intervalMs: this.autoPageTurnIntervalSec * 1000,
+      isBlocked: (): boolean => this.isAutoPageTurnBlocked(),
+      onTurn: (): void => this.handleAutoPageTurnExpire(),
+      onTick: (remainingMs: number, intervalMs: number, userPaused: boolean): void => {
+        const fraction = intervalMs > 0 ?
+          Math.max(0, Math.min(1, remainingMs / intervalMs)) : 1;
+        if (Math.abs(fraction - this.autoPageTurnRingProgress) > 0.002) {
+          this.autoPageTurnRingProgress = fraction;
+        }
+        if (userPaused !== this.autoPageTurnUserPaused) {
+          this.autoPageTurnUserPaused = userPaused;
+        }
+      }
+    };
+    this.autoPageTurnController.configure(options);
+  }
+
+  startAutoPageTurn(): void {
+    this.configureAutoPageTurnController();
+    this.autoPageTurnController.start(this.autoPageTurnIntervalSec * 1000);
+  }
+
+  stopAutoPageTurn(showToast: boolean): void {
+    this.autoPageTurnController.stop();
+    this.autoPageTurnRingProgress = 1;
+    this.autoPageTurnUserPaused = false;
+    if (this.autoPageTurnActive) {
+      this.autoPageTurnActive = false;
+    }
+    if (showToast) {
+      HdsFeedback.showToast('已达书末，自动翻页已停止');
+    }
+  }
+
+  resetAutoPageTurnCountdown(): void {
+    if (!this.autoPageTurnActive || !this.autoPageTurnController.isRunning() ||
+      this.autoPageTurnController.isUserPaused()) {
+      return;
+    }
+    this.autoPageTurnController.reset();
+  }
+
+  isAutoPageTurnBlocked(): boolean {
+    return !this.readerPageVisible ||
+      this.showMenu || this.showToc || this.showSettings || this.showReaderActionMenu ||
+      this.showBookmarkActionMenu || this.showAutoPageTurnIntervalDialog || this.showTapZoneSettings ||
+      this.showChangeSourceDialog || this.showReaderCommentPanel || this.showReaderEyeCalibration ||
+      this.readerTextSelectionActive || this.isLoading || !this.readerInitialPageReady ||
+      this.isTtsSpeaking || this.ttsReader.isSpeaking() || ReaderTtsFloatingSession.isActive() ||
+      this.isPageTurning || this.pageTurnAnimating || this.readerComicChapterSwitching ||
+      this.queuedPageTurnCount > 0;
+  }
+
+  isAtReaderBookEnd(): boolean {
+    return this.chapters.length > 0 &&
+      this.currentChapterIndex >= this.chapters.length - 1 &&
+      this.isCurrentReaderPaginationComplete() &&
+      this.currentPageIndex + this.getReaderPageTurnStep() >= this.contentPages.length;
+  }
+
+  handleAutoPageTurnExpire(): void {
+    if (!this.autoPageTurnActive || this.isPageTurning || this.isLoading) {
+      return;
+    }
+    if (!this.canTurnPage(1)) {
+      if (this.isAtReaderBookEnd()) {
+        this.stopAutoPageTurn(true);
+      }
+      return;
+    }
+    this.turnNext().catch((error: Error): void => {
+      console.warn('[AutoPageTurn] page turn failed:', error.message);
+    });
+  }
+
+  presentAutoPageTurnIntervalDialog(): void {
+    this.showAutoPageTurnIntervalDialog = true;
+    this.autoPageTurnIntervalDialogSession.open(this.getUIContext(), (): void => {
+      this.autoPageTurnIntervalDialogContent();
+    }, {
+      autoCancel: true,
+      maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
+      warnTag: '显示自动翻页间隔设置弹窗失败:'
+    });
+  }
+
+  @Builder
+  autoPageTurnIntervalDialogContent() {
+    AutoPageTurnIntervalDialogContent({
+      onDone: (): void => {
+        this.showAutoPageTurnIntervalDialog = false;
+        this.autoPageTurnIntervalDialogSession.close(this.getUIContext());
+      }
+    })
   }
 
   scrollReaderComicByPage(direction: number): void {
@@ -22740,6 +22976,7 @@ struct ReadBookPage {
   }
   async runPageTurnAnimation(direction: number, style: string, fromQueue: boolean = false,
     releaseVelocity: number = 0): Promise<void> {
+    this.resetAutoPageTurnCountdown();
     if (!fromQueue && Date.now() < this.readerGestureTurnGuardUntil) {
       if (style === 'gesture' && this.readerGestureTurnAllowance > 0) {
         this.readerGestureTurnAllowance = 0;

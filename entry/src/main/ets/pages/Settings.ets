@@ -20,6 +20,7 @@ import fs from '@ohos.file.fs';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { TapZoneSettingsDialogContent } from '../components/TapZoneSettingsDialog';
+import { AutoPageTurnIntervalDialogContent } from '../components/AutoPageTurnIntervalDialog';
 class ReaderCustomFontItem {
   familyName: string = '';
   filePath: string = '';
@@ -102,6 +103,9 @@ struct SettingsPage {
   @State previewFontRenderVersion: number = 0;
   private tapZoneDialogSession: SystemDialogSession = new SystemDialogSession();
   @State @Watch('onSystemDialogFlagChanged') showTapZoneSettings: boolean = false;
+  private autoPageTurnIntervalDialogSession: SystemDialogSession = new SystemDialogSession();
+  @State @Watch('onSystemDialogFlagChanged') showAutoPageTurnIntervalDialog: boolean = false;
+  @StorageLink('readerAutoPageTurnIntervalSec') autoPageTurnIntervalSec: number = 15;
   @State customThemeNameDraft: string = '';
   private readerEyePermissionRequestSerial: number = 0;
 
@@ -225,6 +229,7 @@ struct SettingsPage {
             this.switchItem('音量键翻页', '阅读页获得焦点时使用音量上/下键切换上一页/下一页', this.readerVolumeTurnPage, (value: boolean) => {
               this.setReaderVolumeTurnPage(value);
             })
+            this.autoPageTurnIntervalSettingItem()
             this.switchItem('快速添加书签', '正文下拉时快速添加或删除当前页书签', this.readerQuickBookmarkEnabled, (value: boolean) => {
               this.setReaderQuickBookmarkEnabled(value);
             })
@@ -1855,6 +1860,9 @@ struct SettingsPage {
 
   onSystemDialogFlagChanged(): void {
     if (!this.showTapZoneSettings) this.tapZoneDialogSession.close(this.getUIContext());
+    if (!this.showAutoPageTurnIntervalDialog) {
+      this.autoPageTurnIntervalDialogSession.close(this.getUIContext());
+    }
   }
 
   presentTapZoneSettings(): void {
@@ -1874,6 +1882,27 @@ struct SettingsPage {
       onDone: (): void => {
         this.showTapZoneSettings = false;
         this.tapZoneDialogSession.close(this.getUIContext());
+      }
+    })
+  }
+
+  presentAutoPageTurnIntervalDialog(): void {
+    this.showAutoPageTurnIntervalDialog = true;
+    this.autoPageTurnIntervalDialogSession.open(this.getUIContext(), (): void => {
+      this.autoPageTurnIntervalDialogContent();
+    }, {
+      autoCancel: true,
+      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      warnTag: '显示自动翻页间隔设置弹窗失败:'
+    });
+  }
+
+  @Builder
+  autoPageTurnIntervalDialogContent() {
+    AutoPageTurnIntervalDialogContent({
+      onDone: (): void => {
+        this.showAutoPageTurnIntervalDialog = false;
+        this.autoPageTurnIntervalDialogSession.close(this.getUIContext());
       }
     })
   }
@@ -2067,6 +2096,39 @@ struct SettingsPage {
         .margin({ left: 12 })
         .onClick(() => {
           this.presentTapZoneSettings();
+        })
+    }
+    .width('100%')
+    .constraintSize({ minHeight: 64 })
+    .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+    .backgroundColor(this.cardColor())
+    .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  autoPageTurnIntervalSettingItem() {
+    Row() {
+      Column() {
+        Text('自动翻页间隔')
+          .fontSize(16)
+          .fontColor(this.primaryTextColor())
+        Text(`每 ${this.autoPageTurnIntervalSec} 秒自动翻到下一页，在阅读页快捷设置中开启`)
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+          .margin({ top: 4 })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Button(`${this.autoPageTurnIntervalSec} 秒`)
+        .height(36)
+        .fontSize(14)
+        .backgroundColor(this.inputColor())
+        .fontColor(this.primaryTextColor())
+        .margin({ left: 12 })
+        .onClick(() => {
+          this.presentAutoPageTurnIntervalDialog();
         })
     }
     .width('100%')

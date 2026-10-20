@@ -36,6 +36,7 @@ export class ReaderSettings {
   eyeTurnNextEnabled: boolean = true;
   eyeTurnPreviousDwellMs: number = 850;
   eyeTurnNextDwellMs: number = 650;
+  autoPageTurnIntervalSec: number = 15;
   screenTimeoutMinutes: number = 0;
   // 保留旧字段用于读取已有主题配置，以及兼容旧版本降级读取。
   keepScreenOn: boolean = false;
@@ -118,6 +119,7 @@ export class ReaderSettingsStore {
   static readonly KEY_EYE_TURN_NEXT_ENABLED: string = 'readerEyeTurnNextEnabled';
   static readonly KEY_EYE_TURN_PREVIOUS_DWELL_MS: string = 'readerEyeTurnPreviousDwellMs';
   static readonly KEY_EYE_TURN_NEXT_DWELL_MS: string = 'readerEyeTurnNextDwellMs';
+  static readonly KEY_AUTO_PAGE_TURN_INTERVAL: string = 'readerAutoPageTurnIntervalSec';
   static readonly KEY_SCREEN_TIMEOUT_MINUTES: string = 'readerScreenTimeoutMinutes';
   static readonly KEY_KEEP_SCREEN_ON: string = 'readerKeepScreenOn';
   static readonly KEY_EXTEND_TO_STATUS_BAR: string = 'readerExtendToStatusBar';
@@ -338,6 +340,8 @@ export class ReaderSettingsStore {
       store, ReaderSettingsStore.KEY_EYE_TURN_PREVIOUS_DWELL_MS, 850, 'eyeTurnDwell');
     settings.eyeTurnNextDwellMs = await ReaderSettingsStore.getNumber(
       store, ReaderSettingsStore.KEY_EYE_TURN_NEXT_DWELL_MS, 650, 'eyeTurnDwell');
+    settings.autoPageTurnIntervalSec = await ReaderSettingsStore.getNumber(
+      store, ReaderSettingsStore.KEY_AUTO_PAGE_TURN_INTERVAL, 15, 'autoPageTurnIntervalSec');
     const legacyKeepScreenOn = await ReaderSettingsStore.getBoolean(
       store,
       ReaderSettingsStore.KEY_KEEP_SCREEN_ON,
@@ -619,6 +623,17 @@ export class ReaderSettingsStore {
       settings.eyeTurnPreviousDwellMs);
     await store.put(ReaderSettingsStore.KEY_EYE_TURN_NEXT_DWELL_MS,
       settings.eyeTurnNextDwellMs);
+    await ReaderSettingsStore.persistActiveThemeProfile(store, settings);
+    await store.flush();
+  }
+
+  static async saveAutoPageTurnInterval(context: Context, intervalSec: number): Promise<void> {
+    const settings = ReaderSettingsStore.cachedSettings || ReaderSettingsStore.fromStorage();
+    settings.autoPageTurnIntervalSec = ReaderSettingsStore.normalizeAutoPageTurnInterval(intervalSec);
+    ReaderSettingsStore.cachedSettings = ReaderSettingsStore.clone(settings);
+    ReaderSettingsStore.applyAutoPageTurnToStorage(settings);
+    const store = await preferences.getPreferences(context, ReaderSettingsStore.STORE_NAME);
+    await store.put(ReaderSettingsStore.KEY_AUTO_PAGE_TURN_INTERVAL, settings.autoPageTurnIntervalSec);
     await ReaderSettingsStore.persistActiveThemeProfile(store, settings);
     await store.flush();
   }
@@ -915,6 +930,7 @@ export class ReaderSettingsStore {
       settings.eyeTurnPreviousDwellMs,
       settings.eyeTurnNextDwellMs
     );
+    await ReaderSettingsStore.saveAutoPageTurnInterval(context, settings.autoPageTurnIntervalSec);
     await ReaderSettingsStore.saveTapZoneActions(context, settings.tapZoneActions);
     await ReaderSettingsStore.savePreloadEnabled(context, settings.preloadEnabled);
     await ReaderSettingsStore.saveKeepParagraphIndent(context, settings.keepParagraphIndent);
@@ -964,6 +980,7 @@ export class ReaderSettingsStore {
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_TAP_ZONE_ACTIONS, normalized.tapZoneActions);
     ReaderSettingsStore.applyInteractionToStorage(normalized);
     ReaderSettingsStore.applyEyeTurnToStorage(normalized);
+    ReaderSettingsStore.applyAutoPageTurnToStorage(normalized);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_PRELOAD_ENABLED, normalized.preloadEnabled);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_KEEP_PARAGRAPH_INDENT, normalized.keepParagraphIndent);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_PRELOAD_CHAPTER_COUNT, normalized.preloadChapterCount);
@@ -1025,6 +1042,11 @@ export class ReaderSettingsStore {
       settings.eyeTurnPreviousDwellMs);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_EYE_TURN_NEXT_DWELL_MS,
       settings.eyeTurnNextDwellMs);
+  }
+
+  private static applyAutoPageTurnToStorage(settings: ReaderSettings): void {
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_AUTO_PAGE_TURN_INTERVAL,
+      settings.autoPageTurnIntervalSec);
   }
 
   private static applyLayoutToStorage(settings: ReaderSettings): void {
@@ -1206,7 +1228,18 @@ export class ReaderSettingsStore {
     if (type === 'eyeTurnDwell') {
       return ReaderSettingsStore.normalizeEyeTurnDwell(value);
     }
+    if (type === 'autoPageTurnIntervalSec') {
+      return ReaderSettingsStore.normalizeAutoPageTurnInterval(value);
+    }
     return fallback;
+  }
+
+  static normalizeAutoPageTurnInterval(intervalSec: number): number {
+    const value = Math.round(Number(intervalSec));
+    if (!Number.isFinite(value)) {
+      return 15;
+    }
+    return Math.max(3, Math.min(value, 300));
   }
 
   private static normalizeEyeTurnDwell(value: number): number {
@@ -1405,6 +1438,8 @@ export class ReaderSettingsStore {
       typeof source.eyeTurnPreviousDwellMs === 'number' ? source.eyeTurnPreviousDwellMs : 850);
     settings.eyeTurnNextDwellMs = ReaderSettingsStore.normalizeEyeTurnDwell(
       typeof source.eyeTurnNextDwellMs === 'number' ? source.eyeTurnNextDwellMs : 650);
+    settings.autoPageTurnIntervalSec = ReaderSettingsStore.normalizeAutoPageTurnInterval(
+      typeof source.autoPageTurnIntervalSec === 'number' ? source.autoPageTurnIntervalSec : 15);
     settings.screenTimeoutMinutes = ReaderSettingsStore.normalizeScreenTimeoutMinutes(
       typeof source.screenTimeoutMinutes === 'number' ?
         source.screenTimeoutMinutes :
@@ -1538,6 +1573,8 @@ export class ReaderSettingsStore {
       AppStorage.get<number>(ReaderSettingsStore.KEY_EYE_TURN_PREVIOUS_DWELL_MS) ?? 850);
     settings.eyeTurnNextDwellMs = ReaderSettingsStore.normalizeEyeTurnDwell(
       AppStorage.get<number>(ReaderSettingsStore.KEY_EYE_TURN_NEXT_DWELL_MS) ?? 650);
+    settings.autoPageTurnIntervalSec = ReaderSettingsStore.normalizeAutoPageTurnInterval(
+      AppStorage.get<number>(ReaderSettingsStore.KEY_AUTO_PAGE_TURN_INTERVAL) ?? 15);
     const legacyKeepScreenOn = AppStorage.get<boolean>(ReaderSettingsStore.KEY_KEEP_SCREEN_ON) ?? false;
     settings.screenTimeoutMinutes = ReaderSettingsStore.normalizeScreenTimeoutMinutes(
       AppStorage.get<number>(ReaderSettingsStore.KEY_SCREEN_TIMEOUT_MINUTES) ??
