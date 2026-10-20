@@ -221,6 +221,7 @@ export struct TtsCatalogSheet {
         .height(34)
         .borderRadius(17)
         .backgroundColor(this.orderToggleBackground())
+        .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
         .accessibilityText(this.reverseOrder ? '切换为正序目录' : '切换为倒序目录')
         .onClick(() => this.onToggleOrder())
         .margin({ left: 4 })

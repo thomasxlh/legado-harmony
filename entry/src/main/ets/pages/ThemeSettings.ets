@@ -7,7 +7,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { RecentReadCardUpdater } from '../utils/RecentReadCardUpdater';
 import { CustomThemeScheme, CustomThemeSchemeStore } from '../utils/CustomThemeSchemeStore';
 import { BuiltinThemeRegistry } from '../theme/BuiltinThemeRegistry';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import { ThemeStartupCover } from '../components/ThemeStartupCover';
 import { ReaderThemeBackground } from '../components/ReaderThemeBackground';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
@@ -136,7 +136,13 @@ struct ThemeSettingsPage {
 
       // Pinned over the edge-to-edge list so scrolled content remains visible
       // beneath the status/title area instead of being clipped by it.
-      this.titleBar()
+      SettingsTitleBar({
+        title: '主题',
+        appDarkMode: this.appDarkMode,
+        statusBarHeight: this.statusBarHeight,
+        surfaceColor: this.titleBarSurfaceColor(),
+        rightPadding: 12
+      })
 
       if (this.showCustomThemeActionMenu) {
         this.customThemeActionMenu()
@@ -329,29 +335,6 @@ struct ThemeSettingsPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('主题')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    // The status-bar inset belongs to the pinned title itself, avoiding an
-    // additional opaque strip above it while keeping controls out of the
-    // system status area.
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight, right: 12 })
-    .backgroundColor(this.titleBarSurfaceColor())
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
   sectionTitle(title: string) {
     Text(title)
       .fontSize(13)
@@ -368,8 +351,8 @@ struct ThemeSettingsPage {
         .fontColor(this.subTextColor())
         .layoutWeight(1)
       Button('添加方案')
-        .height(30)
         .fontSize(12)
+        .constraintSize({ minHeight: 44 })
         .fontColor(this.customSchemes.length < CustomThemeSchemeStore.MAX_SCHEMES ?
           '#FFFFFF' : this.subTextColor())
         .backgroundColor(this.customSchemes.length < CustomThemeSchemeStore.MAX_SCHEMES ?
@@ -785,8 +768,8 @@ struct ThemeSettingsPage {
             .fontColor(this.activeVariant(theme).colors.subTextColor)
             .layoutWeight(1)
           Button('编辑主题')
-            .height(32)
             .fontSize(12)
+            .constraintSize({ minHeight: 44 })
             .fontColor('#FFFFFF')
             .backgroundColor(this.activeVariant(theme).colors.buttonColor)
             .onClick(() => {

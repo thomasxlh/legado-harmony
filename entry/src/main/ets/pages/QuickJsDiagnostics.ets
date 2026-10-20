@@ -1,6 +1,6 @@
 import { router } from '@kit.ArkUI';
 import { Context } from '@kit.AbilityKit';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import { QuickJsFingerprintStats, QuickJsMigrationSnapshot,
   QuickJsMigrationStore } from '../core/script/QuickJsMigrationStore';
 import { QuickJsRuntimeMode } from '../core/script/QuickJsRuntimeStatus';
@@ -71,7 +71,7 @@ struct QuickJsDiagnosticsPage {
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .height('100%')
-      this.titleBar()
+      SettingsTitleBar({ title: '脚本引擎迁移', appDarkMode: this.appDarkMode, statusBarHeight: this.statusBarHeight })
     }
     .width('100%')
     .height('100%')
@@ -190,26 +190,6 @@ struct QuickJsDiagnosticsPage {
     .borderRadius(16)
     .backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('脚本引擎迁移')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   private setMode(mode: QuickJsRuntimeMode): void {

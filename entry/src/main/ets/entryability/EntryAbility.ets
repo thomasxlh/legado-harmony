@@ -120,7 +120,7 @@ export default class EntryAbility extends UIAbility {
     PersistentStorage.persistProp('readerPageTurnAnimation', true);
     PersistentStorage.persistProp('readerPageTurnAnimationType', 1);
     PersistentStorage.persistProp('readerVolumeTurnPage', false);
-    PersistentStorage.persistProp('readerKeepScreenOn', true);
+    PersistentStorage.persistProp('readerKeepScreenOn', false);
     PersistentStorage.persistProp('readerExtendToStatusBar', false);
     PersistentStorage.persistProp('readerLastPageViewWidth', 0);
     PersistentStorage.persistProp('readerLastPageViewHeight', 0);
@@ -212,10 +212,15 @@ export default class EntryAbility extends UIAbility {
     }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Sync reader settings failed: %{public}s', JSON.stringify(e));
     });
+    // 云端偏好下行应用后重放到运行中的界面：applyRemote 只写回 Preferences，
+    // 当前主题/深色模式等 AppStorage 镜像要靠这里重新装载，否则恢复要等下次启动。
+    PreferenceCloudSyncService.setStoreRestoredListener((storeName: string) => {
+      this.applyRestoredPreferenceStore(storeName);
+    });
     // 阅读偏好/主题设置的端云同步桥：注册各偏好 store 的变更监听与云同步
     // 会话回调。attach 幂等，失败只影响偏好上云，不影响主流程。
     PreferenceCloudSyncService.attach(this.context).catch((e: Error) => {
-      hilog.warn(0x0000, 'testTag', 'Attach preference cloud sync failed: %{public}s', JSON.stringify(e));
+      hilog.warn(0x0000, 'testTag', 'Attach preference cloud sync failed: %{public}s', e.message);
     });
     // 主题/背景图片的端云同步桥：注册会话回调并安排启动对账（镜像入库/下行落盘）。
     // attach 幂等，失败只影响图片上云，不影响主流程。
@@ -407,6 +412,90 @@ export default class EntryAbility extends UIAbility {
     }
     this.appliedColorMode = colorMode;
     this.context.getApplicationContext().setColorMode(colorMode);
+  }
+
+  /**
+   * 云端偏好下行应用完成后，把有 AppStorage 镜像的 store 重新装载并应用到
+   * 运行中的界面（当前主题、深色模式、玻璃效果、朗读速度等）。
+   * applyRemote 仅在云端行与本机内容确实不同时触发，不会无差别重发主题、
+   * 重置正在编辑的表单。无镜像的 store（自定义方案库、净化规则等）缓存已
+   * 在 applyRemote 失效，页面下次读取自动取到云端值，无需重放。
+   */
+  private applyRestoredPreferenceStore(storeName: string): void {
+    const context = this.context;
+    if (storeName === 'app_theme_mode') {
+      AppThemeModeStore.load(context).then((mode: string) => {
+        AppThemeModeStore.applyToStorage(mode);
+        this.syncSystemColorMode(context.config);
+      }).catch((e: Error) => {
+        hilog.warn(0x0000, 'testTag', 'Apply restored theme mode failed: %{public}s', e.message);
+      });
+      return;
+    }
+    if (storeName === 'app_theme_settings') {
+      AppThemeSettingsStore.load(context).then((settings) => {
+        AppThemeSettingsStore.applyToStorage(settings);
+        // 同步 modeDependentThemeKey，避免下次前台刷新把刚恢复的主题再重发一遍。
+        const darkMode = AppStorage.get<boolean>('appDarkMode') || false;
+        this.modeDependentThemeKey = `${ThemeRuntime.currentThemeId()}:${darkMode ? 'dark' : 'light'}`;
+        try {
+          context.getApplicationContext().setFont(ThemeRuntime.fontFamily());
+        } catch (e) {
+          hilog.warn(0x0000, 'testTag', 'Apply restored theme font failed: %{public}s', JSON.stringify(e));
+        }
+      }).catch((e: Error) => {
+        hilog.warn(0x0000, 'testTag', 'Apply restored theme settings failed: %{public}s', e.message);
+      });
+      return;
+    }
+    if (storeName === 'reader_settings') {
+      ReaderSettingsStore.load(context).then((settings) => {
+        ReaderSettingsStore.applyToStorage(settings);
+      }).catch((e: Error) => {
+        hilog.warn(0x0000, 'testTag', 'Apply restored reader settings failed: %{public}s', e.message);
+      });
+      return;
+    }
+    if (storeName === 'glass_settings') {
+      GlassSettingsStore.load(context).then((settings) => {
+        GlassSettingsStore.applyToStorage(settings);
+      }).catch((e: Error) => {
+        hilog.warn(0x0000, 'testTag', 'Apply restored glass settings failed: %{public}s', e.message);
+      });
+      return;
+    }
+    if (storeName === 'bookshelf_display_settings') {
+      BookshelfDisplaySettingsStore.load(context).then((settings) => {
+        BookshelfDisplaySettingsStore.applyToStorage(settings);
+      }).catch((e: Error) => {
+        hilog.warn(0x0000, 'testTag', 'Apply restored bookshelf display failed: %{public}s', e.message);
+      });
+      return;
+    }
+    if (storeName === 'cover_gallery_settings') {
+      CoverGalleryStore.load(context).then((snapshot) => {
+        CoverGalleryStore.applyToStorage(snapshot);
+      }).catch((e: Error) => {
+        hilog.warn(0x0000, 'testTag', 'Apply restored cover gallery failed: %{public}s', e.message);
+      });
+      return;
+    }
+    if (storeName === 'search_explore_settings') {
+      SearchExploreSettingsStore.load(context).then((settings) => {
+        SearchExploreSettingsStore.applyToStorage(settings);
+      }).catch((e: Error) => {
+        hilog.warn(0x0000, 'testTag', 'Apply restored search explore settings failed: %{public}s', e.message);
+      });
+      return;
+    }
+    if (storeName === 'tts_settings') {
+      TtsSettingsStore.load(context).then((settings) => {
+        TtsSettingsStore.applyToStorage(settings);
+      }).catch((e: Error) => {
+        hilog.warn(0x0000, 'testTag', 'Apply restored tts settings failed: %{public}s', e.message);
+      });
+      return;
+    }
   }
 
   private handleLaunchWant(want: Want): string {

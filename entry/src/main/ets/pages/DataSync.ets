@@ -1,7 +1,7 @@
 import { router } from '@kit.ArkUI';
 import { common, Want } from '@kit.AbilityKit';
 import { CloudSyncOutcome, CloudSyncService } from '../utils/CloudSyncService';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { syncSystemBars } from '../utils/SystemBars';
@@ -129,7 +129,11 @@ struct DataSyncPage {
       .height('100%')
       .align(Alignment.TopStart)
 
-      this.titleBar()
+      SettingsTitleBar({
+        title: '数据同步',
+        appDarkMode: this.appDarkMode,
+        statusBarHeight: this.statusBarHeight
+      })
     }
     .width('100%')
     .height('100%')
@@ -158,6 +162,17 @@ struct DataSyncPage {
             .width(24)
             .height(24)
             .color(this.accentColor())
+        } else if (this.backgroundSyncing()) {
+          Row({ space: 6 }) {
+            LoadingProgress()
+              .width(18)
+              .height(18)
+              .color(this.accentColor())
+            Text('同步中')
+              .fontSize(12)
+              .fontColor(this.accentColor())
+          }
+          .alignItems(VerticalAlign.Center)
         } else {
           Text(this.cloudBadgeText())
             .fontSize(12)
@@ -310,6 +325,11 @@ struct DataSyncPage {
     return CloudSyncService.summary(this.syncStatus, this.syncLastSuccessAt);
   }
 
+  /** 后台自动同步（前后台切换/云端通知触发）进行中：手动按钮之外的被动提示。 */
+  backgroundSyncing(): boolean {
+    return this.syncStatus === CloudSyncService.STATUS_SYNCING;
+  }
+
   cloudBadgeText(): string {
     if (!this.cloudSyncSupported) {
       return '不可用';
@@ -452,25 +472,5 @@ struct DataSyncPage {
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('数据同步')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 }

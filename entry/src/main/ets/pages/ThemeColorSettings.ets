@@ -497,6 +497,11 @@ struct ThemeColorSettingsPage {
     return ThemeRuntime.subTextColor(this.appDarkMode);
   }
 
+  /** 强调色背景上的可读文字色：浅色自定义强调色时返回深色文字。 */
+  onAccentColor(): string {
+    return ThemeRuntime.onAccentTextColor(this.appDarkMode);
+  }
+
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
   }
@@ -573,7 +578,7 @@ struct ThemeColorSettingsPage {
     Stack({ alignContent: Alignment.Center }) {
       Text(title)
         .fontSize(14)
-        .fontColor(this.selectedMode === mode ? '#FFFFFF' : this.primaryTextColor())
+        .fontColor(this.selectedMode === mode ? this.onAccentColor() : this.primaryTextColor())
     }
       .layoutWeight(1)
       .height(38)
@@ -693,7 +698,7 @@ struct ThemeColorSettingsPage {
           { type: ButtonType.Normal })
           .height(38)
           .fontSize(13)
-          .fontColor('#FFFFFF')
+          .fontColor(this.onAccentColor())
           .backgroundColor(this.currentButtonColor())
           .layoutWeight(1)
           .onClick(() => this.chooseStartupImage())
@@ -760,7 +765,7 @@ struct ThemeColorSettingsPage {
           { type: ButtonType.Normal })
           .height(38)
           .fontSize(13)
-          .fontColor('#FFFFFF')
+          .fontColor(this.onAccentColor())
           .backgroundColor(this.currentButtonColor())
           .layoutWeight(1)
           .onClick(() => this.chooseMainBackgroundImage())
@@ -972,7 +977,7 @@ struct ThemeColorSettingsPage {
         Button('主要按钮')
           .height(40)
           .layoutWeight(1)
-          .fontColor('#FFFFFF')
+          .fontColor(this.onAccentColor())
           .backgroundColor(this.currentButtonColor())
         Text('强调文字')
           .fontSize(15)

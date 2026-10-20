@@ -6,7 +6,8 @@ import {
   AppDataBackupSelection,
   AppDataBackupService
 } from '../utils/AppDataBackupService';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { syncSystemBars } from '../utils/SystemBars';
@@ -117,7 +118,12 @@ struct WebDavPage {
       .height('100%')
       .padding({ top: 56 + this.statusBarHeight })
 
-      this.titleBar()
+      SettingsTitleBar({
+        title: 'WebDAV',
+        appDarkMode: this.appDarkMode,
+        statusBarHeight: this.statusBarHeight,
+        pinned: true
+      })
 
       if (this.showEntryActionMenu) {
         this.entryActionMenu()
@@ -170,7 +176,7 @@ struct WebDavPage {
       .layoutWeight(1)
       .height(36)
       .fontSize(14)
-      .fontColor(this.tab === value ? Color.White : this.primaryTextColor())
+      .fontColor(this.tab === value ? this.onAccentColor() : this.primaryTextColor())
       .backgroundColor(this.tab === value ? this.accentColor() : Color.Transparent)
       .borderRadius(10)
       .onClick(() => {
@@ -400,7 +406,7 @@ struct WebDavPage {
           .layoutWeight(1)
           .height(42)
           .backgroundColor(this.accentColor())
-          .fontColor('#FFFFFF')
+          .fontColor(this.onAccentColor())
           .onClick(() => this.submitEntryNameDialog())
       }
       .width('100%')
@@ -432,7 +438,7 @@ struct WebDavPage {
       if (this.restorePasswordError) {
         Text(this.restorePasswordError)
           .fontSize(12)
-          .fontColor('#D9485F')
+          .fontColor(this.dangerColor())
           .width('100%')
       }
       Row({ space: 10 }) {
@@ -445,7 +451,7 @@ struct WebDavPage {
         Button('继续恢复')
           .layoutWeight(1)
           .height(40)
-          .fontColor(Color.White)
+          .fontColor(this.onAccentColor())
           .backgroundColor(this.accentColor())
           .onClick(() => this.confirmRestorePassword())
       }
@@ -473,12 +479,14 @@ struct WebDavPage {
               }
               .layoutWeight(1)
               .alignItems(HorizontalAlign.Start)
-              Toggle({ type: ToggleType.Switch, isOn: this.encryptBackup })
-                .selectedColor(this.accentColor())
-                .onChange((value: boolean) => {
+              AdaptiveSwitch({
+                isOn: this.encryptBackup,
+                selectedColor: this.accentColor(),
+                onChange: (value: boolean) => {
                   this.encryptBackup = value;
                   this.scheduleFormDraftSave();
-                })
+                }
+              })
             }
             .width('100%')
             if (this.encryptBackup) {
@@ -510,18 +518,20 @@ struct WebDavPage {
               }
               .layoutWeight(1)
               .alignItems(HorizontalAlign.Start)
-              Toggle({ type: ToggleType.Switch, isOn: this.includeLocalBooks })
-                .selectedColor(this.accentColor())
-                .onChange((value: boolean) => {
+              AdaptiveSwitch({
+                isOn: this.includeLocalBooks,
+                selectedColor: this.accentColor(),
+                onChange: (value: boolean) => {
                   this.includeLocalBooks = value;
                   this.scheduleFormDraftSave();
-                })
+                }
+              })
             }
             .width('100%')
             Button(this.encryptBackup ? '立即上传加密备份' : '立即上传备份')
               .width('100%')
               .height(44)
-              .fontColor(Color.White)
+              .fontColor(this.onAccentColor())
               .backgroundColor(this.accentColor())
               .onClick(() => this.uploadBackup())
           }
@@ -558,15 +568,15 @@ struct WebDavPage {
                 .width('100%')
               Row({ space: 8 }) {
                 Button('恢复')
-                  .layoutWeight(1)
-                  .height(34)
-                  .fontColor(Color.White)
-                  .backgroundColor(this.accentColor())
-                  .onClick(() => this.restoreBackup(entry))
-                Button('删除')
-                  .layoutWeight(1)
-                  .height(34)
-                  .fontColor('#D9485F')
+                   .layoutWeight(1)
+                   .height(34)
+                   .fontColor(this.onAccentColor())
+                   .backgroundColor(this.accentColor())
+                   .onClick(() => this.restoreBackup(entry))
+                 Button('删除')
+                   .layoutWeight(1)
+                   .height(34)
+                   .fontColor(this.dangerColor())
                   .backgroundColor(this.softColor())
                   .onClick(() => this.deleteBackup(entry))
               }
@@ -605,7 +615,7 @@ struct WebDavPage {
         if (/^http:\/\//i.test(this.connection.baseUrl.trim())) {
           Text('HTTP 会明文传输用户名、密码和文件内容，请仅在可信局域网或受保护的 VPN 中使用。')
             .fontSize(12)
-            .fontColor('#D9485F')
+            .fontColor(this.dangerColor())
             .width('calc(100% - 32vp)')
         }
         this.field('用户名', this.connection.username, 'WebDAV 用户名',
@@ -631,12 +641,14 @@ struct WebDavPage {
             .fontSize(14)
             .fontColor(this.primaryTextColor())
             .layoutWeight(1)
-          Toggle({ type: ToggleType.Switch, isOn: this.connection.rememberPassword })
-            .selectedColor(this.accentColor())
-            .onChange((value: boolean) => {
+          AdaptiveSwitch({
+            isOn: this.connection.rememberPassword,
+            selectedColor: this.accentColor(),
+            onChange: (value: boolean) => {
               this.connection.rememberPassword = value;
               this.scheduleFormDraftSave();
-            })
+            }
+          })
         }
         .width('calc(100% - 24vp)')
         .padding(14)
@@ -645,14 +657,14 @@ struct WebDavPage {
         Button('测试并保存')
           .width('calc(100% - 24vp)')
           .height(44)
-          .fontColor(Color.White)
+          .fontColor(this.onAccentColor())
           .backgroundColor(this.accentColor())
           .onClick(() => this.testAndSave())
         if (this.configured) {
           Button('删除此连接')
             .width('calc(100% - 24vp)')
             .height(42)
-            .fontColor('#D9485F')
+            .fontColor(this.dangerColor())
             .backgroundColor(this.cardColor())
             .onClick(() => this.deleteConnection())
         }
@@ -697,7 +709,7 @@ struct WebDavPage {
         .fontColor(this.subTextColor())
         .textAlign(TextAlign.Center)
       Button('去配置')
-        .fontColor(Color.White)
+        .fontColor(this.onAccentColor())
         .backgroundColor(this.accentColor())
         .onClick(() => this.tab = 'settings')
     }
@@ -870,7 +882,7 @@ struct WebDavPage {
     const confirmation = await promptAction.showDialog({
       title: '删除 WebDAV 连接',
       message: '只会删除本机连接配置和保存的密码，不会删除远端文件。',
-      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: '#D9485F' }]
+      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: this.dangerColor() }]
     });
     if (confirmation.index !== 1) return;
     await WebDavSecretStore.deletePassword(getContext(this), this.connection.id);
@@ -1303,7 +1315,7 @@ struct WebDavPage {
     const confirmation = await promptAction.showDialog({
       title: '删除远端备份',
       message: `确定删除“${entry.name}”吗？此操作无法撤销。`,
-      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: '#D9485F' }]
+      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: this.dangerColor() }]
     });
     if (confirmation.index !== 1) return;
     this.busy = true;
@@ -1374,28 +1386,6 @@ struct WebDavPage {
     return this.scrollableTopInset() + 54;
   }
 
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('WebDAV')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-    .position({ x: 0, y: 0 })
-    .zIndex(3)
-  }
-
   syncBars(): void { syncSystemBars(getContext(this), this.appDarkMode, this.pageColor()); }
   pageColor(): string { return ThemeRuntime.pageColor(this.appDarkMode); }
 
@@ -1411,4 +1401,7 @@ struct WebDavPage {
 
   /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
   dangerColor(): string { return ThemeRuntime.dangerColor(this.appDarkMode); }
+
+  /** 强调色背景上的可读文字色：浅色自定义强调色时返回深色文字。 */
+  onAccentColor(): string { return ThemeRuntime.onAccentTextColor(this.appDarkMode); }
 }

@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import { Context } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { LengthMetrics } from '@ohos.arkui.node';
@@ -6,7 +5,7 @@ import picker from '@ohos.file.picker';
 import fs from '@ohos.file.fs';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { BookSource } from '../model/data/Book';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import { QuickJsRegressionIssueCategory, QuickJsRegressionItemResult, QuickJsRegressionProgress,
   QuickJsRegressionReport, QuickJsRegressionRunner, QuickJsRegressionStage, QuickJsRegressionStatus }
   from '../core/script/QuickJsRegressionRunner';
@@ -93,7 +92,8 @@ struct QuickJsRegressionPage {
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .height('100%')
-      this.titleBar()
+      SettingsTitleBar({ title: '书源脚本回归测试', appDarkMode: this.appDarkMode,
+        statusBarHeight: this.statusBarHeight })
     }
     .width('100%')
     .height('100%')
@@ -463,20 +463,6 @@ struct QuickJsRegressionPage {
       }
     }.width('100%').padding(10).borderRadius(10).backgroundColor(this.softColor())
       .alignItems(HorizontalAlign.Start)
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('书源脚本回归测试').fontSize(20).fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor()).layoutWeight(1)
-    }
-    .width('100%').height(56 + this.statusBarHeight).padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode)).backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   private async loadSources(): Promise<void> {

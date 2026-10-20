@@ -3,10 +3,14 @@ import pasteboard from '@ohos.pasteboard';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { lanReaderServer } from '../core/lan/LanReaderServer';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { FormDraftStore } from '../utils/FormDraftStore';
+
+const LAN_SERVER_FORM_DRAFT_KEY: string = 'lanServer:form';
 
 @Entry
 @Component
@@ -27,8 +31,20 @@ struct OtherSettingsPage {
   @State lanReaderPasswordDraft: string = '';
 
   aboutToAppear(): void {
-    this.lanReaderPasswordDraft = this.lanReaderPassword;
+    this.restoreLanServerFormDraft();
     this.syncBars();
+  }
+
+  restoreLanServerFormDraft(): void {
+    FormDraftStore.load(getContext(this), LAN_SERVER_FORM_DRAFT_KEY).then((raw: string) => {
+      this.lanReaderPasswordDraft = raw || this.lanReaderPassword;
+    }).catch((_e: Object) => {
+      this.lanReaderPasswordDraft = this.lanReaderPassword;
+    });
+  }
+
+  aboutToDisappear(): void {
+    FormDraftStore.persist(getContext(this), LAN_SERVER_FORM_DRAFT_KEY, this.lanReaderPasswordDraft);
   }
 
   onPageShow(): void {
@@ -137,7 +153,11 @@ struct OtherSettingsPage {
       .height('100%')
       .align(Alignment.TopStart)
 
-      this.titleBar()
+      SettingsTitleBar({
+        title: '其他设置',
+        appDarkMode: this.appDarkMode,
+        statusBarHeight: this.statusBarHeight
+      })
     }
     .width('100%')
     .height('100%')
@@ -216,7 +236,10 @@ struct OtherSettingsPage {
         TextInput({ text: this.lanReaderPasswordDraft, placeholder: '留空则无需密码' })
           .type(InputType.Password)
           .layoutWeight(1)
-          .onChange((value: string) => this.lanReaderPasswordDraft = value)
+          .onChange((value: string) => {
+            this.lanReaderPasswordDraft = value;
+            FormDraftStore.persistSoon(getContext(this), LAN_SERVER_FORM_DRAFT_KEY, value);
+          })
         Button(this.lanReaderPassword ? '修改' : '设置')
           .fontSize(13)
           .onClick(() => this.saveLanReaderPassword())
@@ -249,6 +272,7 @@ struct OtherSettingsPage {
     }
     lanReaderServer.setPassword(password);
     this.lanReaderPasswordDraft = password;
+    FormDraftStore.removePersistent(getContext(this), LAN_SERVER_FORM_DRAFT_KEY);
     HdsFeedback.showToast(password ? '访问密码已设置' : '已取消访问密码');
   }
 
@@ -306,26 +330,6 @@ struct OtherSettingsPage {
 
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('其他设置')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
@@ -425,9 +429,11 @@ struct OtherSettingsPage {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
-      Toggle({ type: ToggleType.Switch, isOn: value })
-        .selectedColor(this.buttonColor())
-        .onChange((checked: boolean) => onChange(checked))
+      AdaptiveSwitch({
+        isOn: value,
+        selectedColor: this.buttonColor(),
+        onChange: (checked: boolean) => onChange(checked)
+      })
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })

@@ -51,7 +51,8 @@ export class ThemeColorTokens {
   cardColor: string = '#FFFFFF';
   inputColor: string = '#F0F2F5';
   primaryTextColor: string = '#1F1F1F';
-  subTextColor: string = '#888888';
+  // 浅色次要文本默认值需满足 WCAG AA 4.5:1（#888888 在白底仅 3.5:1 不达标）。
+  subTextColor: string = '#666B72';
   dividerColor: string = '#E0E0E0';
   accentColor: string = '#007DFF';
   buttonColor: string = '#007DFF';

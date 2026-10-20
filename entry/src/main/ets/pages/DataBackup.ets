@@ -1,7 +1,7 @@
 import { picker } from '@kit.CoreFileKit';
 import fs from '@ohos.file.fs';
 import { promptAction, router } from '@kit.ArkUI';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
@@ -12,6 +12,19 @@ import {
 } from '../utils/AppDataBackupService';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { FormDraftStore } from '../utils/FormDraftStore';
+
+const DATA_BACKUP_EXPORT_CATEGORIES_KEY: string = 'dataBackup.exportCategories';
+
+class DataBackupExportCategorySelection {
+  sources: boolean = true;
+  bookshelf: boolean = true;
+  progress: boolean = true;
+  bookmarks: boolean = true;
+  localBooks: boolean = true;
+  settings: boolean = true;
+  searchHistory: boolean = false;
+}
 
 @Entry
 @Component
@@ -59,6 +72,9 @@ struct DataBackupPage {
     this.syncBars();
     const params = router.getParams() as Record<string, string>;
     this.mode = params?.['mode'] === 'import' ? 'import' : 'export';
+    if (this.mode === 'export') {
+      this.restoreExportCategorySelection();
+    }
     this.tempCleanupTask = AppDataBackupService.cleanupStaleTempFiles(getContext(this)).catch((error: Error) => {
       console.warn('清理遗留备份临时文件失败:', error);
     });
@@ -156,9 +172,11 @@ struct DataBackupPage {
       .align(Alignment.TopStart)
       .backgroundColor(this.pageColorBehind())
 
-      this.titleBar()
-
-
+      SettingsTitleBar({
+        title: this.mode === 'import' ? '数据导入' : '数据导出',
+        appDarkMode: this.appDarkMode,
+        statusBarHeight: this.statusBarHeight
+      })
 
       if (this.busy) {
         Stack({ alignContent: Alignment.Center }) {
@@ -201,26 +219,6 @@ struct DataBackupPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text(this.mode === 'import' ? '数据导入' : '数据导出')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
   selectionCard(exporting: boolean) {
     Column() {
       this.selectionRow('书源', '规则、分组、排序和启用状态；不含登录凭据', exporting,
@@ -256,6 +254,12 @@ struct DataBackupPage {
           .fontSize(11)
           .fontColor(this.subTextColor())
           .margin({ top: 3 })
+        if (!exporting && !this.importCategoryAvailable(category)) {
+          Text('该备份未包含此项')
+            .fontSize(11)
+            .fontColor(this.subTextColor())
+            .margin({ top: 3 })
+        }
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -267,11 +271,12 @@ struct DataBackupPage {
         .onChange((value: boolean) => this.setSelectionValue(exporting, category, value))
     }
     .width('calc(100% - 28vp)')
-    .height(68)
+    .constraintSize({ minHeight: 68 })
     .padding({ top: 9, bottom: 9 })
     .margin({ left: 14, right: 14 })
     .border({ width: { bottom: divider ? 0.5 : 0 }, color: this.dividerColor() })
     .alignItems(VerticalAlign.Center)
+    .opacity(!exporting && !this.importCategoryAvailable(category) ? 0.45 : 1)
   }
 
   @Builder
@@ -414,6 +419,36 @@ struct DataBackupPage {
     else if (category === AppDataBackupService.CATEGORY_LOCAL_BOOKS) exporting ? this.exportLocalBooks = value : this.importLocalBooks = value;
     else if (category === AppDataBackupService.CATEGORY_SETTINGS) exporting ? this.exportSettings = value : this.importSettings = value;
     else exporting ? this.exportSearchHistory = value : this.importSearchHistory = value;
+    if (exporting) this.persistExportCategorySelection();
+  }
+
+  async restoreExportCategorySelection(): Promise<void> {
+    const raw = await FormDraftStore.load(getContext(this), DATA_BACKUP_EXPORT_CATEGORIES_KEY);
+    if (!raw) return;
+    try {
+      const saved = JSON.parse(raw) as DataBackupExportCategorySelection;
+      this.exportSources = saved.sources === true;
+      this.exportBookshelf = saved.bookshelf === true;
+      this.exportProgress = saved.progress === true;
+      this.exportBookmarks = saved.bookmarks === true;
+      this.exportLocalBooks = saved.localBooks === true;
+      this.exportSettings = saved.settings === true;
+      this.exportSearchHistory = saved.searchHistory === true;
+    } catch (_) {
+      FormDraftStore.removePersistent(getContext(this), DATA_BACKUP_EXPORT_CATEGORIES_KEY);
+    }
+  }
+
+  persistExportCategorySelection(): void {
+    const saved = new DataBackupExportCategorySelection();
+    saved.sources = this.exportSources;
+    saved.bookshelf = this.exportBookshelf;
+    saved.progress = this.exportProgress;
+    saved.bookmarks = this.exportBookmarks;
+    saved.localBooks = this.exportLocalBooks;
+    saved.settings = this.exportSettings;
+    saved.searchHistory = this.exportSearchHistory;
+    FormDraftStore.persistSoon(getContext(this), DATA_BACKUP_EXPORT_CATEGORIES_KEY, JSON.stringify(saved));
   }
 
   selection(exporting: boolean): AppDataBackupSelection {
@@ -635,6 +670,7 @@ struct DataBackupPage {
           this.busyProgress = percent;
         });
       HdsFeedback.showToast(`导入完成：${result.summary()}`);
+      HdsFeedback.showToast('导入的设置需重启应用后生效');
       this.importDescription = `导入完成：${result.summary()}。设置项重启应用后完全生效。`;
       try {
         await AppDataBackupService.discardImport(this.importSession);

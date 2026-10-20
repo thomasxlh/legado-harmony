@@ -43,6 +43,7 @@ export class TtsPcmAudioPlayer {
   private rendererStartPromise: Promise<void> | null = null;
   private rendererWriteCallback: audio.AudioRendererWriteDataCallback | null = null;
   private rendererInterruptCallback: ((event: audio.InterruptEvent) => void) | null = null;
+  private rendererDeviceChangeCallback: ((info: audio.AudioStreamDeviceChangeInfo) => void) | null = null;
   private pendingWrites: PendingPcmWrite[] = [];
   private pendingWriteBytes: number = 0;
   private paused: boolean = false;
@@ -377,14 +378,16 @@ export class TtsPcmAudioPlayer {
     const renderer = this.renderer;
     const writeCallback = this.rendererWriteCallback;
     const interruptCallback = this.rendererInterruptCallback;
+    const deviceChangeCallback = this.rendererDeviceChangeCallback;
     this.rendererWriteCallback = null;
     this.rendererInterruptCallback = null;
+    this.rendererDeviceChangeCallback = null;
     this.clearPlaybackTimeline(renderer);
     this.renderer = null;
     if (!renderer) {
       return;
     }
-    this.releaseRenderer(renderer, writeCallback, interruptCallback);
+    this.releaseRenderer(renderer, writeCallback, interruptCallback, deviceChangeCallback);
   }
 
   release(): void {
@@ -499,14 +502,17 @@ export class TtsPcmAudioPlayer {
   private async releaseStaleRenderer(renderer: audio.AudioRenderer): Promise<void> {
     let writeCallback: audio.AudioRendererWriteDataCallback | null = null;
     let interruptCallback: ((event: audio.InterruptEvent) => void) | null = null;
+    let deviceChangeCallback: ((info: audio.AudioStreamDeviceChangeInfo) => void) | null = null;
     if (this.renderer === renderer) {
       this.renderer = null;
       writeCallback = this.rendererWriteCallback;
       interruptCallback = this.rendererInterruptCallback;
+      deviceChangeCallback = this.rendererDeviceChangeCallback;
       this.rendererWriteCallback = null;
       this.rendererInterruptCallback = null;
+      this.rendererDeviceChangeCallback = null;
     }
-    await this.releaseRenderer(renderer, writeCallback, interruptCallback);
+    await this.releaseRenderer(renderer, writeCallback, interruptCallback, deviceChangeCallback);
   }
 
   private ensurePlaybackTimeline(sampleRate: number, generation: number): void {
@@ -658,11 +664,14 @@ export class TtsPcmAudioPlayer {
     const previousRenderer = this.renderer;
     const previousWriteCallback = this.rendererWriteCallback;
     const previousInterruptCallback = this.rendererInterruptCallback;
+    const previousDeviceChangeCallback = this.rendererDeviceChangeCallback;
     this.renderer = null;
     this.rendererWriteCallback = null;
     this.rendererInterruptCallback = null;
+    this.rendererDeviceChangeCallback = null;
     if (previousRenderer) {
-      await this.releaseRenderer(previousRenderer, previousWriteCallback, previousInterruptCallback);
+      await this.releaseRenderer(previousRenderer, previousWriteCallback, previousInterruptCallback,
+        previousDeviceChangeCallback);
     }
     this.currentSampleRate = nextSampleRate;
     const options: audio.AudioRendererOptions = {
@@ -689,8 +698,13 @@ export class TtsPcmAudioPlayer {
       this.handleAudioInterrupt(renderer, event);
     };
     renderer.on('audioInterrupt', interruptCallback);
+    const deviceChangeCallback = (info: audio.AudioStreamDeviceChangeInfo): void => {
+      this.handleOutputDeviceChange(renderer, info);
+    };
+    renderer.on('outputDeviceChangeWithInfo', deviceChangeCallback);
     this.rendererWriteCallback = writeCallback;
     this.rendererInterruptCallback = interruptCallback;
+    this.rendererDeviceChangeCallback = deviceChangeCallback;
     this.renderer = renderer;
     console.info(`[TTS] audio renderer created: ${this.debugState()}`);
     return renderer;
@@ -698,7 +712,8 @@ export class TtsPcmAudioPlayer {
 
   private async releaseRenderer(renderer: audio.AudioRenderer,
     writeCallback: audio.AudioRendererWriteDataCallback | null,
-    interruptCallback: ((event: audio.InterruptEvent) => void) | null): Promise<void> {
+    interruptCallback: ((event: audio.InterruptEvent) => void) | null,
+    deviceChangeCallback: ((info: audio.AudioStreamDeviceChangeInfo) => void) | null): Promise<void> {
     if (writeCallback) {
       try {
         renderer.off('writeData', writeCallback);
@@ -711,6 +726,13 @@ export class TtsPcmAudioPlayer {
         renderer.off('audioInterrupt', interruptCallback);
       } catch (error) {
         console.warn('[TTS] unregister pcm interrupt callback failed:', error);
+      }
+    }
+    if (deviceChangeCallback) {
+      try {
+        renderer.off('outputDeviceChangeWithInfo', deviceChangeCallback);
+      } catch (error) {
+        console.warn('[TTS] unregister pcm device change callback failed:', error);
       }
     }
     try {
@@ -770,6 +792,37 @@ export class TtsPcmAudioPlayer {
       this.resumeRendererAfterInterrupt(renderer);
       this.notifyInterruptedChange();
     }
+  }
+
+  /**
+   * Pause when the active output device disappears (Bluetooth disconnect, both
+   * earbuds removed, wired headset unplugged). Without this the audiobook
+   * stream is re-routed to the speaker and keeps reading aloud in public,
+   * which is exactly what the 听书 guideline says to avoid. Reconnecting does
+   * not auto-resume; the user resumes from the floating capsule or panel.
+   */
+  private handleOutputDeviceChange(renderer: audio.AudioRenderer,
+    info: audio.AudioStreamDeviceChangeInfo): void {
+    if (renderer !== this.renderer) {
+      return;
+    }
+    console.info(`[TTS] pcm output device change: reason=${info.changeReason}`);
+    if (info.changeReason !== audio.AudioStreamDeviceChangeReason.REASON_OLD_DEVICE_UNAVAILABLE) {
+      return;
+    }
+    if (this.paused || this.systemInterrupted) {
+      return;
+    }
+    if (renderer.state !== audio.AudioState.STATE_RUNNING) {
+      return;
+    }
+    console.info('[TTS] pcm output device unavailable: pausing playback');
+    this.systemInterrupted = true;
+    this.updatePlaybackTimeline(this.playGeneration);
+    renderer.pause().catch((error: Error) => {
+      console.warn('[TTS] pause pcm renderer after device change failed:', error);
+    });
+    this.notifyInterruptedChange();
   }
 
   private async resumeRendererAfterInterrupt(renderer: audio.AudioRenderer): Promise<void> {

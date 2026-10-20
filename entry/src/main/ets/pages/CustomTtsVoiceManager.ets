@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import picker from '@ohos.file.picker';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
@@ -6,7 +5,8 @@ import { HttpTTS } from '../model/data/Book';
 import { HttpClient } from '../core/http/HttpClient';
 import { syncSystemBars } from '../utils/SystemBars';
 import { SystemTtsReader } from '../utils/SystemTtsReader';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { TtsSettings, TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
@@ -119,7 +119,9 @@ struct CustomTtsVoiceManagerPage {
     Stack({ alignContent: Alignment.BottomEnd }) {
       AppBackgroundLayer()
       Column() {
-        this.titleBar()
+        SettingsTitleBar({ title: '自定义音色管理', appDarkMode: this.appDarkMode,
+          statusBarHeight: this.statusBarHeight, rightPadding: 16,
+          trailingContent: () => { this.titleBarTrailing() } })
         this.searchBar()
         if (this.selectionMode) {
           this.selectionHeader()
@@ -968,35 +970,16 @@ struct CustomTtsVoiceManagerPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-
-      Text('自定义音色管理')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-
-      Text(this.selectionMode ? '取消' : '选择')
-        .fontSize(15)
-        .fontColor(this.primaryTextColor())
-        .width(52)
-        .height(56)
-        .textAlign(TextAlign.Center)
-        .onClick(() => {
-          this.selectionMode ? this.exitSelectionMode() : this.enterSelectionMode();
-        })
-
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ right: 16, top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
+  titleBarTrailing() {
+    Text(this.selectionMode ? '取消' : '选择')
+      .fontSize(15)
+      .fontColor(this.primaryTextColor())
+      .width(52)
+      .height(56)
+      .textAlign(TextAlign.Center)
+      .onClick(() => {
+        this.selectionMode ? this.exitSelectionMode() : this.enterSelectionMode();
+      })
   }
 
   @Builder
@@ -1413,12 +1396,14 @@ struct CustomTtsVoiceManagerPage {
                 .fontSize(15)
                 .fontColor(this.primaryTextColor())
                 .layoutWeight(1)
-              Toggle({ type: ToggleType.Switch, isOn: this.editEnabledCookieJar })
-                .selectedColor(this.buttonColor())
-                .onChange((value: boolean) => {
+              AdaptiveSwitch({
+                isOn: this.editEnabledCookieJar,
+                selectedColor: this.buttonColor(),
+                onChange: (value: boolean) => {
                   this.editEnabledCookieJar = value;
                   this.saveVoiceEditDraft();
-                })
+                }
+              })
             }
             .width('100%')
             .padding({ top: 4, bottom: 4 })

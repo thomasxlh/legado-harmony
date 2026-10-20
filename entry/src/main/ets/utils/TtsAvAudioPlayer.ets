@@ -1,5 +1,6 @@
 import { audio } from '@kit.AudioKit';
 import { media } from '@kit.MediaKit';
+import deviceInfo from '@ohos.deviceInfo';
 import fs from '@ohos.file.fs';
 import { TtsAudioSession } from './TtsAudioSession';
 
@@ -16,6 +17,8 @@ export class TtsAvAudioPlayer {
   private interruptPaused: boolean = false;
   private interruptedChangeListener: (() => void) | null = null;
   private resumeWaiters: Array<() => void> = [];
+  private sessionManager: audio.AudioSessionManager | null = null;
+  private outputDeviceChangeListener: ((event: audio.CurrentOutputDeviceChangedEvent) => void) | null = null;
 
   /**
    * Play one synthesized chunk.
@@ -30,6 +33,7 @@ export class TtsAvAudioPlayer {
     onPlaybackStart?: (durationMs: number) => void): Promise<void> {
     const generation = ++this.playGeneration;
     this.interruptPaused = false;
+    this.ensureOutputDeviceChangeListener();
     const sourceLength = this.getFileLength(filePath);
     const player = await this.acquirePlayer(generation);
     const sourceFile = fs.openSync(filePath, fs.OpenMode.READ_ONLY);
@@ -171,6 +175,7 @@ export class TtsAvAudioPlayer {
   }
 
   release(): void {
+    this.releaseOutputDeviceChangeListener();
     this.stop();
   }
 
@@ -306,6 +311,71 @@ export class TtsAvAudioPlayer {
       throw new Error('朗读音频文件无效');
     }
     return size;
+  }
+
+  /**
+   * Pause when the active output device disappears (Bluetooth disconnect, both
+   * earbuds removed, wired headset unplugged). AVPlayer exposes no stream-bound
+   * device-change event, so the app audio session's 'currentOutputDeviceChanged'
+   * (API 20+) is used instead. Reconnecting does not auto-resume; the user
+   * resumes from the floating capsule or panel, same as a focus interruption.
+   */
+  private ensureOutputDeviceChangeListener(): void {
+    if (this.outputDeviceChangeListener) {
+      return;
+    }
+    if (deviceInfo.sdkApiVersion < 20) {
+      return;
+    }
+    try {
+      if (!this.sessionManager) {
+        this.sessionManager = audio.getAudioManager().getSessionManager();
+      }
+      const listener = (event: audio.CurrentOutputDeviceChangedEvent): void => {
+        this.handleOutputDeviceChange(event);
+      };
+      this.sessionManager.on('currentOutputDeviceChanged', listener);
+      this.outputDeviceChangeListener = listener;
+    } catch (error) {
+      this.sessionManager = null;
+      this.outputDeviceChangeListener = null;
+      console.warn('[TTS] register av output device change listener failed:', error);
+    }
+  }
+
+  private handleOutputDeviceChange(event: audio.CurrentOutputDeviceChangedEvent): void {
+    const player = this.player;
+    if (!player || player.state !== 'playing') {
+      return;
+    }
+    if (this.paused || this.interruptPaused) {
+      return;
+    }
+    console.info(`[TTS] av output device change: reason=${event.changeReason},` +
+      `action=${event.recommendedAction}`);
+    if (event.changeReason !== audio.AudioStreamDeviceChangeReason.REASON_OLD_DEVICE_UNAVAILABLE) {
+      return;
+    }
+    console.info('[TTS] av output device unavailable: pausing playback');
+    this.interruptPaused = true;
+    player.pause().catch(() => {
+    });
+    this.notifyInterruptedChange();
+  }
+
+  private releaseOutputDeviceChangeListener(): void {
+    const listener = this.outputDeviceChangeListener;
+    const manager = this.sessionManager;
+    this.outputDeviceChangeListener = null;
+    this.sessionManager = null;
+    if (!listener || !manager) {
+      return;
+    }
+    try {
+      manager.off('currentOutputDeviceChanged', listener);
+    } catch (error) {
+      console.warn('[TTS] unregister av output device change listener failed:', error);
+    }
   }
 
   private handleAudioInterrupt(player: media.AVPlayer, generation: number,

@@ -132,6 +132,7 @@ export class AppDataBackupService {
     'app_theme_mode',
     'app_theme_settings',
     'bookshelf_display_settings',
+    'change_source_options',
     'cover_gallery_settings',
     'custom_theme_schemes',
     'glass_settings',

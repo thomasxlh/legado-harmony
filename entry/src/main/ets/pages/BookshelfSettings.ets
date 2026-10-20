@@ -6,7 +6,8 @@ import { Book } from '../model/data/Book';
 import { CoverAlbum, CoverGallerySettings } from '../utils/CoverGallerySettings';
 import { CoverGalleryStore, CoverGallerySnapshot } from '../utils/CoverGalleryStore';
 import { RecentReadCardUpdater } from '../utils/RecentReadCardUpdater';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { BookshelfDisplaySettings, BookshelfDisplaySettingsStore } from '../utils/BookshelfDisplaySettingsStore';
 import { SearchExplorePendingBook } from '../utils/SearchExplorePendingBook';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
@@ -202,7 +203,11 @@ struct BookshelfSettingsPage {
       .height('100%')
       .align(Alignment.TopStart)
 
-      this.titleBar()
+      SettingsTitleBar({
+        title: '书架设置',
+        appDarkMode: this.appDarkMode,
+        statusBarHeight: this.statusBarHeight
+      })
     }
     .width('100%')
     .height('100%')
@@ -521,26 +526,6 @@ struct BookshelfSettingsPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('书架设置')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
   sectionTitle(title: string) {
     Text(title)
       .fontSize(13)
@@ -573,11 +558,13 @@ struct BookshelfSettingsPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      Toggle({ type: ToggleType.Switch, isOn: value })
-        .selectedColor(this.buttonColor())
-        .onChange((checked: boolean) => {
+      AdaptiveSwitch({
+        isOn: value,
+        selectedColor: this.buttonColor(),
+        onChange: (checked: boolean) => {
           onChange(checked);
-        })
+        }
+      })
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
@@ -723,11 +710,13 @@ struct BookshelfSettingsPage {
 
   @Builder
   targetBookSwitch(book: Book, selected: boolean) {
-    Toggle({ type: ToggleType.Switch, isOn: selected })
-      .selectedColor(this.buttonColor())
-      .onChange((checked: boolean) => {
+    AdaptiveSwitch({
+      isOn: selected,
+      selectedColor: this.buttonColor(),
+      onChange: (checked: boolean) => {
         this.toggleTargetBook(book, checked);
-      })
+      }
+    })
   }
 
   @Builder

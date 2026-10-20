@@ -193,12 +193,12 @@ export struct ReaderTtsPlayerPanel {
       }
       Row() {
         Text(this.globalTtsChapterProgress || (this.globalTtsMode === 'audio' ? '后台听书' : '正在朗读'))
-          .fontSize(10)
+          .fontSize(11)
           .fontColor(this.subTextColor)
           .layoutWeight(1)
         if (this.globalTtsVoiceCode) {
           Text(this.globalTtsVoiceCode)
-            .fontSize(10)
+            .fontSize(11)
             .fontColor(this.subTextColor)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -259,17 +259,71 @@ export struct ReaderTtsPlayerPanel {
   @Builder
   playbackControls() {
     Row() {
-      this.control($r('sys.symbol.timer'), this.globalTtsTimerMinutes > 0 ?
-        `${Math.max(1, Math.ceil(this.globalTtsTimerRemainingSeconds / 60))}分` : '定时', true,
-        () => this.optionsPanel = this.optionsPanel === 1 ? 0 : 1)
-      this.control($r('sys.symbol.arrow_left'), '上一章', this.globalTtsCanPrevious,
-        () => ReaderTtsFloatingSession.previous())
+      this.timerControl()
+      this.chapterControl($r('sys.symbol.arrow_left'), '上一章', true)
       this.playbackControl()
-      this.control($r('sys.symbol.arrow_right'), '下一章', this.globalTtsCanNext,
-        () => ReaderTtsFloatingSession.next())
+      this.chapterControl($r('sys.symbol.arrow_right'), '下一章', false)
       this.speedControl()
     }
     .width('100%')
+  }
+
+  /**
+   * Availability (globalTtsCanPrevious/globalTtsCanNext) is only published to AppStorage
+   * after the async 听书 startup chain runs. @Builder by-value parameters never refresh
+   * when state changes, so a panel mounted on the first tap kept the initial `enabled =
+   * false` forever — the chapter buttons stayed dead until the panel was remounted.
+   * Reading the StorageLink state directly inside the builder body keeps them reactive.
+   */
+  @Builder
+  chapterControl(icon: Resource, label: string, previous: boolean) {
+    Column({ space: 6 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle().width(38).height(38).fill(this.darkMode ? '#24FFFFFF' : '#10000000')
+        SymbolGlyph(icon)
+          .fontSize(19)
+          .fontColor([(previous ? this.globalTtsCanPrevious : this.globalTtsCanNext) ?
+            this.primaryTextColor : this.subTextColor])
+      }
+      Text(label).fontSize(11).fontColor(this.subTextColor)
+    }
+    .layoutWeight(1)
+    .height(68)
+    .justifyContent(FlexAlign.Center)
+    .opacity((previous ? this.globalTtsCanPrevious : this.globalTtsCanNext) ? 1 : 0.45)
+    .accessibilityText(label)
+    .accessibilityStateDescription((previous ? this.globalTtsCanPrevious : this.globalTtsCanNext) ?
+      undefined : '不可用')
+    .onClick(() => {
+      if (previous ? this.globalTtsCanPrevious : this.globalTtsCanNext) {
+        if (previous) {
+          ReaderTtsFloatingSession.previous();
+        } else {
+          ReaderTtsFloatingSession.next();
+        }
+      }
+    })
+  }
+
+  @Builder
+  timerControl() {
+    Column({ space: 6 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle().width(38).height(38).fill(this.darkMode ? '#24FFFFFF' : '#10000000')
+        SymbolGlyph($r('sys.symbol.timer'))
+          .fontSize(19)
+          .fontColor([this.primaryTextColor])
+      }
+      Text(this.globalTtsTimerMinutes > 0 ?
+        `${Math.max(1, Math.ceil(this.globalTtsTimerRemainingSeconds / 60))}分` : '定时')
+        .fontSize(11)
+        .fontColor(this.subTextColor)
+    }
+    .layoutWeight(1)
+    .height(68)
+    .justifyContent(FlexAlign.Center)
+    .accessibilityText('定时')
+    .onClick(() => this.optionsPanel = this.optionsPanel === 1 ? 0 : 1)
   }
 
   @Builder
@@ -283,31 +337,15 @@ export struct ReaderTtsPlayerPanel {
           .fontColor(['#FFFFFF'])
       }
       Text(this.globalTtsPaused ? '播放' : '暂停')
-        .fontSize(10)
+        .fontSize(11)
         .fontColor(this.subTextColor)
     }
     .layoutWeight(1)
     .height(68)
     .justifyContent(FlexAlign.Center)
+    .accessibilityRole(AccessibilityRoleType.BUTTON)
+    .accessibilityText(this.globalTtsPaused ? '播放' : '暂停')
     .onClick(() => ReaderTtsFloatingSession.toggle())
-  }
-
-  @Builder
-  control(icon: Resource, label: string, enabled: boolean, action: () => void) {
-    Column({ space: 6 }) {
-      Stack({ alignContent: Alignment.Center }) {
-        Circle().width(38).height(38).fill(this.darkMode ? '#24FFFFFF' : '#10000000')
-        SymbolGlyph(icon)
-          .fontSize(19)
-          .fontColor([enabled ? this.primaryTextColor : this.subTextColor])
-      }
-      Text(label).fontSize(10).fontColor(this.subTextColor)
-    }
-    .layoutWeight(1)
-    .height(68)
-    .justifyContent(FlexAlign.Center)
-    .opacity(enabled ? 1 : 0.45)
-    .onClick(() => { if (enabled) action(); })
   }
 
   @Builder
@@ -319,7 +357,7 @@ export struct ReaderTtsPlayerPanel {
           .fontSize(19)
           .fontColor([this.primaryTextColor])
       }
-      Text(`${this.globalTtsSpeed.toFixed(1)}x`).fontSize(10).fontColor(this.subTextColor)
+      Text(`${this.globalTtsSpeed.toFixed(1)}x`).fontSize(12).fontColor(this.subTextColor)
     }
     .layoutWeight(1)
     .height(68)
@@ -360,8 +398,8 @@ export struct ReaderTtsPlayerPanel {
       .fontColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? '#FFFFFF' : this.primaryTextColor)
       .textAlign(TextAlign.Center)
       .layoutWeight(1)
-      .height(30)
-      .borderRadius(15)
+      .height(36)
+      .borderRadius(18)
       .backgroundColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? this.accentColor :
         (this.darkMode ? '#20FFFFFF' : '#0D000000'))
       .onClick(() => ReaderTtsFloatingSession.setSpeed(value))
@@ -375,8 +413,8 @@ export struct ReaderTtsPlayerPanel {
       .fontColor(this.globalTtsTimerMinutes === minutes ? '#FFFFFF' : this.primaryTextColor)
       .textAlign(TextAlign.Center)
       .layoutWeight(1)
-      .height(30)
-      .borderRadius(15)
+      .height(36)
+      .borderRadius(18)
       .backgroundColor(this.globalTtsTimerMinutes === minutes ? this.accentColor :
         (this.darkMode ? '#20FFFFFF' : '#0D000000'))
       .onClick(() => ReaderTtsFloatingSession.setTimer(minutes))

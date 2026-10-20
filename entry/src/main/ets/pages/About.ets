@@ -156,6 +156,10 @@ struct AboutPage {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(16)
+        .fontColor([this.subTextColor()])
+        .margin({ left: 8 })
     }
     .width('100%')
     .padding(16)

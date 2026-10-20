@@ -1,4 +1,4 @@
-import { router } from '@kit.ArkUI';
+import { router, promptAction } from '@kit.ArkUI';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ReaderSettings, ReaderSettingsStore } from '../utils/ReaderSettingsStore';
 import { ReaderFontHelper, ReaderFontItem } from '../utils/ReaderFontHelper';
@@ -74,7 +74,7 @@ struct ReaderFontSettingsPage {
   @State regexRules: ReaderRegexFontRule[] = [];
   @State regexHighlightRefreshKey: number = 0;
   @State activeRegexInputKey: string = '';
-  private readerSettingsLoaded: boolean = false;
+  @State readerSettingsLoaded: boolean = false;
   private readerSettingsLoading: boolean = false;
   private closingReaderFontSettings: boolean = false;
   private latestReaderFontStyleSave: Promise<void> = Promise.resolve();
@@ -157,66 +157,81 @@ struct ReaderFontSettingsPage {
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       AppBackgroundLayer()
-      Scroll() {
-        Column() {
-          this.sectionTitle('正文字体设置')
+      if (this.readerSettingsLoaded) {
+        Scroll() {
           Column() {
-            this.fontModeItem('字体类型', this.readerBodyFontMode, this.readerBodyFontFamily, (mode: string, family: string) => {
-              this.readerBodyFontMode = mode;
-              this.readerBodyFontFamily = family;
-              this.saveSettings();
-            })
-            this.bodyFontSizeStepper()
-            this.bodyPreviewItem()
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
-          .borderRadius(16)
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('标题字体设置')
-          Column() {
-            this.fontModeItem('字体类型', this.readerTitleFontMode, this.readerTitleFontFamily, (mode: string, family: string) => {
-              this.readerTitleFontMode = mode;
-              this.readerTitleFontFamily = family;
-              this.saveSettings();
-            })
-            this.titleFontSizeStepper()
-            this.titlePreviewItem()
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
-          .borderRadius(16)
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('正则字体设置')
-          Column() {
-            this.regexEnableSwitchItem()
-            if (this.readerRegexFontEnabled) {
-              this.regexTemplateActions()
-              if (this.regexRules.length === 0) {
-                this.emptyRegexRule()
-              }
-              ForEach(this.regexRules, (rule: ReaderRegexFontRule, index: number) => {
-                this.regexRulePanel(rule, index, this.regexHighlightRefreshKey)
-              }, (rule: ReaderRegexFontRule) => rule.id)
+            this.sectionTitle('正文字体设置')
+            Column() {
+              this.fontModeItem('字体类型', this.readerBodyFontMode, this.readerBodyFontFamily, (mode: string, family: string) => {
+                this.readerBodyFontMode = mode;
+                this.readerBodyFontFamily = family;
+                this.saveSettings();
+              })
+              this.bodyFontSizeStepper()
+              this.bodyPreviewItem()
             }
+            .width('calc(100% - 24vp)')
+            .margin({ left: 12, right: 12 })
+            .borderRadius(16)
+            .clip(true)
+            .backgroundColor(this.cardColor())
+
+            this.sectionTitle('标题字体设置')
+            Column() {
+              this.fontModeItem('字体类型', this.readerTitleFontMode, this.readerTitleFontFamily, (mode: string, family: string) => {
+                this.readerTitleFontMode = mode;
+                this.readerTitleFontFamily = family;
+                this.saveSettings();
+              })
+              this.titleFontSizeStepper()
+              this.titlePreviewItem()
+            }
+            .width('calc(100% - 24vp)')
+            .margin({ left: 12, right: 12 })
+            .borderRadius(16)
+            .clip(true)
+            .backgroundColor(this.cardColor())
+
+            this.sectionTitle('正则字体设置')
+            Column() {
+              this.regexEnableSwitchItem()
+              if (this.readerRegexFontEnabled) {
+                this.regexTemplateActions()
+                if (this.regexRules.length === 0) {
+                  this.emptyRegexRule()
+                }
+                ForEach(this.regexRules, (rule: ReaderRegexFontRule, index: number) => {
+                  this.regexRulePanel(rule, index, this.regexHighlightRefreshKey)
+                }, (rule: ReaderRegexFontRule) => rule.id)
+              }
+            }
+            .width('calc(100% - 24vp)')
+            .margin({ left: 12, right: 12 })
+            .borderRadius(16)
+            .clip(true)
+            .backgroundColor(this.cardColor())
           }
-          .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
-          .borderRadius(16)
-          .clip(true)
-          .backgroundColor(this.cardColor())
+          .width('100%')
+          .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
+        }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .width('100%')
+        .height('100%')
+        .align(Alignment.TopStart)
+      } else {
+        Column({ space: 12 }) {
+          LoadingProgress()
+            .width(42)
+            .height(42)
+            .color(this.accentColor())
+          Text('正在加载设置...')
+            .fontSize(13)
+            .fontColor(this.subTextColor())
         }
         .width('100%')
-        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
       }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      .align(Alignment.TopStart)
 
       this.titleBar()
     }
@@ -355,6 +370,17 @@ struct ReaderFontSettingsPage {
     this.regexRules = next;
     this.bumpRegexHighlightRefresh();
     this.saveSettings();
+  }
+
+  async confirmRemoveRegexRule(index: number): Promise<void> {
+    const rule = this.regexRuleAt(index);
+    const confirmation = await promptAction.showDialog({
+      title: '删除正则规则',
+      message: `确定删除“${rule.name || `规则${index + 1}`}”吗？此操作无法撤销。`,
+      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: this.dangerColor() }]
+    });
+    if (confirmation.index !== 1) return;
+    this.removeRegexRule(index);
   }
 
   bumpRegexHighlightRefresh(): void {
@@ -660,7 +686,7 @@ struct ReaderFontSettingsPage {
       icon: icon,
       accessibilityLabel: accessibilityText,
       buttonEnabled: enabled,
-      buttonSize: 34,
+      buttonSize: 44,
       iconSize: 17,
       fillColor: this.inputColor(),
       iconColor: this.primaryTextColor(),
@@ -755,7 +781,7 @@ struct ReaderFontSettingsPage {
           .backgroundColor(this.inputColor())
           .height(32)
           .onClick(() => {
-            this.removeRegexRule(index);
+            this.confirmRemoveRegexRule(index);
           })
       }
       .width('100%')
@@ -1455,7 +1481,7 @@ struct ReaderFontSettingsPage {
         .fontSize(15)
         .fontColor(this.primaryTextColor())
         .width(52)
-        .height(36)
+        .height(44)
         .textAlign(TextAlign.Center)
       this.fontSizeStepButton($r('sys.symbol.plus'), '增大规则字体',
         this.regexRuleAt(index).fontSize !== 50, () => {

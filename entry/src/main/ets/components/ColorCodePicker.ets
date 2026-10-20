@@ -249,7 +249,7 @@ export struct ColorCodePicker {
   }
 
   private subTextColor(): string {
-    return this.appDarkMode ? '#8A8F98' : '#888888';
+    return ThemeRuntime.subTextColor(this.appDarkMode);
   }
 
   private colorModeIndex(): number {
@@ -317,6 +317,8 @@ export struct ColorCodePicker {
               .borderRadius(14)
               .backgroundColor(this.normalizeColor(this.value, this.placeholder))
               .border({ width: 2, color: this.appDarkMode ? '#55FFFFFF' : '#22000000' })
+              .responseRegion({ x: -8, y: -8, width: 44, height: 44 })
+              .accessibilityText('自定义颜色')
               .onClick(() => {
                 this.openPicker();
               })
@@ -382,7 +384,7 @@ export struct ColorCodePicker {
     }
       .width('100%')
       .bindSheet($$this.pickerVisible, this.colorPickerSheet(), {
-        height: 650,
+        height: SheetSize.LARGE,
         dragBar: true,
         backgroundColor: this.pageColor(),
         onDisappear: () => {
@@ -393,9 +395,10 @@ export struct ColorCodePicker {
 
   @Builder
   colorPickerSheet() {
-    Column({ space: 18 }) {
-      Row() {
-        Text('选择颜色')
+    Scroll() {
+      Column({ space: 18 }) {
+        Row() {
+          Text('选择颜色')
           .fontSize(24)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
@@ -410,190 +413,197 @@ export struct ColorCodePicker {
               this.pickerVisible = false;
             })
         }
-      }
-      .width('100%')
-
-      Row({ space: 14 }) {
-        Stack({ alignContent: Alignment.TopStart }) {
-          Row()
-            .width('100%')
-            .height('100%')
-            .backgroundColor(this.hueColor())
-          Row()
-            .width('100%')
-            .height('100%')
-            .linearGradient({
-              angle: 90,
-              colors: [['#FFFFFFFF', 0.0], ['#00FFFFFF', 1.0]]
-            })
-          Row()
-            .width('100%')
-            .height('100%')
-            .linearGradient({
-              angle: 180,
-              colors: [['#00000000', 0.0], ['#FF000000', 1.0]]
-            })
-          Row()
-            .width(20)
-            .height(20)
-            .borderRadius(10)
-            .border({ width: 3, color: '#FFFFFF' })
-            .shadow({ radius: 3, color: '#99000000', offsetX: 0, offsetY: 1 })
-            .position({ x: this.pickerIndicatorX(), y: this.pickerIndicatorY() })
-            .hitTestBehavior(HitTestMode.None)
-        }
-        .height(290)
-        .layoutWeight(1)
-        .borderRadius(6)
-        .clip(true)
-        .border({ width: 1, color: this.appDarkMode ? '#44FFFFFF' : '#22000000' })
-        .onAreaChange((_oldValue: Area, newValue: Area) => {
-          this.updatePickerAreaSize(newValue);
-        })
-        .onTouch((event: TouchEvent) => {
-          this.handlePickerAreaTouch(event);
-        })
-        .priorityGesture(
-          PanGesture({ direction: PanDirection.All, distance: 1 })
-            .onActionStart((event: GestureEvent) => {
-              this.handlePickerAreaGesture(event);
-            })
-            .onActionUpdate((event: GestureEvent) => {
-              this.handlePickerAreaGesture(event);
-            }),
-          GestureMask.IgnoreInternal
-        )
-        .monopolizeEvents(true)
-
-        Stack({ alignContent: Alignment.TopStart }) {
-          Row()
-            .width(38)
-            .height('100%')
-            .linearGradient({
-              angle: 180,
-              colors: [
-                ['#FF0000', 0.0], ['#FF00FF', 0.17], ['#0000FF', 0.33], ['#00FFFF', 0.5],
-                ['#00FF00', 0.67], ['#FFFF00', 0.83], ['#FF0000', 1.0]
-              ]
-            })
-          Row()
-            .width(44)
-            .height(6)
-            .borderRadius(3)
-            .border({ width: 2, color: this.appDarkMode ? '#F2F3F5' : '#555555' })
-            .backgroundColor(Color.Transparent)
-            .position({ x: -3, y: this.hueIndicatorY() })
-            .hitTestBehavior(HitTestMode.None)
-        }
-        .width(38)
-        .height(290)
-        .borderRadius(4)
-        .clip(false)
-        .onAreaChange((_oldValue: Area, newValue: Area) => {
-          this.updateHueAreaSize(newValue);
-        })
-        .onTouch((event: TouchEvent) => {
-          this.handleHueTouch(event);
-        })
-        .priorityGesture(
-          PanGesture({ direction: PanDirection.Vertical, distance: 1 })
-            .onActionStart((event: GestureEvent) => {
-              this.handleHueGesture(event);
-            })
-            .onActionUpdate((event: GestureEvent) => {
-              this.handleHueGesture(event);
-            }),
-          GestureMask.IgnoreInternal
-        )
-        .monopolizeEvents(true)
-      }
-      .width('100%')
-
-      Row({ space: 10 }) {
-        Row()
-          .width(48)
-          .height(36)
-          .borderRadius(4)
-          .backgroundColor(this.originalColor)
-          .border({ width: 1, color: this.appDarkMode ? '#44FFFFFF' : '#22000000' })
-        Text('→')
-          .fontSize(20)
-          .fontColor(this.subTextColor())
-        Row()
-          .width(48)
-          .height(36)
-          .borderRadius(4)
-          .backgroundColor(this.draftColor)
-          .border({ width: 1, color: this.appDarkMode ? '#44FFFFFF' : '#22000000' })
-        TextInput({ text: this.draftColor, placeholder: '#007DFF' })
-          .height(40)
-          .fontSize(17)
-          .fontColor(this.primaryTextColor())
-          .backgroundColor(Color.Transparent)
-          .borderRadius(8)
-          .layoutWeight(1)
-          .onChange((text: string) => {
-            if (/^#?[0-9a-fA-F]{6}$/.test(text.trim())) {
-              this.draftColor = this.normalizeColor(text, this.draftColor);
-              this.updateHsvFromColor(this.draftColor);
-            }
-          })
-      }
-      .width('100%')
-
-      if (this.showPresetColors) {
-        Flex({ wrap: FlexWrap.Wrap }) {
-          ForEach(this.presetColors, (color: string) => {
-            Button('')
-              .width(30)
-              .height(30)
-              .borderRadius(15)
-              .padding(0)
-              .backgroundColor(color)
-              .border({ width: this.draftColor === color ? 3 : 1,
-                color: this.draftColor === color ? this.primaryTextColor() : '#22000000' })
-              .margin({ right: 8, bottom: 6 })
-              .onClick(() => {
-                this.draftColor = color;
-                this.updateHsvFromColor(color);
-              })
-          })
         }
         .width('100%')
-      }
 
-      Row({ space: 12 }) {
-        Button('取消')
-          .height(42)
-          .fontColor(this.subTextColor())
-          .backgroundColor(Color.Transparent)
+        Row({ space: 14 }) {
+          Stack({ alignContent: Alignment.TopStart }) {
+            Row()
+              .width('100%')
+              .height('100%')
+              .backgroundColor(this.hueColor())
+            Row()
+              .width('100%')
+              .height('100%')
+              .linearGradient({
+                angle: 90,
+                colors: [['#FFFFFFFF', 0.0], ['#00FFFFFF', 1.0]]
+              })
+            Row()
+              .width('100%')
+              .height('100%')
+              .linearGradient({
+                angle: 180,
+                colors: [['#00000000', 0.0], ['#FF000000', 1.0]]
+              })
+            Row()
+              .width(20)
+              .height(20)
+              .borderRadius(10)
+              .border({ width: 3, color: '#FFFFFF' })
+              .shadow({ radius: 3, color: '#99000000', offsetX: 0, offsetY: 1 })
+              .position({ x: this.pickerIndicatorX(), y: this.pickerIndicatorY() })
+              .hitTestBehavior(HitTestMode.None)
+          }
+          .height(290)
           .layoutWeight(1)
-          .onClick(() => {
-            this.pickerVisible = false;
+          .borderRadius(6)
+          .clip(true)
+          .border({ width: 1, color: this.appDarkMode ? '#44FFFFFF' : '#22000000' })
+          .onAreaChange((_oldValue: Area, newValue: Area) => {
+            this.updatePickerAreaSize(newValue);
           })
-        Button('预置颜色')
-          .height(42)
-          .fontColor(this.accentColor)
-          .backgroundColor(Color.Transparent)
-          .layoutWeight(1)
-          .onClick(() => {
-            this.showPresetColors = !this.showPresetColors;
+          .onTouch((event: TouchEvent) => {
+            this.handlePickerAreaTouch(event);
           })
-        Button('确认')
-          .height(42)
-          .fontColor(this.accentColor)
-          .backgroundColor(Color.Transparent)
-          .layoutWeight(1)
-          .onClick(() => {
-            this.commitDraftColor();
+          .priorityGesture(
+            PanGesture({ direction: PanDirection.All, distance: 1 })
+              .onActionStart((event: GestureEvent) => {
+                this.handlePickerAreaGesture(event);
+              })
+              .onActionUpdate((event: GestureEvent) => {
+                this.handlePickerAreaGesture(event);
+              }),
+            GestureMask.IgnoreInternal
+          )
+          .monopolizeEvents(true)
+
+          Stack({ alignContent: Alignment.TopStart }) {
+            Row()
+              .width(38)
+              .height('100%')
+              .linearGradient({
+                angle: 180,
+                colors: [
+                  ['#FF0000', 0.0], ['#FF00FF', 0.17], ['#0000FF', 0.33], ['#00FFFF', 0.5],
+                  ['#00FF00', 0.67], ['#FFFF00', 0.83], ['#FF0000', 1.0]
+                ]
+              })
+            Row()
+              .width(44)
+              .height(6)
+              .borderRadius(3)
+              .border({ width: 2, color: this.appDarkMode ? '#F2F3F5' : '#555555' })
+              .backgroundColor(Color.Transparent)
+              .position({ x: -3, y: this.hueIndicatorY() })
+              .hitTestBehavior(HitTestMode.None)
+          }
+          .width(38)
+          .height(290)
+          .borderRadius(4)
+          .clip(false)
+          .onAreaChange((_oldValue: Area, newValue: Area) => {
+            this.updateHueAreaSize(newValue);
           })
+          .onTouch((event: TouchEvent) => {
+            this.handleHueTouch(event);
+          })
+          .priorityGesture(
+            PanGesture({ direction: PanDirection.Vertical, distance: 1 })
+              .onActionStart((event: GestureEvent) => {
+                this.handleHueGesture(event);
+              })
+              .onActionUpdate((event: GestureEvent) => {
+                this.handleHueGesture(event);
+              }),
+            GestureMask.IgnoreInternal
+          )
+          .monopolizeEvents(true)
+        }
+        .width('100%')
+
+        Row({ space: 10 }) {
+          Row()
+            .width(48)
+            .height(36)
+            .borderRadius(4)
+            .backgroundColor(this.originalColor)
+            .border({ width: 1, color: this.appDarkMode ? '#44FFFFFF' : '#22000000' })
+          Text('→')
+            .fontSize(20)
+            .fontColor(this.subTextColor())
+            .accessibilityLevel('no')
+          Row()
+            .width(48)
+            .height(36)
+            .borderRadius(4)
+            .backgroundColor(this.draftColor)
+            .border({ width: 1, color: this.appDarkMode ? '#44FFFFFF' : '#22000000' })
+          TextInput({ text: this.draftColor, placeholder: '#007DFF' })
+            .height(40)
+            .fontSize(17)
+            .fontColor(this.primaryTextColor())
+            .backgroundColor(Color.Transparent)
+            .borderRadius(8)
+            .layoutWeight(1)
+            .onChange((text: string) => {
+              if (/^#?[0-9a-fA-F]{6}$/.test(text.trim())) {
+                this.draftColor = this.normalizeColor(text, this.draftColor);
+                this.updateHsvFromColor(this.draftColor);
+              }
+            })
+        }
+        .width('100%')
+
+        if (this.showPresetColors) {
+          Flex({ wrap: FlexWrap.Wrap }) {
+            ForEach(this.presetColors, (color: string) => {
+              Button('')
+                .width(30)
+                .height(30)
+                .borderRadius(15)
+                .padding(0)
+                .responseRegion({ x: -7, y: -7, width: 44, height: 44 })
+                .backgroundColor(color)
+                .border({ width: this.draftColor === color ? 3 : 1,
+                  color: this.draftColor === color ? this.primaryTextColor() : '#22000000' })
+                .margin({ right: 8, bottom: 6 })
+                .accessibilityText(`预置颜色${color}`)
+                .accessibilitySelected(this.draftColor === color)
+                .onClick(() => {
+                  this.draftColor = color;
+                  this.updateHsvFromColor(color);
+                })
+            })
+          }
+          .width('100%')
+        }
+
+        Row({ space: 12 }) {
+          Button('取消')
+            .height(42)
+            .fontColor(this.subTextColor())
+            .backgroundColor(Color.Transparent)
+            .layoutWeight(1)
+            .onClick(() => {
+              this.pickerVisible = false;
+            })
+          Button('预置颜色')
+            .height(42)
+            .fontColor(this.accentColor)
+            .backgroundColor(Color.Transparent)
+            .layoutWeight(1)
+            .onClick(() => {
+              this.showPresetColors = !this.showPresetColors;
+            })
+          Button('确认')
+            .height(42)
+            .fontColor(this.accentColor)
+            .backgroundColor(Color.Transparent)
+            .layoutWeight(1)
+            .onClick(() => {
+              this.commitDraftColor();
+            })
+        }
+        .width('100%')
+        .margin({ top: 4 })
       }
       .width('100%')
-      .margin({ top: 4 })
+      .padding({ left: 20, right: 20, top: 12, bottom: 20 })
     }
     .width('100%')
     .height('100%')
-    .padding({ left: 20, right: 20, top: 12, bottom: 20 })
+    .scrollBar(BarState.Auto)
     .backgroundColor(this.pageColor())
   }
 }

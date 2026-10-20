@@ -6,7 +6,7 @@ import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import fs from '@ohos.file.fs';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
@@ -81,7 +81,11 @@ struct FontSettingsPage {
       .height('100%')
       .align(Alignment.TopStart)
 
-      this.titleBar()
+      SettingsTitleBar({
+        title: '字体设置',
+        appDarkMode: this.appDarkMode,
+        statusBarHeight: this.statusBarHeight
+      })
     }
     .width('100%')
     .height('100%')
@@ -465,28 +469,6 @@ struct FontSettingsPage {
 
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-
-      Text('字体设置')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder

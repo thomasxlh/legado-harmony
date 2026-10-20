@@ -1552,7 +1552,7 @@ export class SystemTtsReader {
 
   private normalizeText(text: string): string {
     return this.sanitizeStructuralSpeechArtifacts(
-      this.replaceUnsafeSpeechCharacters((text || '').replace(/\r\n/g, '\n')));
+      SystemTtsReader.replaceUnsafeSpeechCharacters((text || '').replace(/\r\n/g, '\n')));
   }
 
   private sanitizeStructuralSpeechArtifacts(text: string): string {
@@ -1560,40 +1560,97 @@ export class SystemTtsReader {
     return text.split('\n').map((line: string): string => {
       const trimmed = line.trim();
       if (!trimmed) return line;
-      // Treat x/× dimensions and two-or-more-digit multiplication layouts as structural.
-      // A standalone expression such as "3*4" must remain available to the math normalizer.
-      const dimensionOnly = /^\d{1,5}\s*[x×]\s*\d{1,5}$/.test(trimmed) ||
-        /^\d{2,5}\s*\*\s*\d{2,5}$/.test(trimmed);
-      const signatures = [
-        /\bjava\.(?:ajax|base64Decode|put|get)\s*\(/i,
-        /\.match\s*\(\s*\//i,
-        /\bsrc\s*=/i,
-        /<\/?js>|@js:/i,
-        /\b(?:JSON\.parse|document\.querySelector)\s*\(/i,
-        /=>|\bfunction\s*\(/i
-      ];
-      let signatureCount = 0;
-      for (const signature of signatures) {
-        if (signature.test(trimmed)) signatureCount++;
+      if (SystemTtsReader.isLineBlankedForSpeech(trimmed)) {
+        // Replace one-for-one so chunk/focus offsets continue to map to the original reader document.
+        return ' '.repeat(line.length);
       }
-      // Sources commonly use long runs of *, #, &, dashes or similar symbols as scene separators.
-      // Do not cap the run length: a rendered separator often contains dozens of characters and the
-      // old 16-character limit let exactly those lines through to be spoken one symbol at a time.
-      const decorativePunctuationOnly = /^[\s=;:{}()[\].,+*#&＊＃＆_~～·•—–|｜\/\\\-!！?？%％^＾@＠<>《》]+$/.test(trimmed);
-      let sanitized = line;
-      if (!dimensionOnly && !decorativePunctuationOnly && signatureCount < 1) {
-        // Remove only long repeated decorative runs embedded in otherwise readable text.
-        // Single punctuation and short runs remain meaningful (e.g. "啊！！").
-        const hasUrl = /\b(?:https?|ftp):\/\//i.test(trimmed);
-        if (!hasUrl) {
-          sanitized = sanitized.replace(/([*#&=+＋~～·•—–|｜_\/\\\-!！?？%％^＾@＠:：<>《》])\1{2,}/g,
-            (match: string): string => ' '.repeat(match.length));
-        }
-        return sanitized;
+      // Remove only long repeated decorative runs embedded in otherwise readable text.
+      // Single punctuation and short runs remain meaningful (e.g. "啊！！").
+      const hasUrl = /\b(?:https?|ftp):\/\//i.test(trimmed);
+      if (!hasUrl) {
+        return SystemTtsReader.blankDecorativeRuns(line);
       }
-      // Replace one-for-one so chunk/focus offsets continue to map to the original reader document.
-      return ' '.repeat(line.length);
+      return line;
     }).join('\n');
+  }
+
+  /** True when the whole line is decorative/structural and gets blanked to same-length spaces. */
+  private static isLineBlankedForSpeech(trimmed: string): boolean {
+    // Treat x/× dimensions and two-or-more-digit multiplication layouts as structural.
+    // A standalone expression such as "3*4" must remain available to the math normalizer.
+    if (/^\d{1,5}\s*[x×]\s*\d{1,5}$/.test(trimmed) || /^\d{2,5}\s*\*\s*\d{2,5}$/.test(trimmed)) {
+      return true;
+    }
+    // Sources commonly use long runs of *, #, &, dashes or similar symbols as scene separators.
+    // Do not cap the run length: a rendered separator often contains dozens of characters and the
+    // old 16-character limit let exactly those lines through to be spoken one symbol at a time.
+    if (/^[\s=;:{}()[\].,+*#&＊＃＆_~～·•—–|｜\/\\\-!！?？%％^＾@＠<>《》]+$/.test(trimmed)) {
+      return true;
+    }
+    const signatures = [
+      /\bjava\.(?:ajax|base64Decode|put|get)\s*\(/i,
+      /\.match\s*\(\s*\//i,
+      /\bsrc\s*=/i,
+      /<\/?js>|@js:/i,
+      /\b(?:JSON\.parse|document\.querySelector)\s*\(/i,
+      /=>|\bfunction\s*\(/i
+    ];
+    for (const signature of signatures) {
+      if (signature.test(trimmed)) return true;
+    }
+    return false;
+  }
+
+  private static blankDecorativeRuns(line: string): string {
+    return line.replace(/([*#&=+＋~～·•—–|｜_\/\\\-!！?？%％^＾@＠:：<>《》])\1{2,}/g,
+      (match: string): string => ' '.repeat(match.length));
+  }
+
+  /**
+   * Return the exclusive end offset, in the coordinates of the text passed to start(), of the
+   * last character that can still belong to an audible chunk after normalizeText(). A chapter
+   * may end in decorative separator lines, image/script signatures or repeated-symbol runs that
+   * the sanitizer blanks to same-length whitespace; no chunk ever covers them, so a chapter-end
+   * confirmation computed from the raw text keeps waiting for audio that cannot exist and
+   * replays the last sentence until it gives up and stops.
+   */
+  static audibleSpeechEnd(text: string): number {
+    const source = text || '';
+    if (!source) return 0;
+    let audibleEnd = 0;
+    let lineStart = 0;
+    while (lineStart < source.length) {
+      let lineEnd = source.indexOf('\n', lineStart);
+      if (lineEnd < 0) {
+        lineEnd = source.length;
+      }
+      const lineAudibleEnd =
+        SystemTtsReader.lastAudibleLineEnd(source.substring(lineStart, lineEnd));
+      if (lineAudibleEnd > 0 && lineStart + lineAudibleEnd > audibleEnd) {
+        audibleEnd = lineStart + lineAudibleEnd;
+      }
+      if (lineEnd >= source.length) {
+        break;
+      }
+      lineStart = lineEnd + 1;
+    }
+    return audibleEnd;
+  }
+
+  /** Length of the audible prefix of one line; 0 when the pipeline blanks the whole line. */
+  private static lastAudibleLineEnd(line: string): number {
+    const replaced = SystemTtsReader.replaceUnsafeSpeechCharacters(line);
+    const trimmed = replaced.trim();
+    if (!trimmed || SystemTtsReader.isLineBlankedForSpeech(trimmed)) {
+      return 0;
+    }
+    const hasUrl = /\b(?:https?|ftp):\/\//i.test(trimmed);
+    const sanitized = hasUrl ? replaced : SystemTtsReader.blankDecorativeRuns(replaced);
+    let end = sanitized.length;
+    while (end > 0 && SystemTtsReader.isTrimChar(sanitized.charAt(end - 1))) {
+      end--;
+    }
+    return end;
   }
 
   /**
@@ -1607,7 +1664,7 @@ export class SystemTtsReader {
    * the requested range has nothing following it, so only that one still drops the comma.
    */
   private normalizeChunkForSpeech(text: string, protectTailPause: boolean = true): string {
-    const normalized = this.normalizeMathNotationForSpeech(this.replaceUnsafeSpeechCharacters(text || ''))
+    const normalized = this.normalizeMathNotationForSpeech(SystemTtsReader.replaceUnsafeSpeechCharacters(text || ''))
       .replace(/\r\n/g, '\n')
       .replace(/\s*\n+\s*/g, '。')
       .replace(/[ \t]{2,}/g, ' ')
@@ -1742,7 +1799,7 @@ export class SystemTtsReader {
    * Replace invisible controls and damaged UTF-16 units one-for-one. Keeping the code-unit
    * length stable is important because chunk offsets are also used to focus the reader page.
    */
-  private replaceUnsafeSpeechCharacters(text: string): string {
+  private static replaceUnsafeSpeechCharacters(text: string): string {
     if (!text) return '';
     let result = '';
     for (let index = 0; index < text.length; index++) {
@@ -2312,10 +2369,10 @@ export class SystemTtsReader {
   private appendAbsoluteTextChunk(result: TtsChunk[], text: string, start: number, end: number): void {
     let chunkStart = Math.max(0, Math.min(start, text.length));
     let chunkEnd = Math.max(chunkStart, Math.min(end, text.length));
-    while (chunkStart < chunkEnd && this.isTrimChar(text.charAt(chunkStart))) {
+    while (chunkStart < chunkEnd && SystemTtsReader.isTrimChar(text.charAt(chunkStart))) {
       chunkStart++;
     }
-    while (chunkEnd > chunkStart && this.isTrimChar(text.charAt(chunkEnd - 1))) {
+    while (chunkEnd > chunkStart && SystemTtsReader.isTrimChar(text.charAt(chunkEnd - 1))) {
       chunkEnd--;
     }
     if (chunkEnd <= chunkStart) {
@@ -2463,7 +2520,7 @@ export class SystemTtsReader {
     return previous >= 48 && previous <= 57 && next >= 48 && next <= 57;
   }
 
-  private isTrimChar(value: string): boolean {
+  private static isTrimChar(value: string): boolean {
     return value === ' ' || value === '\t' || value === '\n' || value === '\r' || value === '\u3000';
   }
 

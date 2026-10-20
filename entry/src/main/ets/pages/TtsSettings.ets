@@ -6,7 +6,7 @@ import { HttpTTS } from '../model/data/Book';
 import { HttpClient } from '../core/http/HttpClient';
 import { syncSystemBars } from '../utils/SystemBars';
 import { SystemTtsReader, TtsVoiceOption } from '../utils/SystemTtsReader';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import { AdaptiveIconButton } from '../components/AdaptiveIconButton';
 import { TtsSettings, TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
@@ -82,7 +82,7 @@ struct TtsSettingsPage {
                 .fontColor(this.primaryTextColor())
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text('导入、启用、禁用、删除自定义音色')
+              Text('导入、启用、禁用、删除自定义音色；导入文件需在 2MB 以内')
                 .fontSize(12)
                 .fontColor(this.subTextColor())
                 .margin({ top: 4 })
@@ -188,7 +188,11 @@ struct TtsSettingsPage {
         .height('100%')
         .align(Alignment.TopStart)
 
-      this.titleBar()
+      SettingsTitleBar({
+        title: '朗读设置',
+        appDarkMode: this.appDarkMode,
+        statusBarHeight: this.statusBarHeight
+      })
 
       if (this.showVoiceDropdown) {
         this.voiceDropdownMenu()
@@ -966,27 +970,6 @@ struct TtsSettingsPage {
       return String(message);
     }
     return String(error);
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-
-      Text('朗读设置')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder

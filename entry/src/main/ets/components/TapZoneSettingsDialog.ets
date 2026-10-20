@@ -100,16 +100,19 @@ export struct TapZoneSettingsDialogContent {
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
 
-        Button('×')
-          .fontSize(24)
-          .fontColor(this.primaryTextColor())
-          .width(44)
-          .height(44)
-          .backgroundColor(Color.Transparent)
-          .padding(0)
-          .onClick(() => {
-            this.onDone();
-          })
+        Button() {
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize(18)
+            .fontColor([this.primaryTextColor()])
+        }
+        .width(44)
+        .height(44)
+        .backgroundColor(Color.Transparent)
+        .padding(0)
+        .accessibilityText('关闭')
+        .onClick(() => {
+          this.onDone();
+        })
       }
       .width('100%')
       .height(48)

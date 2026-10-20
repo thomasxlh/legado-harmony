@@ -60,7 +60,7 @@ export struct SearchBookResultList {
   @Prop shadowColor: string = '#00000000';
   @Prop primaryTextColor: string = '#1F1F1F';
   @Prop secondaryTextColor: string = '#666666';
-  @Prop subTextColor: string = '#999999';
+  @Prop subTextColor: string = '#666B72';
   @Prop topPadding: number = 0;
   @Prop bottomPadding: number = 12;
   scroller: ListScroller = new ListScroller();

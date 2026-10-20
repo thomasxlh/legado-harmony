@@ -313,6 +313,45 @@ export class ThemeRuntime {
     return `#${darkMode ? '33' : '1F'}${accent.substring(1)}`;
   }
 
+  /**
+   * 给定背景色（#RRGGBB / #AARRGGBB），返回在其上可读的前景色：
+   * 亮底返回深色文字，暗底返回白色文字。用于强调色按钮、色块 chip 等场景，
+   * 避免固定白字在浅色强调色（如深色模式浅灰蓝、用户自定义浅色）上对比度不足。
+   */
+  static readableTextColorOn(backgroundColor: string): string {
+    const color = (backgroundColor || '').trim();
+    const hex = /^#[0-9a-fA-F]{8}$/.test(color) ? color.substring(3) :
+      (/^#[0-9a-fA-F]{6}$/.test(color) ? color.substring(1) : '');
+    if (!hex) {
+      return '#FFFFFF';
+    }
+    const r = parseInt(hex.substring(0, 2), 16) / 255;
+    const g = parseInt(hex.substring(2, 4), 16) / 255;
+    const b = parseInt(hex.substring(4, 6), 16) / 255;
+    const linearR = r <= 0.03928 ? r / 12.92 : Math.pow((r + 0.055) / 1.055, 2.4);
+    const linearG = g <= 0.03928 ? g / 12.92 : Math.pow((g + 0.055) / 1.055, 2.4);
+    const linearB = b <= 0.03928 ? b / 12.92 : Math.pow((b + 0.055) / 1.055, 2.4);
+    const luminance = 0.2126 * linearR + 0.7152 * linearG + 0.0722 * linearB;
+    return luminance > 0.35 ? '#1F2329' : '#FFFFFF';
+  }
+
+  /**
+   * 强调色色块上的文字颜色：强调色偏亮（如深色模式的 #AAB2BD）时返回深色文字，
+   * 否则返回白色。页面通过 onAccentColor() 包装方法消费。
+   */
+  static onAccentTextColor(darkMode: boolean): string {
+    return ThemeRuntime.readableTextColorOn(ThemeRuntime.accentColor(darkMode));
+  }
+
+  /**
+   * 全屏模态遮罩统一 token：弹层/对话框遮罩一律用它，
+   * 取代散落在各页面的 #80000000 / #78000000 / #99000000 等多种硬编码遮罩。
+   * 轻量级半透明提示层（如 TTS 面板后透出内容）不适用本 token。
+   */
+  static scrimColor(darkMode: boolean): string {
+    return darkMode ? '#99000000' : '#80000000';
+  }
+
   static glassPanelColor(darkMode: boolean, baseColor: string = '', surface: string = 'panel'): string {
     const fallback = ThemeRuntime.cardColor(darkMode);
     const color = ThemeRuntime.normalizeColor(baseColor || fallback, fallback);

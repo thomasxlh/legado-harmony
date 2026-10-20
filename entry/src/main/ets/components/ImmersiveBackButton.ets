@@ -19,6 +19,9 @@ export struct ImmersiveBackButton {
   @Prop accessibilityLabel: string = '返回';
   @Prop buttonEnabled: boolean = true;
   @Prop disabledIconColor: ResourceColor = '#999999';
+  /** 触控热区边长：>0 时按钮 onClick 响应区域扩到该尺寸（视觉尺寸不变），保持单一点击路径。 */
+  @Prop hitAreaSize: number = 0;
+  @State private pressed: boolean = false;
   onBack: () => void = () => {};
 
   build() {
@@ -35,6 +38,7 @@ export struct ImmersiveBackButton {
         .enabled(this.buttonEnabled)
         .backgroundColor(Color.Transparent)
         .accessibilityText(this.accessibilityLabel)
+        .responseRegion(this.overlayHitRegion())
         .onClick(() => this.onBack())
       }
     }
@@ -90,7 +94,11 @@ export struct ImmersiveBackButton {
       .enabled(this.buttonEnabled)
       .backgroundColor(Color.Transparent)
       .hitTestBehavior(HitTestMode.Transparent)
+      .scale({ x: this.pressed ? 0.96 : 1, y: this.pressed ? 0.96 : 1 })
+      .opacity(this.pressed ? 0.7 : 1)
       .accessibilityText(this.accessibilityLabel)
+      .onTouch((event: TouchEvent) => this.handlePressedTouch(event))
+      .responseRegion(this.overlayHitRegion())
       .onClick(() => this.onBack())
     }
     .width(this.materialButtonSize())
@@ -142,5 +150,24 @@ export struct ImmersiveBackButton {
 
   materialButtonSize(): number {
     return Math.max(36, this.buttonSize * this.normalizedMaterialScale());
+  }
+
+  /**
+   * 点击热区：hitAreaSize>0 时扩到该边长（视觉按钮尺寸不变，区域以按钮中心对称外扩）；
+   * 否则与按钮自身等大，行为同未设置 responseRegion。
+   */
+  overlayHitRegion(): Rectangle {
+    const size = this.materialButtonSize();
+    const hit = this.hitAreaSize > 0 ? Math.max(this.hitAreaSize, size) : size;
+    const inset = (size - hit) / 2;
+    return { x: inset, y: inset, width: hit, height: hit };
+  }
+
+  private handlePressedTouch(event: TouchEvent): void {
+    if (event.type === TouchType.Down) {
+      this.pressed = true;
+    } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+      this.pressed = false;
+    }
   }
 }

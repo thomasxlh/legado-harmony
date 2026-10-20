@@ -29,11 +29,18 @@ export struct AdaptiveIconButton {
         }
         .width(this.buttonSize)
         .height(this.buttonSize)
+        .responseRegion({
+          x: (this.buttonSize - 44) / 2,
+          y: (this.buttonSize - 44) / 2,
+          width: 44,
+          height: 44
+        })
         .padding(0)
         .enabled(this.buttonEnabled)
         .systemMaterial(this.material())
         .backgroundColor(Color.Transparent)
-        .focusable(false)
+        .scale({ x: this.pressed ? 0.96 : 1, y: this.pressed ? 0.96 : 1 })
+        .opacity(this.pressed ? 0.7 : 1)
         .accessibilityText(this.accessibilityLabel)
         .onTouch((event: TouchEvent) => this.handleTouch(event))
         .onClick(() => this.action())
@@ -43,10 +50,17 @@ export struct AdaptiveIconButton {
         }
         .width(this.buttonSize)
         .height(this.buttonSize)
+        .responseRegion({
+          x: (this.buttonSize - 44) / 2,
+          y: (this.buttonSize - 44) / 2,
+          width: 44,
+          height: 44
+        })
         .padding(0)
         .enabled(this.buttonEnabled)
         .backgroundColor(Color.Transparent)
-        .focusable(false)
+        .scale({ x: this.pressed ? 0.96 : 1, y: this.pressed ? 0.96 : 1 })
+        .opacity(this.pressed ? 0.7 : 1)
         .accessibilityText(this.accessibilityLabel)
         .onTouch((event: TouchEvent) => this.handleTouch(event))
         .onClick(() => this.action())
@@ -76,7 +90,6 @@ export struct AdaptiveIconButton {
   }
 
   private handleTouch(event: TouchEvent): void {
-    if (!this.showSurface) return;
     if (event.type === TouchType.Down) {
       this.pressed = true;
     } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {

@@ -1,11 +1,10 @@
-import { router } from '@kit.ArkUI';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { LocalBookScanResult, LocalBookService } from '../core/book/LocalBookService';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { Book } from '../model/data/Book';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
 @Entry
@@ -35,7 +34,7 @@ struct LocalBookSettingsPage {
     Stack({ alignContent: Alignment.TopStart }) {
       AppBackgroundLayer()
       Column() {
-        this.titleBar()
+        SettingsTitleBar({ title: '添加书籍', appDarkMode: this.appDarkMode, statusBarHeight: this.statusBarHeight })
         Column({ space: 12 }) {
           Row() {
             Text(`已添加书籍（${this.books.length}）`)
@@ -145,26 +144,6 @@ struct LocalBookSettingsPage {
       console.error('加载已添加本地书籍失败:', e);
       this.books = [];
     }
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('添加书籍')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   async addBooks(): Promise<void> {

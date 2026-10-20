@@ -12,7 +12,7 @@ import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { BookIdentity } from '../utils/BookIdentity';
 import { SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';
 import { SearchExplorePendingBook } from '../utils/SearchExplorePendingBook';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 import { HdsFeedback } from '../utils/HdsFeedback';
@@ -148,47 +148,22 @@ struct BookChapterListPage {
       .backgroundColor(this.pageColorBehind())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
-      this.titleBar()
+      SettingsTitleBar({
+        title: this.name || '目录',
+        subtitle: this.subtitleText(),
+        appDarkMode: this.appDarkMode,
+        statusBarHeight: this.statusBarHeight,
+        rightPadding: 16,
+        pinned: true,
+        onBack: (): void => {
+          this.handleBack();
+        }
+      })
       BookSourceStageRuntimeHost()
     }
     .width('100%')
     .height('100%')
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        onBack: () => this.handleBack() })
-
-      Column() {
-        Text(this.name || '目录')
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-
-        Text(this.subtitleText())
-          .fontSize(12)
-          .fontColor(this.subTextColor())
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-          .margin({ top: 2 })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ right: 16, top: this.statusBarHeight })
-    .alignItems(VerticalAlign.Center)
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .position({ x: 0, y: 0 })
   }
 
   @Builder
@@ -292,7 +267,7 @@ struct BookChapterListPage {
 
               if (chapter.cacheDate > 0) {
                 Text('已缓存')
-                  .fontSize(10)
+                  .fontSize(11)
                   .fontColor(this.appDarkMode ? '#7CC7A0' : '#1F8F55')
                   .padding({ left: 7, right: 7, top: 3, bottom: 3 })
                   .backgroundColor(this.appDarkMode ? '#24382F' : '#E6F4EC')

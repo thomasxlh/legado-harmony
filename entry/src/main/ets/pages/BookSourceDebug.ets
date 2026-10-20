@@ -13,7 +13,7 @@ import { SourceRuntimeStage } from '../core/book/BookSourceRuntimeRouter';
 import { BookSourceDebugContext, BookSourceDebugSession, BookSourceDebugStep,
   BookSourceDebugNetworkTrace, BookSourceDebugRuleTrace, BookSourceDebugLog,
   BookSourceDebugRedactor } from '../core/book/BookSourceDebugModels';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { syncSystemBars } from '../utils/SystemBars';
@@ -37,6 +37,11 @@ class BookSourceDebugClipboardReport {
   content: string = '';
 }
 
+class BookSourceDebugStageOption {
+  label: string = '';
+  value: string = '';
+}
+
 @Entry
 @Component
 struct BookSourceDebugPage {
@@ -58,6 +63,15 @@ struct BookSourceDebugPage {
   private coordinator: SearchCoordinator | null = null;
   private initialized: boolean = false;
   private keyboardWindow: window.Window | null = null;
+  private scroller: Scroller = new Scroller();
+  private stageOptions: BookSourceDebugStageOption[] = [
+    { label: '全部', value: 'full' },
+    { label: '搜索', value: SourceRuntimeStage.SEARCH },
+    { label: '发现', value: SourceRuntimeStage.EXPLORE },
+    { label: '详情', value: SourceRuntimeStage.BOOK_INFO },
+    { label: '目录', value: SourceRuntimeStage.TOC },
+    { label: '正文', value: SourceRuntimeStage.CONTENT }
+  ];
   private keyboardAvoidAreaCallback: (data: window.AvoidAreaOptions) => void =
     (data: window.AvoidAreaOptions): void => {
       if (data.type === window.AvoidAreaType.TYPE_KEYBOARD) {
@@ -96,7 +110,7 @@ struct BookSourceDebugPage {
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       AppBackgroundLayer()
-      Scroll() {
+      Scroll(this.scroller) {
         Column({ space: 12 }) {
           this.sourceCard()
           this.inputCard()
@@ -108,7 +122,9 @@ struct BookSourceDebugPage {
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .height('100%')
-      this.titleBar()
+      SettingsTitleBar({ title: '书源调试', appDarkMode: this.appDarkMode,
+        statusBarHeight: this.statusBarHeight, showBlur: false,
+        trailingContent: () => { this.titleBarTrailing() } })
     }
     .width('100%')
     .height('100%')
@@ -117,24 +133,14 @@ struct BookSourceDebugPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('书源调试').fontSize(20).fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor()).layoutWeight(1)
-      Text('导出报告').fontSize(14).fontColor(this.accentColor())
-        .width(88)
-        .height(56)
-        .textAlign(TextAlign.Center)
-        .margin({ right: 12 })
-        .opacity(this.hasDebugReport() ? 1 : 0.45)
-        .onClick(() => this.exportDebugReport())
-    }
-    .width('100%').height(56 + this.statusBarHeight).padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .alignItems(VerticalAlign.Center)
+  titleBarTrailing() {
+    Text('导出报告').fontSize(14).fontColor(this.accentColor())
+      .width(88)
+      .height(56)
+      .textAlign(TextAlign.Center)
+      .margin({ right: 12 })
+      .opacity(this.hasDebugReport() ? 1 : 0.45)
+      .onClick(() => this.exportDebugReport())
   }
 
   @Builder
@@ -144,7 +150,7 @@ struct BookSourceDebugPage {
         .fontColor(this.primaryTextColor()).width('100%')
       Text(this.source.bookSourceUrl || this.sourceUrl || '未指定书源')
         .fontSize(12).fontColor(this.subTextColor()).width('100%').maxLines(2)
-      Text(`状态：${this.status}`).fontSize(13).fontColor(this.running ? '#E89725' : this.accentColor())
+      Text(`状态：${this.status}`).fontSize(13).fontColor(this.running ? this.warningColor() : this.accentColor())
         .width('100%')
     }
     .width('calc(100% - 24vp)').padding(16).borderRadius(16).backgroundColor(this.cardColor())
@@ -156,7 +162,8 @@ struct BookSourceDebugPage {
     Column({ space: 10 }) {
       Text('调试阶段').fontSize(16).fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor()).width('100%')
-      Text('默认执行全链路：搜索 → 发现 → 详情 → 目录 → 正文')
+      this.stageSelectorRow()
+      Text(this.stageHintText())
         .fontSize(13).fontColor(this.subTextColor()).width('100%')
       TextInput({ text: this.keyword, placeholder: this.stageInputPlaceholder() })
         .height(44).width('100%').fontColor(this.primaryTextColor())
@@ -172,6 +179,49 @@ struct BookSourceDebugPage {
     }
     .width('calc(100% - 24vp)').padding(16).borderRadius(16).backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  stageSelectorRow() {
+    Scroll() {
+      Row({ space: 6 }) {
+        ForEach(this.stageOptions, (option: BookSourceDebugStageOption) => {
+          Text(option.label)
+            .fontSize(12)
+            .fontColor(this.stage === option.value ? this.onAccentTextColor() : this.subTextColor())
+            .height(28)
+            .padding({ left: 12, right: 12 })
+            .borderRadius(14)
+            .backgroundColor(this.stage === option.value ? this.accentColor() : this.inputColor())
+            .onClick(() => this.selectStage(option.value))
+        }, (option: BookSourceDebugStageOption) => option.value)
+      }
+    }
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    .width('100%')
+  }
+
+  private selectStage(stage: string): void {
+    if (this.stage === stage) return;
+    this.stage = stage;
+    this.status = `已切换调试阶段：${this.stageLabel(stage)}`;
+  }
+
+  private stageLabel(stage: string): string {
+    for (const option of this.stageOptions) {
+      if (option.value === stage) return option.label;
+    }
+    return stage;
+  }
+
+  private stageHintText(): string {
+    if (this.stage === 'full') return '默认执行全链路：搜索 → 发现 → 详情 → 目录 → 正文';
+    if (this.stage === SourceRuntimeStage.SEARCH) return '仅调试搜索规则，输入测试关键词';
+    if (this.stage === SourceRuntimeStage.EXPLORE) return '仅调试发现规则，输入关键词（将使用第一个分类）';
+    if (this.stage === SourceRuntimeStage.BOOK_INFO) return '仅调试详情规则，输入书籍 URL';
+    if (this.stage === SourceRuntimeStage.TOC) return '仅调试目录规则，输入书籍或目录 URL';
+    return '仅调试正文规则，输入章节 URL';
   }
 
   @Builder
@@ -232,9 +282,9 @@ struct BookSourceDebugPage {
       Text(step.name).fontSize(15).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
           .layoutWeight(1)
         Text(`${step.status} · ${step.elapsedMs}ms`).fontSize(12)
-          .fontColor(step.status === 'passed' ? '#20A464' : '#E84040')
+          .fontColor(step.status === 'passed' ? this.successColor() : this.dangerColor())
       }.width('100%')
-      if (step.error) Text(`错误：${step.error}`).fontSize(12).fontColor('#E84040').width('100%')
+      if (step.error) Text(`错误：${step.error}`).fontSize(12).fontColor(this.dangerColor()).width('100%')
         .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
         .copyOption(CopyOptions.LocalDevice)
       ForEach(step.requests, (item: BookSourceDebugNetworkTrace) => {
@@ -491,6 +541,13 @@ struct BookSourceDebugPage {
     }
     this.debugSearchLinks = searchLinks;
     this.debugExploreLinks = exploreLinks;
+    this.scrollResultsToBottom();
+  }
+
+  private scrollResultsToBottom(): void {
+    setTimeout(() => {
+      this.scroller.scrollEdge(Edge.Bottom);
+    }, 0);
   }
 
   private clearDebugResult(): void {
@@ -548,6 +605,7 @@ struct BookSourceDebugPage {
   }
   private publishSession(debug: BookSourceDebugContext): void {
     this.session = JSON.parse(JSON.stringify(debug.session)) as BookSourceDebugSession;
+    this.scrollResultsToBottom();
   }
   private hasDebugReport(): boolean {
     return this.session.steps.length > 0 || this.session.logs.length > 0;
@@ -641,10 +699,14 @@ struct BookSourceDebugPage {
 
   private pageColor(): string { return ThemeRuntime.pageColor(this.appDarkMode); }
   private cardColor(): string { return ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'); }
-  private inputColor(): string { return this.appDarkMode ? '#252525' : '#F2F3F5'; }
-  private primaryTextColor(): string { return this.appDarkMode ? '#F5F5F5' : '#1F2329'; }
-  private subTextColor(): string { return this.appDarkMode ? '#B8B8B8' : '#697586'; }
+  private inputColor(): string { return ThemeRuntime.inputColor(this.appDarkMode); }
+  private primaryTextColor(): string { return ThemeRuntime.primaryTextColor(this.appDarkMode); }
+  private subTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }
   private accentColor(): string { return ThemeRuntime.accentColor(this.appDarkMode); }
+  private warningColor(): string { return ThemeRuntime.warningColor(this.appDarkMode); }
+  private successColor(): string { return ThemeRuntime.successColor(this.appDarkMode); }
+  private dangerColor(): string { return ThemeRuntime.dangerColor(this.appDarkMode); }
+  private onAccentTextColor(): string { return ThemeRuntime.onAccentTextColor(this.appDarkMode); }
   private stageInputPlaceholder(): string {
     if (this.stage === SourceRuntimeStage.SEARCH || this.stage === 'full') return '输入测试关键词';
     if (this.stage === SourceRuntimeStage.EXPLORE) return '输入关键词（发现阶段将使用第一个分类）';

@@ -4,6 +4,7 @@ import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import { STAGE_RUNTIME_POOL_SIZE } from '../core/book/BookSourceStageWebRuntime';
 import deviceInfo from '@ohos.deviceInfo';
@@ -462,7 +463,7 @@ struct Index {
             .fontWeight(FontWeight.Medium)
             .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
           Text(this.globalTtsChapterProgress || (this.globalTtsMode === 'audio' ? '后台听书' : '后台朗读'))
-            .fontSize(9)
+            .fontSize(11)
             .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -472,24 +473,28 @@ struct Index {
       }
       .layoutWeight(1)
       .onClick(() => this.openGlobalTtsPanel())
-      SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
-        .id(`global_tts_capsule_playback_${this.globalTtsPaused}`)
-        .fontSize(17)
-        .fontColor([ThemeRuntime.primaryTextColor(this.appDarkMode)])
-        .width(28)
-        .height(34)
-        .onClick(() => ReaderTtsFloatingSession.toggle())
-      SymbolGlyph($r('sys.symbol.xmark'))
-        .fontSize(14)
-        .fontColor([ThemeRuntime.subTextColor(this.appDarkMode)])
-        .width(24)
-        .height(34)
-        .onClick(() => {
-          this.closeGlobalTtsPanel();
-          ReaderTtsFloatingSession.stop();
-        })
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
+          .id(`global_tts_capsule_playback_${this.globalTtsPaused}`)
+          .fontSize(17)
+          .fontColor([ThemeRuntime.primaryTextColor(this.appDarkMode)])
+      }
+      .width(44)
+      .height(44)
+      .onClick(() => ReaderTtsFloatingSession.toggle())
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph($r('sys.symbol.xmark'))
+          .fontSize(14)
+          .fontColor([ThemeRuntime.subTextColor(this.appDarkMode)])
+      }
+      .width(44)
+      .height(44)
+      .onClick(() => {
+        this.closeGlobalTtsPanel();
+        ReaderTtsFloatingSession.stop();
+      })
     }
-    .width(184)
+    .width(212)
     .height(46)
     .padding({ left: 8, right: 5 })
     .borderRadius(23)
@@ -503,7 +508,7 @@ struct Index {
       y: this.globalTtsCapsuleTop()
     })
     .parallelGesture(
-      PanGesture({ direction: PanDirection.All, distance: 4 })
+      PanGesture({ direction: PanDirection.All, distance: 8 })
         .onActionStart(() => {
           this.globalTtsDragOriginX = this.globalTtsCapsuleLeft();
           this.globalTtsDragOriginY = this.globalTtsCapsuleTop();
@@ -530,7 +535,7 @@ struct Index {
 
   clampGlobalTtsPositionX(position: number): number {
     const minLeft = 8;
-    const maxLeft = Math.max(minLeft, this.globalTtsViewportWidth - 184 - 8);
+    const maxLeft = Math.max(minLeft, this.globalTtsViewportWidth - 212 - 8);
     return Math.max(minLeft, Math.min(position, maxLeft));
   }
 
@@ -1002,6 +1007,7 @@ struct BookshelfPage {
   @State pendingDeleteBookGroup: BookGroup | null = null;
   @State showBatchDeleteDialog: boolean = false;
   @State isLoading: boolean = false;
+  @State bookshelfLoadFailed: boolean = false;
   @State showDeleteDialog: boolean = false;
   @State showActionDialog: boolean = false;
   @State showEditBookInfoDialog: boolean = false;
@@ -1241,8 +1247,12 @@ struct BookshelfPage {
       this.refreshShelfCoverCache(this.books);
       this.scheduleLocalBookIntroMigration(loadedBooks);
       this.scheduleColdStartBookshelfRefresh(loadedBooks);
+      if (loadSerial === this.shelfLoadSerial) this.bookshelfLoadFailed = false;
     } catch (e) {
-      if (loadSerial === this.shelfLoadSerial) console.error('加载书籍失败:', e);
+      if (loadSerial === this.shelfLoadSerial) {
+        console.error('加载书籍失败:', e);
+        this.bookshelfLoadFailed = true;
+      }
     } finally {
       if (needsInitialPlaceholder && loadSerial === this.shelfLoadSerial) this.isLoading = false;
     }
@@ -1946,6 +1956,46 @@ struct BookshelfPage {
                 this.switchShelfScopeBySwipe(event.offsetX);
               })
           )
+        } else if (this.bookshelfLoadFailed && this.books.length === 0) {
+          Column() {
+            Text('⚠️')
+              .fontSize(48)
+              .margin({ bottom: 16 })
+            Text('书架加载失败')
+              .fontSize(16)
+              .fontColor(this.subTextColor())
+            Button('重试')
+              .fontSize(15)
+              .fontColor(Color.White)
+              .type(ButtonType.Normal)
+              .backgroundColor(this.buttonColor())
+              .borderRadius(20)
+              .height(40)
+              .padding({ left: 24, right: 24 })
+              .margin({ top: 20 })
+              .onClick(() => {
+                this.loadBooks(true);
+              })
+          }
+          .width('100%')
+          .height('100%')
+          .padding({ top: this.bookshelfTopOverlayHeight() })
+          .justifyContent(FlexAlign.Center)
+          .translate({ x: this.shelfScopeTransitionX })
+          .scale({ x: this.shelfScopeTransitionScale, y: this.shelfScopeTransitionScale })
+          .opacity(this.shelfScopeTransitionOpacity)
+          .priorityGesture(
+            PanGesture({ direction: PanDirection.Horizontal, distance: 24 })
+              .onActionStart(() => {
+                this.markShelfScopePanGesture(500);
+              })
+              .onActionUpdate(() => {
+                this.markShelfScopePanGesture(240);
+              })
+              .onActionEnd((event: GestureEvent) => {
+                this.switchShelfScopeBySwipe(event.offsetX);
+              })
+          )
         } else if (this.books.length === 0) {
           Column() {
             Text('📚')
@@ -2058,7 +2108,10 @@ struct BookshelfPage {
             this.updateShelfRefreshPrompt(state);
           })
           .onRefreshing(() => {
-            this.refreshBookshelfToc();
+            this.refreshBookshelfToc().catch((e: Error) => {
+              console.error('下拉刷新书架失败:', e);
+              HdsFeedback.showToast('书架刷新失败');
+            });
           })
           .translate({ x: this.shelfScopeTransitionX })
           .scale({ x: this.shelfScopeTransitionScale, y: this.shelfScopeTransitionScale })
@@ -2336,7 +2389,7 @@ struct BookshelfPage {
                         .width('100%')
                         .margin({ top: 6 })
                       Text(candidate.originName || candidate.author || '启用书源')
-                        .fontSize(10)
+                        .fontSize(12)
                         .fontColor(this.subTextColor())
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -2415,6 +2468,9 @@ struct BookshelfPage {
           Text(group.groupName)
             .fontSize(13)
             .fontColor(this.activeShelfGroupId === group.groupId ? '#FFFFFF' : this.primaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .constraintSize({ maxWidth: 160 })
             .padding({ left: 13, right: 13, top: 7, bottom: 7 })
             .borderRadius(16)
             .backgroundColor(this.activeShelfGroupId === group.groupId ? this.accentColor() : this.glassCardColor())
@@ -2432,18 +2488,22 @@ struct BookshelfPage {
             )
         }, (group: BookGroup) => `${group.groupId}_${group.groupName}`)
         this.shelfGroupChip('未分组', -1)
-        Text('＋')
-          .fontSize(20)
-          .fontColor(this.accentColor())
-          .width(34)
-          .height(34)
-          .textAlign(TextAlign.Center)
-          .borderRadius(17)
-          .backgroundColor(this.glassCardColor())
-          .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
-          .onClick(() => {
-            this.openAddBookGroupDialog();
-          })
+        Stack({ alignContent: Alignment.Center }) {
+          Text('＋')
+            .fontSize(20)
+            .fontColor(this.accentColor())
+            .width(34)
+            .height(34)
+            .textAlign(TextAlign.Center)
+            .borderRadius(17)
+            .backgroundColor(this.glassCardColor())
+            .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
+        }
+        .width(44)
+        .height(44)
+        .onClick(() => {
+          this.openAddBookGroupDialog();
+        })
       }
       .padding({ left: 16, right: 16, bottom: 8 })
     }
@@ -2481,12 +2541,15 @@ struct BookshelfPage {
   @Builder
   bookSelectionStatusBar() {
     Row() {
-      Text(this.areAllBooksSelected() ? '☑' : '☐')
-        .fontSize(20)
-        .fontColor(this.accentColor())
-        .width(28)
-        .textAlign(TextAlign.Center)
-        .onClick(() => this.toggleAllBooks())
+      Stack({ alignContent: Alignment.Center }) {
+        Text(this.areAllBooksSelected() ? '☑' : '☐')
+          .fontSize(20)
+          .fontColor(this.accentColor())
+          .textAlign(TextAlign.Center)
+      }
+      .width(44)
+      .height(44)
+      .onClick(() => this.toggleAllBooks())
 
       Text(`已选择 ${this.selectedBookUrls.length}/${this.books.length}`)
         .fontSize(14)
@@ -4606,7 +4669,7 @@ struct BookshelfPage {
   bookTypeCoverBadge(book: Book) {
     if (this.bookshelfShowTypeBadge) {
       Text(this.bookTypeBadgeText(book))
-      .fontSize(9)
+      .fontSize(11)
       .fontWeight(FontWeight.Bold)
       .fontColor('#FFFFFF')
       .textAlign(TextAlign.Center)
@@ -6265,8 +6328,7 @@ struct BookshelfPage {
     } finally {
       this.shelfRefreshRunning = false;
       this.isShelfRefreshing = false;
-      this.shelfRefreshStatus = RefreshStatus.Inactive;
-      this.shelfRefreshPrompt = '下拉刷新书架';
+      this.resetShelfRefreshUiAfterFinish();
       if (!silent && !taskFailed && attempted === 0) {
         const message = skippedFinished > 0 ? `没有可刷新的连载书籍，已跳过${skippedFinished}本完结` : '没有可刷新的网络书籍';
         HdsFeedback.showToast(message);
@@ -6296,6 +6358,11 @@ struct BookshelfPage {
   }
 
   async refreshLocalBooks(): Promise<void> {
+    if (this.shelfRefreshRunning) {
+      this.isShelfRefreshing = true;
+      this.shelfRefreshPrompt = '书架刷新中';
+      return;
+    }
     this.shelfRefreshRunning = true;
     this.isShelfRefreshing = true;
     this.shelfRefreshPrompt = '正在刷新本地书籍...';
@@ -6309,9 +6376,19 @@ struct BookshelfPage {
     } finally {
       this.shelfRefreshRunning = false;
       this.isShelfRefreshing = false;
-      this.shelfRefreshStatus = RefreshStatus.Inactive;
-      this.shelfRefreshPrompt = '下拉刷新书架';
+      this.resetShelfRefreshUiAfterFinish();
     }
+  }
+
+  resetShelfRefreshUiAfterFinish(): void {
+    if (this.shelfRefreshStatus === RefreshStatus.Drag ||
+      this.shelfRefreshStatus === RefreshStatus.OverDrag) {
+      this.shelfRefreshPrompt = this.shelfRefreshStatus === RefreshStatus.OverDrag ?
+        '松手刷新书架' : '下拉刷新书架';
+      return;
+    }
+    this.shelfRefreshStatus = RefreshStatus.Inactive;
+    this.shelfRefreshPrompt = '下拉刷新书架';
   }
 
   isFinishedBook(book: Book): boolean {
@@ -7736,7 +7813,7 @@ struct ExplorePage {
             this.loadEntries('', true);
           }
         })
-          .margin({ left: 8, right: -24 })
+          .margin({ left: 8 })
       }
       .width('100%')
       .height(56 + this.statusBarHeight)
@@ -9246,6 +9323,8 @@ struct SearchPage {
   @State searchHistoryExpanded: boolean = false;
   @State searchHistoryEditing: boolean = false;
   @State showSearchHistoryDropdown: boolean = false;
+  @State showClearSearchHistoryDialog: boolean = false;
+  private clearSearchHistoryDialogSession: SystemDialogSession = new SystemDialogSession();
   @State showResult: boolean = false;
   @State statusMessage: string = '';
   @State verificationUrl: string = '';
@@ -9853,7 +9932,7 @@ struct SearchPage {
               }
             }
         })
-          .margin({ left: 8, right: -24 })
+          .margin({ left: 8 })
         }
         .width('100%')
         .height(56 + this.statusBarHeight)
@@ -9968,6 +10047,10 @@ struct SearchPage {
             Text('未找到相关书籍')
               .fontSize(16)
               .fontColor(this.subTextColor())
+            Text('试试切换书源范围')
+              .fontSize(14)
+              .fontColor(this.subTextColor())
+              .margin({ top: 8 })
           }
           .width('100%')
           .layoutWeight(1)
@@ -10079,11 +10162,11 @@ struct SearchPage {
           .fontSize(13)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.secondaryTextColor())
-          .height(32)
+          .height(44)
           .padding({ left: 12, right: 4 })
           .textAlign(TextAlign.Center)
           .onClick(() => {
-            this.clearSearchHistory();
+            this.openClearSearchHistoryDialog();
           })
       }
       .width('100%')
@@ -10364,6 +10447,63 @@ struct SearchPage {
       console.error('删除搜索历史失败:', e);
       HdsFeedback.showToast('删除失败');
     }
+  }
+
+  @Builder
+  clearSearchHistoryDialogContent() {
+    Column() {
+      Text('清空搜索历史')
+        .fontSize(18)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryTextColor())
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .margin({ bottom: 12 })
+
+      Text('确定要清空全部搜索历史吗？')
+        .fontSize(15)
+        .fontColor(this.secondaryTextColor())
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .margin({ bottom: 20 })
+
+      Row({ space: 10 }) {
+        Button('取消')
+          .layoutWeight(1)
+          .height(44)
+          .backgroundColor(this.appDarkMode ? '#24272D' : '#F5F5F5')
+          .fontColor(this.primaryTextColor())
+          .onClick(() => this.closeClearSearchHistoryDialog())
+
+        Button('清空')
+          .layoutWeight(1)
+          .height(44)
+          .backgroundColor(this.dangerColor())
+          .fontColor('#FFFFFF')
+          .onClick(() => {
+            this.closeClearSearchHistoryDialog();
+            this.clearSearchHistory();
+          })
+      }
+      .width('100%')
+    }
+    .padding(24)
+  }
+
+  openClearSearchHistoryDialog(): void {
+    this.showClearSearchHistoryDialog = true;
+    this.clearSearchHistoryDialogSession.open(this.getUIContext(), (): void => {
+      this.clearSearchHistoryDialogContent();
+    }, {
+      autoCancel: true,
+      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      warnTag: '显示清空搜索历史弹窗失败:'
+    });
+  }
+
+  closeClearSearchHistoryDialog(): void {
+    this.showClearSearchHistoryDialog = false;
+    this.clearSearchHistoryDialogSession.close(this.getUIContext());
   }
 
   async clearSearchHistory(): Promise<void> {
@@ -10835,9 +10975,11 @@ struct SearchPage {
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
 
-      Toggle({ type: ToggleType.Switch, isOn: checked })
-        .selectedColor(this.buttonColor())
-        .onChange(onChange)
+      AdaptiveSwitch({
+        isOn: checked,
+        selectedColor: this.buttonColor(),
+        onChange: onChange
+      })
     }
     .width('100%')
     .height(42)
@@ -11069,6 +11211,9 @@ struct SettingsPage {
             })
             this.menuItem($r('sys.symbol.gearshape'), '其他设置', true, () => {
               router.pushUrl({ url: 'pages/OtherSettings' });
+            })
+            this.menuItem($r('sys.symbol.questionmark_circle'), '使用帮助', true, () => {
+              router.pushUrl({ url: 'pages/AppHelp' });
             })
             this.menuItem($r('sys.symbol.info_circle'), '关于', false, () => {
               router.pushUrl({ url: 'pages/About' });

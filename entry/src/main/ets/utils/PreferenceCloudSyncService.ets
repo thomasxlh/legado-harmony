@@ -41,7 +41,8 @@ export class PreferenceCloudSyncService {
     'reader_settings',
     'search_explore_settings',
     'tts_settings',
-    'book_source_groups'
+    'book_source_groups',
+    'change_source_options'
   ];
 
   /** 单个 store 快照的长度上限：超出视为异常（如被脏数据撑大），不上传。 */
@@ -67,6 +68,17 @@ export class PreferenceCloudSyncService {
    * 另一台设备上传的设置。
    */
   private static seedAllowed: boolean = false;
+  /**
+   * 云端偏好整体应用完成（applyRemote 落盘+失效缓存）后的回调，参数为 store 名。
+   * 由应用层注册：把有 AppStorage 镜像的 store 重新装载并应用到运行中的界面，
+   * 否则重装/换机后云端恢复的当前主题、深色模式等要等下次启动才生效。
+   */
+  private static storeRestoredListener: ((storeName: string) => void) | null = null;
+
+  /** 注册云端偏好下行应用完成的回调；传 null 清除。 */
+  static setStoreRestoredListener(listener: ((storeName: string) => void) | null): void {
+    PreferenceCloudSyncService.storeRestoredListener = listener;
+  }
 
   /** 挂载同步桥：注册偏好变更监听与云同步会话回调。幂等，进程内只需调用一次。 */
   static async attach(context: Context): Promise<void> {
@@ -172,6 +184,15 @@ export class PreferenceCloudSyncService {
       }
       return;
     }
+    if (!lastSynced) {
+      // 首次接触云端行：本机没有任何该 store 的同步标记（重装/新设备/首次开启同步）。
+      // lastSynced 存在 device_meta（不参与云同步），卸载即失；若在此处按“本机在上次
+      // 同步后变过”上传，重装后会把全新的空/默认偏好反向覆盖云端，用户的全部设置
+      // （字体间距、主题、背景、开机图、朗读速度等）永久丢失。云端行是用户跨设备
+      // 积累的状态，首次接触时必须云端优先；缺失的键由各 store 的 load() 默认值兜底。
+      await PreferenceCloudSyncService.applyRemote(db, storeName, prefStore, rowValue);
+      return;
+    }
     if (localDump !== lastSynced) {
       await PreferenceCloudSyncService.uploadStore(db, storeName, localDump);
       return;
@@ -217,6 +238,10 @@ export class PreferenceCloudSyncService {
     }
     await db.setDeviceMetaValue(PreferenceCloudSyncService.lastSyncedKey(storeName), remoteDump);
     PreferenceCloudSyncService.invalidateCaches(storeName);
+    const restoredListener = PreferenceCloudSyncService.storeRestoredListener;
+    if (restoredListener) {
+      restoredListener(storeName);
+    }
     hilog.info(0x0000, PreferenceCloudSyncService.TAG,
       'applied remote preferences: %{public}s', storeName);
   }

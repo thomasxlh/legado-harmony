@@ -102,7 +102,7 @@ struct SearchResultGroupPage {
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(`${this.books.length} 个同名结果`)
-            .fontSize(11)
+            .fontSize(12)
             .fontColor(this.subTextColor())
         }
         .layoutWeight(1)

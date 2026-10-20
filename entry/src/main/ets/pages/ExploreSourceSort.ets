@@ -1,12 +1,33 @@
-import { router } from '@kit.ArkUI';
 import { BookSource } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { SearchExploreSettings, SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import { HdsFeedback } from '../utils/HdsFeedback';
+
+class ExploreSortSourceDataSource implements IDataSource {
+  private sources: BookSource[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  totalCount(): number { return this.sources.length; }
+  getData(index: number): BookSource { return this.sources[index]; }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (!this.listeners.includes(listener)) this.listeners.push(listener);
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const index = this.listeners.indexOf(listener);
+    if (index >= 0) this.listeners.splice(index, 1);
+  }
+
+  replace(sources: BookSource[]): void {
+    this.sources = [...sources];
+    for (const listener of this.listeners) listener.onDataReloaded();
+  }
+}
 
 @Entry
 @Component
@@ -21,6 +42,7 @@ struct ExploreSourceSortPage {
   @State sources: BookSource[] = [];
   @State isLoading: boolean = false;
   @State draggingIndex: number = -1;
+  private sourceDataSource: ExploreSortSourceDataSource = new ExploreSortSourceDataSource();
 
   aboutToAppear(): void {
     this.syncBars();
@@ -41,6 +63,7 @@ struct ExploreSourceSortPage {
       const enabledExploreSources = allSources.filter((source: BookSource) =>
         source.enabledExplore && !!(source.exploreUrl || '').trim());
       this.sources = this.applySavedOrder(enabledExploreSources);
+      this.sourceDataSource.replace(this.sources);
       this.saveOrder(false);
     } catch (e) {
       console.error('加载发现书源排序失败:', e);
@@ -80,7 +103,8 @@ struct ExploreSourceSortPage {
     Stack({ alignContent: Alignment.TopStart }) {
       AppBackgroundLayer()
       Column() {
-        this.titleBar()
+        SettingsTitleBar({ title: '书源排序', appDarkMode: this.appDarkMode,
+          statusBarHeight: this.statusBarHeight, trailingContent: () => { this.titleBarTrailing() } })
 
         if (this.isLoading) {
           Column() {
@@ -110,7 +134,7 @@ struct ExploreSourceSortPage {
           .justifyContent(FlexAlign.Center)
         } else {
           List({ space: 8 }) {
-            ForEach(this.sources, (source: BookSource, index: number) => {
+            LazyForEach(this.sourceDataSource, (source: BookSource, index: number) => {
               ListItem() {
                 Row() {
                   Text('☰')
@@ -151,6 +175,7 @@ struct ExploreSourceSortPage {
                     .textAlign(TextAlign.Center)
                     .backgroundColor(index > 0 ? this.inputColor() : this.disabledButtonColor())
                     .borderRadius(16)
+                    .responseRegion({ x: -4, y: -6, width: 44, height: 44 })
                     .onClick(() => {
                       if (index > 0) {
                         this.moveSource(index, -1);
@@ -166,6 +191,7 @@ struct ExploreSourceSortPage {
                     .textAlign(TextAlign.Center)
                     .backgroundColor(index < this.sources.length - 1 ? this.inputColor() : this.disabledButtonColor())
                     .borderRadius(16)
+                    .responseRegion({ x: -4, y: -6, width: 44, height: 44 })
                     .onClick(() => {
                       if (index < this.sources.length - 1) {
                         this.moveSource(index, 1);
@@ -219,6 +245,7 @@ struct ExploreSourceSortPage {
     next[index] = next[target];
     next[target] = current;
     this.sources = next;
+    this.sourceDataSource.replace(this.sources);
     this.saveOrder(true);
   }
 
@@ -230,15 +257,20 @@ struct ExploreSourceSortPage {
     const moved = next.splice(from, 1)[0];
     next.splice(to, 0, moved);
     this.sources = next;
+    this.sourceDataSource.replace(this.sources);
     this.saveOrder(false);
     return true;
   }
 
   saveOrder(showToast: boolean): void {
-    this.searchExploreSourceSort = this.sources
+    const nextOrder = this.sources
       .map((source: BookSource) => source.bookSourceUrl)
       .filter((url: string) => !!url)
       .join('\n');
+    if (nextOrder === this.searchExploreSourceSort) {
+      return;
+    }
+    this.searchExploreSourceSort = nextOrder;
     SearchExploreSettingsStore.load(getContext(this)).then((settings: SearchExploreSettings) => {
       settings.sourceSortRaw = this.searchExploreSourceSort;
       SearchExploreSettingsStore.applyToStorage(settings);
@@ -344,25 +376,9 @@ struct ExploreSourceSortPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('书源排序')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-      Blank()
-        .width(52)
-        .height(56)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
+  titleBarTrailing() {
+    Blank()
+      .width(52)
+      .height(56)
   }
 }

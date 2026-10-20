@@ -133,7 +133,8 @@ export class BuiltinThemeRegistry {
       'classic'
     );
     theme.light = BuiltinThemeRegistry.variant(
-      BuiltinThemeRegistry.colors('#F7F7F7', '#FFFFFF', '#F0F0F0', '#202124', '#73777F', '#E2E2E2',
+      // subTextColor 需在 #F0F0F0 输入底色上也保持 >=4.5:1 对比度（#73777F 仅 4.2:1 不达标）。
+      BuiltinThemeRegistry.colors('#F7F7F7', '#FFFFFF', '#F0F0F0', '#202124', '#666B72', '#E2E2E2',
         '#5B6573', '#505967', '#C93F3F'),
       BuiltinThemeRegistry.reader('#FAFAFA', '', '#262626', '#777777', 'light'),
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.CAPSULE, '#E7E9EC', '#34383D')

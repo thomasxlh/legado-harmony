@@ -6,6 +6,11 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { syncSystemBars } from '../utils/SystemBars';
 
+class OpenSourceLicenseSection {
+  title: string = '';
+  body: string = '';
+}
+
 @Entry
 @Component
 struct OpenSourceLicensesPage {
@@ -13,7 +18,10 @@ struct OpenSourceLicensesPage {
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
-  @State licenseText: string = '正在加载开源许可…';
+  @State licenseSections: OpenSourceLicenseSection[] = [{
+    title: '开源许可',
+    body: '正在加载开源许可…'
+  }];
 
   aboutToAppear(): void {
     this.syncBars();
@@ -43,20 +51,31 @@ struct OpenSourceLicensesPage {
           .margin({ left: 16, right: 16, bottom: 12 })
           .alignItems(HorizontalAlign.Start)
 
-          Column() {
-            Text(this.licenseText)
-              .fontSize(12)
-              .fontColor(this.primaryTextColor())
-              .lineHeight(19)
-              .width('100%')
-              .copyOption(CopyOptions.LocalDevice)
-          }
-          .width('100%')
-          .padding(16)
-          .backgroundColor(this.cardColor())
-          .borderRadius(10)
-          .margin({ left: 16, right: 16, bottom: 24 + this.navBarHeight })
-          .alignItems(HorizontalAlign.Start)
+          ForEach(this.licenseSections, (section: OpenSourceLicenseSection) => {
+            Column() {
+              Text(section.title)
+                .fontSize(16)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.primaryTextColor())
+                .width('100%')
+              Text(section.body)
+                .fontSize(14)
+                .fontColor(this.primaryTextColor())
+                .lineHeight(22)
+                .width('100%')
+                .margin({ top: 8 })
+                .copyOption(CopyOptions.LocalDevice)
+            }
+            .width('100%')
+            .padding(16)
+            .backgroundColor(this.cardColor())
+            .borderRadius(10)
+            .margin({ left: 16, right: 16, bottom: 12 })
+            .alignItems(HorizontalAlign.Start)
+          }, (section: OpenSourceLicenseSection) => section.title)
+
+          Column()
+            .height(12 + this.navBarHeight)
         }
         .width('100%')
         .padding({ top: 56 + this.statusBarHeight })
@@ -96,19 +115,33 @@ struct OpenSourceLicensesPage {
       const gplBytes = await context.resourceManager.getRawFileContent('licenses/GPL-3.0.txt');
       const thirdPartyBytes = await context.resourceManager
         .getRawFileContent('licenses/THIRD_PARTY_LICENSES.txt');
-      const projectNotice = 'OPEN SOURCE PROJECT INFORMATION\n' +
-        '开源项目信息\n\n' +
-        'Project / 项目：轻观如是 / legado-harmony\n' +
+      const projectNotice = 'Project / 项目：轻观如是 / legado-harmony\n' +
         'Copyright (c) 2026 legado-harmony contributors\n' +
         'Upstream / 上游：legado-harmony by wip3l — GPL-3.0\n' +
-        'License / 许可证：GNU General Public License version 3 (GPL-3.0)\n\n';
+        'License / 许可证：GNU General Public License version 3 (GPL-3.0)';
       const gplText = util.TextDecoder.create('utf-8').decodeWithStream(gplBytes, { stream: false });
       const thirdPartyText = util.TextDecoder.create('utf-8')
         .decodeWithStream(thirdPartyBytes, { stream: false });
-      this.licenseText = projectNotice + gplText + '\n\n' + thirdPartyText;
+      const sections: OpenSourceLicenseSection[] = [];
+      const projectSection = new OpenSourceLicenseSection();
+      projectSection.title = '开源项目信息';
+      projectSection.body = projectNotice;
+      sections.push(projectSection);
+      const gplSection = new OpenSourceLicenseSection();
+      gplSection.title = 'GPL-3.0 完整许可文本';
+      gplSection.body = gplText;
+      sections.push(gplSection);
+      const thirdPartySection = new OpenSourceLicenseSection();
+      thirdPartySection.title = '第三方组件许可';
+      thirdPartySection.body = thirdPartyText;
+      sections.push(thirdPartySection);
+      this.licenseSections = sections;
     } catch (error) {
       console.error('加载开源许可失败:', error);
-      this.licenseText = '开源许可文本加载失败，请查看项目根目录 LICENSE、NOTICE 和 THIRD_PARTY_NOTICES.md。';
+      const failureSection = new OpenSourceLicenseSection();
+      failureSection.title = '开源许可';
+      failureSection.body = '开源许可文本加载失败，请查看项目根目录 LICENSE、NOTICE 和 THIRD_PARTY_NOTICES.md。';
+      this.licenseSections = [failureSection];
     }
   }
 

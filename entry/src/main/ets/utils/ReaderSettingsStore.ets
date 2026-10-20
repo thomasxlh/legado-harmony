@@ -36,9 +36,9 @@ export class ReaderSettings {
   eyeTurnNextEnabled: boolean = true;
   eyeTurnPreviousDwellMs: number = 850;
   eyeTurnNextDwellMs: number = 650;
-  screenTimeoutMinutes: number = -1;
+  screenTimeoutMinutes: number = 0;
   // 保留旧字段用于读取已有主题配置，以及兼容旧版本降级读取。
-  keepScreenOn: boolean = true;
+  keepScreenOn: boolean = false;
   extendToStatusBar: boolean = false;
   preloadEnabled: boolean = true;
   preloadChapterCount: number = 1;
@@ -341,7 +341,7 @@ export class ReaderSettingsStore {
     const legacyKeepScreenOn = await ReaderSettingsStore.getBoolean(
       store,
       ReaderSettingsStore.KEY_KEEP_SCREEN_ON,
-      AppStorage.get<boolean>(ReaderSettingsStore.KEY_KEEP_SCREEN_ON) ?? true
+      AppStorage.get<boolean>(ReaderSettingsStore.KEY_KEEP_SCREEN_ON) ?? false
     );
     settings.screenTimeoutMinutes = await ReaderSettingsStore.getNumber(
       store,
@@ -1538,7 +1538,7 @@ export class ReaderSettingsStore {
       AppStorage.get<number>(ReaderSettingsStore.KEY_EYE_TURN_PREVIOUS_DWELL_MS) ?? 850);
     settings.eyeTurnNextDwellMs = ReaderSettingsStore.normalizeEyeTurnDwell(
       AppStorage.get<number>(ReaderSettingsStore.KEY_EYE_TURN_NEXT_DWELL_MS) ?? 650);
-    const legacyKeepScreenOn = AppStorage.get<boolean>(ReaderSettingsStore.KEY_KEEP_SCREEN_ON) ?? true;
+    const legacyKeepScreenOn = AppStorage.get<boolean>(ReaderSettingsStore.KEY_KEEP_SCREEN_ON) ?? false;
     settings.screenTimeoutMinutes = ReaderSettingsStore.normalizeScreenTimeoutMinutes(
       AppStorage.get<number>(ReaderSettingsStore.KEY_SCREEN_TIMEOUT_MINUTES) ??
         (legacyKeepScreenOn ?

@@ -15,6 +15,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { EyeTurnController } from '../core/reader/EyeTurnController';
 import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import fs from '@ohos.file.fs';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
@@ -74,7 +75,7 @@ struct SettingsPage {
   @StorageLink('readerTapZoneActions') readerTapZoneActions: string = '3,3,3,3,1,2,2,2,2';
   @StorageLink('readerVolumeTurnPage') readerVolumeTurnPage: boolean = false;
   @StorageLink('readerScreenTimeoutMinutes') readerScreenTimeoutMinutes: number =
-    ReaderSettingsStore.SCREEN_TIMEOUT_ALWAYS_ON;
+    ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM;
   @StorageLink('readerExtendToStatusBar') readerExtendToStatusBar: boolean = false;
   @StorageLink('readerKeepParagraphIndent') keepParagraphIndent: boolean = false;
   @StorageLink('readerHeaderEnabled') readerHeaderEnabled: boolean = false;
@@ -292,7 +293,7 @@ struct SettingsPage {
           .margin({ left: 12, right: 12, bottom: 32 })
         }
         .width('100%')
-        .padding({ top: 56 + this.statusBarHeight, bottom: this.navBarHeight })
+        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
@@ -300,7 +301,7 @@ struct SettingsPage {
       .align(Alignment.TopStart)
       .backgroundColor(this.pageColorBehind())
 
-      this.titleBar()
+      SettingsTitleBar({ title: '阅读设置', appDarkMode: this.appDarkMode, statusBarHeight: this.statusBarHeight })
 
     }
     .width('100%')
@@ -962,10 +963,10 @@ struct SettingsPage {
   }
 
   tapZoneCellColor(action: number): string {
-    if (action === 1) return '#332A6FCC';
-    if (action === 2) return '#2239A86B';
-    if (action === 3) return '#22A85C39';
-    return '#14000000';
+    if (action === 1) return this.appDarkMode ? '#334E9BFF' : '#332A6FCC';
+    if (action === 2) return this.appDarkMode ? '#224FC48A' : '#2239A86B';
+    if (action === 3) return this.appDarkMode ? '#22C97F4C' : '#22A85C39';
+    return this.appDarkMode ? '#24FFFFFF' : '#14000000';
   }
 
   tapZoneSummaryText(): string {
@@ -1698,6 +1699,10 @@ struct SettingsPage {
     return ThemeRuntime.accentColor(this.appDarkMode);
   }
 
+  onAccentColor(): string {
+    return ThemeRuntime.onAccentTextColor(this.appDarkMode);
+  }
+
   buttonColor(): string {
     return ThemeRuntime.buttonColor(this.appDarkMode);
   }
@@ -1839,27 +1844,6 @@ struct SettingsPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-
-      Text('阅读设置')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
   sectionTitle(title: string) {
     Text(title)
       .fontSize(13)
@@ -1926,7 +1910,7 @@ struct SettingsPage {
     }
     .width('100%')
     .constraintSize({ minHeight: 56 })
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .padding({ left: 16, right: 16, top: 12, bottom: 16 })
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
   }
@@ -2021,7 +2005,7 @@ struct SettingsPage {
       Stack({ alignContent: Alignment.Center }) {
         Text('跟随系统')
           .fontSize(14)
-          .fontColor(this.appThemeMode === 'system' ? '#FFFFFF' : this.primaryTextColor())
+          .fontColor(this.appThemeMode === 'system' ? this.onAccentColor() : this.primaryTextColor())
       }
         .layoutWeight(1)
         .height(38)
@@ -2033,7 +2017,7 @@ struct SettingsPage {
       Stack({ alignContent: Alignment.Center }) {
         Text('浅色')
           .fontSize(14)
-          .fontColor(this.appThemeMode === 'light' ? '#FFFFFF' : this.primaryTextColor())
+          .fontColor(this.appThemeMode === 'light' ? this.onAccentColor() : this.primaryTextColor())
       }
         .layoutWeight(1)
         .height(38)
@@ -2045,7 +2029,7 @@ struct SettingsPage {
       Stack({ alignContent: Alignment.Center }) {
         Text('深色')
           .fontSize(14)
-          .fontColor(this.appThemeMode === 'dark' ? '#FFFFFF' : this.primaryTextColor())
+          .fontColor(this.appThemeMode === 'dark' ? this.onAccentColor() : this.primaryTextColor())
       }
         .layoutWeight(1)
         .height(38)
@@ -2056,7 +2040,7 @@ struct SettingsPage {
         })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .padding({ left: 16, right: 16, top: 12, bottom: 16 })
     .backgroundColor(this.cardColor())
   }
 
@@ -2079,7 +2063,7 @@ struct SettingsPage {
         .height(36)
         .fontSize(14)
         .backgroundColor(this.buttonColor())
-        .fontColor('#FFFFFF')
+        .fontColor(this.onAccentColor())
         .margin({ left: 12 })
         .onClick(() => {
           this.presentTapZoneSettings();
@@ -2158,7 +2142,7 @@ struct SettingsPage {
               .height(36)
               .fontSize(13)
               .backgroundColor(this.buttonColor())
-              .fontColor('#FFFFFF')
+              .fontColor(this.onAccentColor())
               .onClick(() => {
                 this.addCustomTheme();
               })
@@ -2233,7 +2217,7 @@ struct SettingsPage {
                 .height(36)
                 .fontSize(13)
                 .backgroundColor(this.buttonColor())
-                .fontColor('#FFFFFF')
+                .fontColor(this.onAccentColor())
                 .onClick(() => {
                   this.chooseCurrentCustomThemeImage();
                 })

@@ -37,6 +37,37 @@ const MEASURE_ITEM_TIMEOUT_MS = 45000;
 /** 单步切换请求限时：详情/目录取链可能长时间不返回，超时按切换失败处理；等待期间仍可改选其它书源。 */
 const SWITCH_FETCH_TIMEOUT_MS = 60000;
 
+/** 换源结果懒加载数据源：@State results 仍是唯一数据真源，本类只做投影，
+ *  results 每次（重）赋值/重排后调 replace 整体刷新（onDataReloaded），仅渲染可见卡片。 */
+class ChangeSourceResultDataSource implements IDataSource {
+  private items: SearchBook[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  totalCount(): number {
+    return this.items.length;
+  }
+
+  getData(index: number): SearchBook {
+    return this.items[index];
+  }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (!this.listeners.includes(listener)) this.listeners.push(listener);
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const index = this.listeners.indexOf(listener);
+    if (index >= 0) this.listeners.splice(index, 1);
+  }
+
+  replace(items: SearchBook[]): void {
+    this.items = items.slice();
+    for (const listener of this.listeners) {
+      listener.onDataReloaded();
+    }
+  }
+}
+
 @Component
 export struct BookChangeSourceDialog {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
@@ -77,6 +108,7 @@ export struct BookChangeSourceDialog {
   private lastPersistAt: number = 0;
   private persistTimer: number = -1;
   private destroyed: boolean = false;
+  private resultDataSource: ChangeSourceResultDataSource = new ChangeSourceResultDataSource();
 
   aboutToAppear(): void {
     if (!this.targetBook) {
@@ -122,6 +154,7 @@ export struct BookChangeSourceDialog {
     if (!this.targetBook) return;
     this.cancelActiveSearch();
     this.results = [];
+    this.resultDataSource.replace(this.results);
     this.searchedSourceUrls = new Set<string>();
     this.failedBookUrls = [];
     this.status = '正在读取历史换源结果...';
@@ -222,6 +255,7 @@ export struct BookChangeSourceDialog {
     const sessionId = ++this.sessionId;
     this.clearPersistTimer();
     this.results = [];
+    this.resultDataSource.replace(this.results);
     this.searchedSourceUrls = new Set<string>();
     this.failedBookUrls = [];
     this.measureSessionId++;
@@ -905,10 +939,12 @@ export struct BookChangeSourceDialog {
     const target = this.targetBook;
     if (!target) return;
     this.results = this.sortWithPinnedFirst(this.filterResults(raw));
+    this.resultDataSource.replace(this.results);
   }
 
   sortResults(): void {
     this.results = this.sortWithPinnedFirst(this.results.slice());
+    this.resultDataSource.replace(this.results);
   }
 
   sortWithPinnedFirst(list: SearchBook[]): SearchBook[] {
@@ -1013,7 +1049,7 @@ export struct BookChangeSourceDialog {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('#80000000')
+        .backgroundColor(ThemeRuntime.scrimColor(this.appDarkMode))
         .onClick(() => {
           this.requestClose();
         })
@@ -1059,6 +1095,7 @@ export struct BookChangeSourceDialog {
             .fontColor(this.loadWordCount ? '#FFFFFF' : this.subTextColor())
             .backgroundColor(this.loadWordCount ? this.buttonColor() : this.inputColor())
             .margin({ right: 4 })
+            .accessibilitySelected(this.loadWordCount)
             .onClick(() => this.toggleLoadWordCount())
           SymbolGlyph($r('sys.symbol.arrow_clockwise'))
             .fontSize(21)
@@ -1066,6 +1103,7 @@ export struct BookChangeSourceDialog {
             .width(40)
             .height(40)
             .margin({ right: 4 })
+            .accessibilityText('刷新')
             .onClick(() => {
               this.refreshResults();
             })
@@ -1074,6 +1112,7 @@ export struct BookChangeSourceDialog {
             .fontColor([this.primaryTextColor()])
             .width(40)
             .height(40)
+            .accessibilityText('关闭')
             .onClick(() => {
               this.requestClose();
             })
@@ -1131,7 +1170,7 @@ export struct BookChangeSourceDialog {
             .textAlign(TextAlign.Center)
         } else {
           List({ space: 8 }) {
-            ForEach(this.results, (book: SearchBook) => {
+            LazyForEach(this.resultDataSource, (book: SearchBook) => {
               ListItem() {
                 Column({ space: 4 }) {
                   Row({ space: 4 }) {
@@ -1144,19 +1183,19 @@ export struct BookChangeSourceDialog {
                       .layoutWeight(1)
                     if (this.isCurrentSourceResult(book)) {
                       Text('当前')
-                        .fontSize(10)
-                        .fontColor('#FFFFFF')
+                        .fontSize(11)
+                        .fontColor(ThemeRuntime.onAccentTextColor(this.appDarkMode))
                         .padding({ left: 5, right: 5, top: 1, bottom: 1 })
                         .borderRadius(6)
-                        .backgroundColor('#2196F3')
+                        .backgroundColor(ThemeRuntime.accentColor(this.appDarkMode))
                     }
                     if (this.isSourcePinned(book.origin || '')) {
                       Text('置顶')
-                        .fontSize(10)
-                        .fontColor('#FFFFFF')
+                        .fontSize(11)
+                        .fontColor(ThemeRuntime.readableTextColorOn(ThemeRuntime.warningColor(this.appDarkMode)))
                         .padding({ left: 5, right: 5, top: 1, bottom: 1 })
                         .borderRadius(6)
-                        .backgroundColor('#FF9800')
+                        .backgroundColor(ThemeRuntime.warningColor(this.appDarkMode))
                     }
                     SymbolGlyph(this.isSourcePinned(book.origin || '') ?
                       $r('sys.symbol.pin_fill') : $r('sys.symbol.pin'))
@@ -1164,6 +1203,8 @@ export struct BookChangeSourceDialog {
                       .fontColor([this.isSourcePinned(book.origin || '') ? '#FF9800' : this.subTextColor()])
                       .width(28)
                       .height(28)
+                      .responseRegion({ x: -8, y: -8, width: 44, height: 44 })
+                      .accessibilityText(this.isSourcePinned(book.origin || '') ? '取消置顶' : '置顶')
                       .onClick(() => this.togglePinnedSource(book.origin || ''))
                     Button(this.switching && this.switchingBook === book ? '切换中' : '切换')
                       .width(72)

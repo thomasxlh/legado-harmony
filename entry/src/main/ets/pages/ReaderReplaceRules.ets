@@ -1,5 +1,5 @@
 import { promptAction, router } from '@kit.ArkUI';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
 import { Book } from '../model/data/Book';
@@ -290,7 +290,25 @@ struct ReaderReplaceRulesPage {
     Stack({ alignContent: Alignment.BottomEnd }) {
       AppBackgroundLayer()
       Column() {
-        this.titleBar()
+        SettingsTitleBar({
+          title: this.editing ? (this.draft.name ? '编辑替换规则' : '新增替换规则') :
+            (this.previewMode ? '替换净化配置' : '替换净化'),
+          appDarkMode: this.appDarkMode,
+          statusBarHeight: this.statusBarHeight,
+          rightPadding: 16,
+          onBack: (): void => {
+            if (this.editing) {
+              this.closeEditor();
+            } else if (this.selectionMode) {
+              this.exitRuleSelectionMode();
+            } else {
+              router.back();
+            }
+          },
+          trailingContent: (): void => {
+            this.titleBarTrailing()
+          }
+        })
         if (this.editing) {
           this.editorView()
         } else {
@@ -342,54 +360,22 @@ struct ReaderReplaceRulesPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({
-        iconColor: this.primaryTextColor(),
-        darkMode: this.appDarkMode,
-        buttonSize: 40,
-        containerWidth: 56,
-        materialScale: 0.83,
-        compactLayout: true,
-        onBack: () => {
-          if (this.editing) {
-            this.closeEditor();
-          } else if (this.selectionMode) {
+  titleBarTrailing() {
+    if (!this.editing) {
+      Text(this.selectionMode ? '取消' : '选择')
+        .fontSize(15)
+        .fontColor(this.primaryTextColor())
+        .width(52)
+        .height(56)
+        .textAlign(TextAlign.Center)
+        .onClick((): void => {
+          if (this.selectionMode) {
             this.exitRuleSelectionMode();
           } else {
-            router.back();
+            this.enterEmptyRuleSelectionMode();
           }
-        }
-      })
-      Text(this.editing ? (this.draft.name ? '编辑替换规则' : '新增替换规则') :
-        (this.previewMode ? '替换净化配置' : '替换净化'))
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-      if (!this.editing) {
-        Text(this.selectionMode ? '取消' : '选择')
-          .fontSize(15)
-          .fontColor(this.primaryTextColor())
-          .width(52)
-          .height(56)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            if (this.selectionMode) {
-              this.exitRuleSelectionMode();
-            } else {
-              this.enterEmptyRuleSelectionMode();
-            }
-          })
-      }
+        })
     }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    // Keep the action text aligned with the content/search field right edge.
-    .padding({ right: 16, top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder

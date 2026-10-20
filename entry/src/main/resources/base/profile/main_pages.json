@@ -31,6 +31,7 @@
     "pages/WebDav",
     "pages/ReaderReplaceRules",
     "pages/CoverGalleryManager",
+    "pages/AppHelp",
     "pages/About",
     "pages/OpenSourceLicenses",
     "pages/VerifyWeb"

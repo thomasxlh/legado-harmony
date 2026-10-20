@@ -7,6 +7,7 @@ import { SearchCoordinator, SearchProgress, SearchSourceResult } from '../core/b
 import { syncSystemBars } from '../utils/SystemBars';
 import { SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 import picker from '@ohos.file.picker';
@@ -207,6 +208,7 @@ struct BookSourcePage {
   private checkCancelSubscriber: commonEventManager.CommonEventSubscriber | null = null;
   private checkUiUpdates: BookSourceCheckUiUpdate[] = [];
   private checkUiFlushTimer: number = -1;
+  private searchDebounceTimer: number = -1;
   private pageVisible: boolean = true;
   private selectedSourceUrlsSnapshot: string[] = [];
   private selectedSourceUrlLookup: Set<string> = new Set<string>();
@@ -271,6 +273,10 @@ struct BookSourcePage {
 
   aboutToDisappear(): void {
     this.stopSourceSelectionAutoScroll();
+    if (this.searchDebounceTimer >= 0) {
+      clearTimeout(this.searchDebounceTimer);
+      this.searchDebounceTimer = -1;
+    }
     this.finishWebImport('', '网页取数已取消');
     if (!this.loginRuntimeAwaitingBrowser) {
       this.finishLoginRuntime(null, '登录动作已取消');
@@ -364,7 +370,7 @@ struct BookSourcePage {
               .padding({ left: 16, right: 16 })
               .onChange((value: string) => {
                 this.searchText = value;
-                this.searchSources();
+                this.scheduleSourceSearch();
               })
           }
           .width('100%')
@@ -436,6 +442,16 @@ struct BookSourcePage {
               .fontSize(14)
               .fontColor(this.subTextColor())
               .margin({ top: 8 })
+            if (this.emptySourceActionLabel()) {
+              Button(this.emptySourceActionLabel(), { type: ButtonType.Normal })
+                .height(40)
+                .borderRadius(20)
+                .padding({ left: 22, right: 22 })
+                .margin({ top: 18 })
+                .backgroundColor(this.buttonColor())
+                .fontColor('#FFFFFF')
+                .onClick(() => this.runEmptySourceAction())
+            }
           }
           .width('100%')
           .height('100%')
@@ -566,7 +582,7 @@ struct BookSourcePage {
                 .borderRadius(8)
                 .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
                 .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.glassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
-                .opacity(source.enabled ? 1 : 0.45)
+                .opacity(source.enabled ? 1 : 0.62)
                 .onClick(() => {
                   if (this.isBatchOperating) {
                     return;
@@ -771,7 +787,7 @@ struct BookSourcePage {
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#80000000')
+        .backgroundColor(this.scrimColor())
         .justifyContent(FlexAlign.Center)
         .onClick(() => {
           this.showImportUrlDialog = false;
@@ -829,7 +845,7 @@ struct BookSourcePage {
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#80000000')
+        .backgroundColor(this.scrimColor())
         .justifyContent(FlexAlign.Center)
         .onClick(() => {
           this.showBatchDeleteDialog = false;
@@ -925,7 +941,7 @@ struct BookSourcePage {
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#80000000')
+        .backgroundColor(this.scrimColor())
         .justifyContent(FlexAlign.Center)
         .onClick(() => {
           this.closeSourceGroupDialog();
@@ -1062,7 +1078,7 @@ struct BookSourcePage {
                   .height(42)
                   .borderRadius(10)
                   .fontSize(13)
-                  .backgroundColor('#B26A00')
+                  .backgroundColor(this.warningColor())
                   .fontColor('#FFFFFF')
                   .margin({ bottom: 10 })
                   .onClick(() => {
@@ -1126,7 +1142,7 @@ struct BookSourcePage {
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#80000000')
+        .backgroundColor(this.scrimColor())
         .justifyContent(FlexAlign.Center)
         .onClick(() => {
           if (!this.isCheckingSources) {
@@ -1206,7 +1222,7 @@ struct BookSourcePage {
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#80000000')
+        .backgroundColor(this.scrimColor())
         .justifyContent(FlexAlign.Center)
         .onClick(() => {
         })
@@ -1242,7 +1258,7 @@ struct BookSourcePage {
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('#80000000')
+        .backgroundColor(this.scrimColor())
         .justifyContent(FlexAlign.Center)
         .onClick(() => {
         })
@@ -1561,7 +1577,7 @@ struct BookSourcePage {
   sourceSortChoice(value: string, label: string) {
     Text(label)
       .fontSize(12)
-      .fontColor(this.sourceSortMode === value ? '#FFFFFF' : this.secondaryTextColor())
+      .fontColor(this.sourceSortMode === value ? this.onAccentColor() : this.secondaryTextColor())
       .layoutWeight(1)
       .height(34)
       .textAlign(TextAlign.Center)
@@ -1618,7 +1634,7 @@ struct BookSourcePage {
   sourceValidationFilterChoice(value: string, label: string) {
     Text(label)
       .fontSize(12)
-      .fontColor(this.sourceValidationFilter === value ? '#FFFFFF' : this.secondaryTextColor())
+      .fontColor(this.sourceValidationFilter === value ? this.onAccentColor() : this.secondaryTextColor())
       .width('32%')
       .height(34)
       .margin({ bottom: 6 })
@@ -1633,7 +1649,7 @@ struct BookSourcePage {
   sourceFilterChoice(filterKey: string, value: string, label: string) {
     Text(label)
       .fontSize(12)
-      .fontColor(this.sourceFilterValue(filterKey) === value ? '#FFFFFF' : this.secondaryTextColor())
+      .fontColor(this.sourceFilterValue(filterKey) === value ? this.onAccentColor() : this.secondaryTextColor())
       .layoutWeight(1)
       .height(34)
       .textAlign(TextAlign.Center)
@@ -1695,7 +1711,7 @@ struct BookSourcePage {
             .layoutWeight(1)
             .height(42)
             .backgroundColor(this.checkValidationMode === 'search' && this.checkInvalidAction === 'delete' ?
-              '#B71C1C' : this.buttonColor())
+              this.dangerColor() : this.buttonColor())
             .fontColor('#FFFFFF')
             .onClick(() => {
               this.startCheckEnabledSources(this.checkValidationMode === 'exploreReading' ?
@@ -1743,14 +1759,14 @@ struct BookSourcePage {
       Text(this.checkInvalidAction === action ? '●' : '○')
         .fontSize(20)
         .fontColor(this.checkInvalidAction === action ?
-          (danger ? '#B71C1C' : this.accentColor()) : this.subTextColor())
+          (danger ? this.dangerColor() : this.accentColor()) : this.subTextColor())
         .width(28)
 
       Column() {
         Text(title)
           .fontSize(15)
           .fontWeight(FontWeight.Medium)
-          .fontColor(danger ? '#B71C1C' : this.primaryTextColor())
+          .fontColor(danger ? this.dangerColor() : this.primaryTextColor())
         Text(description)
           .fontSize(12)
           .fontColor(this.subTextColor())
@@ -1765,7 +1781,7 @@ struct BookSourcePage {
     .backgroundColor(this.checkInvalidAction === action ? this.inputColor() : this.cardColor())
     .border({
       width: this.checkInvalidAction === action ? 1 : 0.5,
-      color: this.checkInvalidAction === action ? (danger ? '#B71C1C' : this.accentColor()) : this.glassBorderColor()
+      color: this.checkInvalidAction === action ? (danger ? this.dangerColor() : this.accentColor()) : this.glassBorderColor()
     })
     .onClick(() => {
       this.checkInvalidAction = action;
@@ -1794,7 +1810,7 @@ struct BookSourcePage {
         this.contextActionItem($r('sys.symbol.gearshape'), '调试', this.primaryTextColor(),
           () => this.openActionSourceDebug())
         if (this.actionSourceTlsTrusted()) {
-          this.contextActionItem($r('sys.symbol.checkmark_shield'), '取消证书信任', '#B26A00',
+          this.contextActionItem($r('sys.symbol.checkmark_shield'), '取消证书信任', this.warningColor(),
             () => this.revokeActionSourceTlsTrust())
         }
         this.contextActionItem($r('sys.symbol.pin'), this.actionSourcePinned() ? '取消置顶' : '置顶',
@@ -1903,12 +1919,14 @@ struct BookSourcePage {
                   .layoutWeight(1)
                   .alignItems(HorizontalAlign.Start)
 
-                  Toggle({ type: ToggleType.Switch, isOn: this.sourceLoginToggleOn(item) })
-                    .enabled(!this.isExecutingLoginAction)
-                    .selectedColor(this.accentColor())
-                    .onChange((isOn: boolean) => {
+                  AdaptiveSwitch({
+                    isOn: this.sourceLoginToggleOn(item),
+                    switchEnabled: !this.isExecutingLoginAction,
+                    selectedColor: this.accentColor(),
+                    onChange: (isOn: boolean) => {
                       this.updateSourceLoginToggle(index, isOn);
-                    })
+                    }
+                  })
                 }
                 .width('100%')
                 .height(48)
@@ -1971,7 +1989,7 @@ struct BookSourcePage {
             .height(42)
             .margin({ top: 8 })
             .fontSize(14)
-            .fontColor('#FFFFFF')
+            .fontColor(this.onAccentColor())
             .backgroundColor(this.accentColor())
             .enabled(!this.isExecutingLoginAction)
             .onClick(() => {
@@ -2003,7 +2021,7 @@ struct BookSourcePage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#80000000')
+    .backgroundColor(this.scrimColor())
     .justifyContent(FlexAlign.Center)
   }
 
@@ -2187,7 +2205,7 @@ struct BookSourcePage {
     .padding(12)
     .backgroundColor(this.glassCardColor())
     .borderRadius(8)
-    .opacity(source.enabled ? 1 : 0.45)
+    .opacity(source.enabled ? 1 : 0.62)
     .onClick(() => {
       if (this.isBatchOperating) return;
       if (this.selectionMode) {
@@ -2266,7 +2284,7 @@ struct BookSourcePage {
         Button('删除')
           .layoutWeight(1)
           .height(44)
-          .backgroundColor('#B71C1C')
+          .backgroundColor(this.dangerColor())
           .fontColor('#FFFFFF')
           .onClick(() => {
             this.deleteActionSource();
@@ -2681,9 +2699,22 @@ struct BookSourcePage {
           Text('暂无书源分组')
             .fontSize(14)
             .fontColor(this.subTextColor())
+          Text('在分组栏长按分组可管理，新建分组后可为书源设置分组')
+            .fontSize(12)
+            .fontColor(this.subTextColor())
+          Button('新建分组', { type: ButtonType.Normal })
+            .height(36)
+            .borderRadius(18)
+            .padding({ left: 18, right: 18 })
+            .backgroundColor(this.buttonColor())
+            .fontColor('#FFFFFF')
+            .onClick(() => {
+              this.newSourceGroupInput = '';
+              this.openAddSourceGroupDialog();
+            })
         }
         .width('100%')
-        .height(150)
+        .constraintSize({ minHeight: 150 })
         .justifyContent(FlexAlign.Center)
       } else {
         Row() {
@@ -2785,7 +2816,7 @@ struct BookSourcePage {
   sourceGroupChip(label: string, groupKey: string, editable: boolean = false) {
     Text(label)
       .fontSize(13)
-      .fontColor(this.activeSourceGroup === groupKey ? '#FFFFFF' : this.primaryTextColor())
+      .fontColor(this.activeSourceGroup === groupKey ? this.onAccentColor() : this.primaryTextColor())
       .maxLines(1)
       .padding({ left: 13, right: 13, top: 7, bottom: 7 })
       .borderRadius(16)
@@ -3150,12 +3181,32 @@ struct BookSourcePage {
     return ThemeRuntime.accentColor(this.appDarkMode);
   }
 
+  /** 强调色背景上的可读文字色：深色模式浅强调色时返回深色文字。 */
+  onAccentColor(): string {
+    return ThemeRuntime.onAccentTextColor(this.appDarkMode);
+  }
+
+  /** 全屏模态遮罩：统一浅色/深色的半透明黑色。 */
+  scrimColor(): string {
+    return ThemeRuntime.scrimColor(this.appDarkMode);
+  }
+
   buttonColor(): string {
     return ThemeRuntime.buttonColor(this.appDarkMode);
   }
 
   searchSources(): void {
     this.applySourceFilters();
+  }
+
+  scheduleSourceSearch(): void {
+    if (this.searchDebounceTimer >= 0) {
+      clearTimeout(this.searchDebounceTimer);
+    }
+    this.searchDebounceTimer = setTimeout(() => {
+      this.searchDebounceTimer = -1;
+      this.searchSources();
+    }, 200);
   }
 
   rememberSourceSelectionArea(sourceUrl: string, area: Area): void {
@@ -3810,6 +3861,36 @@ struct BookSourcePage {
       return '可切换其他分组查看';
     }
     return '点击右下角"+"添加书源';
+  }
+
+  emptySourceActionLabel(): string {
+    if (this.searchText.trim()) {
+      return '清除搜索';
+    }
+    if (this.hasActiveSourceFilters()) {
+      return '清除筛选';
+    }
+    if (this.activeSourceGroup !== '__all__') {
+      return '查看全部分组';
+    }
+    return '添加书源';
+  }
+
+  runEmptySourceAction(): void {
+    if (this.searchText.trim()) {
+      this.searchText = '';
+      this.searchSources();
+      return;
+    }
+    if (this.hasActiveSourceFilters()) {
+      this.resetSourceFilters();
+      return;
+    }
+    if (this.activeSourceGroup !== '__all__') {
+      this.selectSourceGroup('__all__');
+      return;
+    }
+    this.showAddDialog = true;
   }
 
   sourceNeedsLogin(source: BookSource): boolean {
@@ -5186,7 +5267,7 @@ struct BookSourcePage {
   sourceListItemKey(source: BookSource): string {
     const loginStatus = this.sourceNeedsLogin(source) ? (this.sourceLoggedIn(source) ? 'logged' : 'unlogged') : 'none';
     const positionStatus = `${source.isPinned ? 'pinned' : 'normal'}_${this.isSourceAtBottom(source) ? 'bottom' : 'middle'}`;
-    return `${source.bookSourceUrl}_${source.bookSourceGroup || ''}_${source.enabled ? '1' : '0'}_${source.enabledExplore ? '1' : '0'}_${source.isLocked ? 'locked' : 'unlocked'}_${source.validationStatus}_${source.bookSourceName || ''}_${loginStatus}_${positionStatus}_${this.selectionMode ? 'select' : 'normal'}`;
+    return `${source.bookSourceUrl}_${source.bookSourceGroup || ''}_${source.enabled ? '1' : '0'}_${source.enabledExplore ? '1' : '0'}_${source.isLocked ? 'locked' : 'unlocked'}_${source.validationStatus}_${source.bookSourceName || ''}_${loginStatus}_${positionStatus}`;
   }
 
   isSourceSelected(bookSourceUrl: string): boolean {
@@ -6048,7 +6129,7 @@ struct BookSourcePage {
         '继续后，仅在本设备上对这些精确主机跳过证书校验。连接可能被冒充或监听；只有在你确认书源和网络可信时才继续。',
       buttons: [
         { text: '保持安全', color: this.subTextColor() },
-        { text: '信任并重试', color: '#B26A00' }
+        { text: '信任并重试', color: this.warningColor() }
       ]
     });
     if (confirmation.index !== 1) return;

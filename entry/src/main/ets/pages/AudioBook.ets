@@ -222,7 +222,7 @@ struct AudioBookPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(this.currentChapter()?.title || this.statusText)
-          .fontSize(11)
+          .fontSize(12)
           .fontColor(this.subTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -312,7 +312,7 @@ struct AudioBookPage {
         Circle().width(38).height(38).fill(this.appDarkMode ? '#24FFFFFF' : '#10000000')
         SymbolGlyph(icon).fontSize(19).fontColor([enabled ? this.primaryTextColor() : this.subTextColor()])
       }
-      Text(label).fontSize(10).fontColor(this.subTextColor())
+      Text(label).fontSize(11).fontColor(this.subTextColor())
     }
     .layoutWeight(1)
     .height(68)
@@ -331,7 +331,7 @@ struct AudioBookPage {
           .fontColor([(offset < 0 ? this.chapterIndex > 0 : this.chapterIndex < this.chapters.length - 1) &&
             !this.chapterSwitching ? this.primaryTextColor() : this.subTextColor()])
       }
-      Text(label).fontSize(10).fontColor(this.subTextColor())
+      Text(label).fontSize(11).fontColor(this.subTextColor())
     }
     .layoutWeight(1)
     .height(68)
@@ -355,7 +355,7 @@ struct AudioBookPage {
           .fontColor(['#FFFFFF'])
       }
       Text(this.playbackState === 'loading' ? '加载中' : (this.isPlaying() ? '暂停' : '播放'))
-        .fontSize(10)
+        .fontSize(11)
         .fontColor(this.subTextColor())
     }
     .layoutWeight(1)

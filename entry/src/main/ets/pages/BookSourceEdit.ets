@@ -5,6 +5,7 @@ import { AppDatabase } from '../model/data/AppDatabase';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { FormDraftStore } from '../utils/FormDraftStore';
 import { HdsFeedback } from '../utils/HdsFeedback';
@@ -791,12 +792,14 @@ struct BookSourceEditPage {
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
 
-        Toggle({ type: ToggleType.Switch, isOn: this.source.enabledCookieJar })
-          .selectedColor(this.buttonColor())
-          .onChange((isOn: boolean) => {
+        AdaptiveSwitch({
+          isOn: this.source.enabledCookieJar,
+          selectedColor: this.buttonColor(),
+          onChange: (isOn: boolean) => {
             this.source.enabledCookieJar = isOn;
             this.scheduleDraftSave();
-          })
+          }
+        })
       }
       .width('100%')
       .padding({ top: 12, bottom: 12 })
@@ -807,12 +810,14 @@ struct BookSourceEditPage {
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
 
-        Toggle({ type: ToggleType.Switch, isOn: this.source.enabled })
-          .selectedColor(this.buttonColor())
-          .onChange((isOn: boolean) => {
+        AdaptiveSwitch({
+          isOn: this.source.enabled,
+          selectedColor: this.buttonColor(),
+          onChange: (isOn: boolean) => {
             this.source.enabled = isOn;
             this.scheduleDraftSave();
-          })
+          }
+        })
       }
       .width('100%')
       .padding({ top: 12, bottom: 12 })
@@ -823,12 +828,14 @@ struct BookSourceEditPage {
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
 
-        Toggle({ type: ToggleType.Switch, isOn: this.source.enabledExplore })
-          .selectedColor(this.buttonColor())
-          .onChange((isOn: boolean) => {
+        AdaptiveSwitch({
+          isOn: this.source.enabledExplore,
+          selectedColor: this.buttonColor(),
+          onChange: (isOn: boolean) => {
             this.source.enabledExplore = isOn;
             this.scheduleDraftSave();
-          })
+          }
+        })
       }
       .width('100%')
       .padding({ top: 12, bottom: 12 })
