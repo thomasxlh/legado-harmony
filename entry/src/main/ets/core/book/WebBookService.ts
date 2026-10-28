@@ -1,0 +1,2735 @@
+import { Book, BookChapter, BookSource } from '../../model/data/Book';
+import { HttpClient, HttpResponse } from '../http/HttpClient';
+import { AnalyzeUrl } from '../rule/AnalyzeUrl';
+import { AnalyzeRule, TOC_HTML_PARSE_LENGTH } from '../rule/AnalyzeRule';
+import { RuleContext } from '../rule/RuleContext';
+import { util } from '@kit.ArkTS';
+import { VerificationSupport } from '../http/VerificationSupport';
+import { EncodedSourceUrl } from './EncodedSourceUrl';
+import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
+import { BookUrlResolver } from './BookUrlResolver';
+import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
+import { AjaxRuleCompat } from '../rule/AjaxRuleCompat';
+import { JavaRegexCompat } from '../rule/JavaRegexCompat';
+import { RegexSafetyGuard } from '../rule/RegexSafetyGuard';
+import { ReaderImageMarker } from './ReaderImageMarker';
+import { JsRuntime } from '../rule/JsRuntime';
+import { ScriptEngine, ScriptEngineContext } from '../rule/ScriptEngine';
+import { ComicImagePipeline } from './ComicImagePipeline';
+import { BookSourceRuntimeRouter, SourceRuntimeStage } from './BookSourceRuntimeRouter';
+import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
+import { ReaderActionMarker } from './ReaderActionMarker';
+import { BookSourceInteractionPostProcessor } from './BookSourceInteractionPostProcessor';
+import { CookieStore } from '../http/CookieStore';
+import { RuleExecutionService } from '../rule/RuleExecutionService';
+import { RuleBatchExecutionRequest, RuleFieldRequest } from '../rule/RuleExecutionModels';
+import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
+import { BookSourceAudioWebRuntime } from './BookSourceAudioWebRuntime';
+import { BookSourceMetadataSupport } from './BookSourceMetadataSupport';
+import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
+import { BookSourceDebugContext } from './BookSourceDebugModels';
+
+class ContentPageData {
+  content: string = '';
+  nextUrl: string = '';
+}
+
+/** 字数测量稀疏目录探测结果：只携带最新章与当前阅读章，不含全量目录。 */
+export class MeasurementTocProbe {
+  totalCount: number = 0;
+  latestChapter: BookChapter | null = null;
+  /** currentIndex < 0（不需要当前章）时恒为 null；需要时 null 表示该源目录未收录阅读进度。 */
+  currentChapter: BookChapter | null = null;
+}
+
+/** 分页 URL 模板：prefix + 页码token + suffix；token 之外的数字段（书 id 等）在组内恒定。 */
+class TocPageTemplate {
+  prefix: string = '';
+  suffix: string = '';
+  page2Token: number = 0;
+  lastToken: number = 0;
+  lastUrl: string = '';
+}
+
+/** 首页数字页码锚点按"唯一变化数字段"聚合出的候选模板组。 */
+class TocPageAnchorGroup {
+  prefix: string = '';
+  suffix: string = '';
+  tokens: number[] = [];
+  private tokenSet: Set<number> = new Set();
+
+  addToken(token: number): void {
+    if (!this.tokenSet.has(token)) {
+      this.tokenSet.add(token);
+      this.tokens.push(token);
+    }
+  }
+
+  maxToken(): number {
+    let max = 0;
+    for (const token of this.tokens) {
+      if (token > max) max = token;
+    }
+    return max;
+  }
+}
+
+class LiteTocPage {
+  body: string = '';
+  baseUrl: string = '';
+  chapters: BookChapter[] = [];
+}
+
+class ReconciledPageTemplate {
+  group: TocPageAnchorGroup | null = null;
+  token: number = 0;
+}
+
+export class WebBookService {
+  static readonly GENERIC_TOC_FALLBACK_KEY: string = '__genericTocFallback';
+  /** 阅读路径等待书源 concurrentRate 令牌的累计上限：超过即放弃，防止章节加载被无上限限流排队卡死。 */
+  private static readonly READER_RATE_LIMIT_MAX_WAIT_MS: number = 20000;
+  private http: HttpClient;
+  private activeContentRuleOwners: Set<string> = new Set();
+
+  constructor() {
+    this.http = new HttpClient(10000);
+  }
+
+  cancelPendingRequests(): void {
+    this.http.cancelAll();
+    for (const ownerId of this.activeContentRuleOwners) {
+      RuleExecutionService.get().cancelOwner(ownerId);
+    }
+  }
+
+  private contentRequestCanceled(shouldCancel: (() => boolean) | null): boolean {
+    return shouldCancel ? shouldCancel() : false;
+  }
+
+  async getBookInfo(source: BookSource, book: Book,
+    debugContext: BookSourceDebugContext | null = null): Promise<Book> {
+    // Imported rules may build the virtual detail URL while the field batch is still executing.
+    // Preserve its request data and bridge the SearchBook identity that is already known.
+    book.bookUrl = EncodedSourceUrl.repairBookName(book.bookUrl, book.name, 'details');
+    BookSourceMetadataSupport.applyBook(source, book, [book.bookUrl]);
+    if (BookSourceDataUrlSupport.isEncodedSource(book.bookUrl)) {
+      return await BookSourceDataUrlSupport.getBookInfo(this.http, source, book);
+    }
+    console.log('[WS] getBookInfo');
+    const au = new AnalyzeUrl(source, this.http);
+    const resp = EncodedSourceUrl.canHandle(book.bookUrl) ?
+      await this.fetchEncodedDataUrl(book.bookUrl, source) : await au.fetch(book.bookUrl, undefined, debugContext);
+    console.log('[WS] getBookInfo resp:', resp.success, 'len:', resp.body.length);
+    if (this.requestVerificationIfNeeded(source, book.bookUrl, resp.body, resp.statusCode, source.bookInfoRule.init)) {
+      return book;
+    }
+    if (!resp.success || !resp.body) return book;
+    const baseUrl = BookUrlResolver.effectiveBase(resp, book.bookUrl, source.bookSourceUrl);
+
+    const ctx = new RuleContext();
+    ctx.loadFromJson(book.variable);
+    this.seedBookVariables(ctx, book.bookUrl);
+
+    // init 规则
+    let content = resp.body;
+    const infoRule = source.bookInfoRule;
+    if (infoRule.init) {
+      // Data URLs are virtual rule payloads. Their scripts often branch on baseUrl before
+      // requesting the real detail endpoint, so preserve that virtual URL for the script.
+      const stageBaseUrl = EncodedSourceUrl.decode(book.bookUrl) ? book.bookUrl : baseUrl;
+      let initResult = await this.runStageRule(source, book, infoRule.init, content, stageBaseUrl,
+        SourceRuntimeStage.BOOK_INFO, null, {}, debugContext);
+      if (!initResult && !this.stageRuleCode(infoRule.init)) {
+        const ir = new AnalyzeRule(content, baseUrl, ctx);
+        this.seedSourceVariables(ctx, source);
+        initResult = ir.getString(infoRule.init);
+      }
+      if (initResult) content = initResult;
+    }
+
+    this.seedSourceVariables(ctx, source);
+    const fieldRequest = new RuleBatchExecutionRequest();
+    fieldRequest.source = source;
+    fieldRequest.book = book;
+    fieldRequest.stage = SourceRuntimeStage.BOOK_INFO;
+    fieldRequest.ownerId = `book_info_${Date.now()}_${book.bookUrl}`;
+    fieldRequest.typedContents = [RuleValue.fromExternal(content)];
+    fieldRequest.contents = [content];
+    fieldRequest.baseUrl = baseUrl;
+    fieldRequest.contextValues = ctx.toPersistentRecord();
+    fieldRequest.fields = [
+      new RuleFieldRequest('name', infoRule.name || ''),
+      new RuleFieldRequest('author', infoRule.author || ''),
+      new RuleFieldRequest('coverUrl', infoRule.coverUrl || ''),
+      new RuleFieldRequest('intro', infoRule.intro || ''),
+      new RuleFieldRequest('kind', infoRule.kind || ''),
+      new RuleFieldRequest('status', infoRule.status || ''),
+      new RuleFieldRequest('lastChapter', infoRule.lastChapter || ''),
+      new RuleFieldRequest('wordCount', infoRule.wordCount || ''),
+      new RuleFieldRequest('updateTime', infoRule.updateTime || ''),
+      new RuleFieldRequest('tocUrl', infoRule.tocUrl || '', true)
+    ];
+    fieldRequest.timeoutMs = 20000;
+    fieldRequest.debugContext = debugContext;
+    let fieldValues: Record<string, string> = {};
+    try {
+      const batch = await RuleExecutionService.get().executeBatch(fieldRequest);
+      if (batch.errors.length > 0) {
+        console.warn('[WS] book info field errors:', source.bookSourceName, batch.errors.join('; '));
+      }
+      if (batch.values.length > 0) fieldValues = batch.values[0];
+      if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[0]);
+    } finally {
+      RuleExecutionService.get().clearOwner(fieldRequest.ownerId);
+    }
+    const fetchedName = (fieldValues['name'] || '').trim();
+    const fetchedAuthor = (fieldValues['author'] || '').trim();
+    const fetchedCoverUrl = (fieldValues['coverUrl'] || '').trim();
+    const fetchedIntro = (fieldValues['intro'] || '').trim();
+    const fetchedLastChapter = (fieldValues['lastChapter'] || '').trim();
+    // 冷启动首抓可能落在非详情页（隐藏 Web 传输尚未挂载完成、站点把无会话请求重定向回首页/分类页）：
+    // 此时 name 规则会匹配到题材栏文字（如“都市言情”），而作者、封面、简介、最新章节全部为空。
+    // 只解析出书名、其余字段全空视为“薄解析”，不可信——保留调用方传入的列表书名，避免错误页
+    // 文本覆盖正确身份；带任意其他字段的解析仍按原逻辑采纳详情页数据。
+    const thinDetailParse = !!fetchedName && !fetchedAuthor && !fetchedCoverUrl &&
+      !fetchedIntro && !fetchedLastChapter;
+    book.name = thinDetailParse ? BookFieldSanitizer.prefer(book.name, fetchedName) :
+      BookFieldSanitizer.prefer(fetchedName, book.name);
+    book.author = BookFieldSanitizer.cleanAuthor(BookFieldSanitizer.prefer(fetchedAuthor, book.author));
+    const infoCoverUrl = BookSourceDataUrlSupport.normalizeCoverUrl(source,
+      fieldValues['coverUrl'] || '', baseUrl);
+    book.coverUrl = book.coverUrl || infoCoverUrl;
+    book.intro = BookFieldSanitizer.prefer(fieldValues['intro'] || '', book.intro);
+    if (!book.intro) {
+      book.intro = BookFieldSanitizer.clean(this.detailFallbackText(content,
+        ['desc', 'intro', 'description', 'abstract', 'summary', 'book_desc', 'book_intro',
+          'book_abstract', 'book_description', 'content_desc', 'brief']));
+    }
+    book.kind = BookFieldSanitizer.prefer(fieldValues['kind'] || '', book.kind);
+    book.status = BookFieldSanitizer.prefer(fieldValues['status'] || '', book.status);
+    book.latestChapterTitle = BookFieldSanitizer.cleanChapterTitle(
+      BookFieldSanitizer.prefer(fieldValues['lastChapter'] || '', book.latestChapterTitle));
+    book.wordCount = BookFieldSanitizer.cleanWordCount(
+      BookFieldSanitizer.prefer(fieldValues['wordCount'] || '', book.wordCount));
+    book.updateTime = BookFieldSanitizer.cleanUpdateTime(
+      BookFieldSanitizer.prefer(fieldValues['updateTime'] || '', book.updateTime));
+
+    // A few source-defined detail scripts build the catalog data URL in the same field batch
+    // that updates book metadata. Their script runtime mutates the shared Book object, while the
+    // per-field result object remains the original detail JSON. If that yields an incomplete
+    // virtual catalog identity, merge only the missing scalar metadata from the source-defined
+    // detail payload. Endpoints and request behavior remain entirely owned by the imported rule.
+    const bridgedTocUrl = this.bridgeVirtualCatalogMetadata(fieldValues['tocUrl'] || '', book.bookUrl,
+      ['book_id', 'item_id', 'source', 'sources', 'tab', 'url', 'toc_url', 'book_name', 'author',
+        'abstract', 'thumb_url']);
+    const tocUrl = EncodedSourceUrl.repairCatalogBookName(bridgedTocUrl, book.name);
+    if (tocUrl) book.tocUrl = this.repairUrlWithBookId(tocUrl, book.bookUrl);
+
+    // 保存变量
+    book.variable = ctx.toPersistentJson();
+
+    // 如果 tocUrl 为空，尝试从 bookUrl 构造
+    if (!book.tocUrl) {
+      book.tocUrl = this.fallbackTocUrl(book.bookUrl, infoRule.tocUrl, baseUrl);
+    }
+
+    // Detail rules commonly add the definitive tab only to their catalog URL. Apply it after the
+    // rule has finished so the details page and the following reader route agree on media type.
+    BookSourceMetadataSupport.applyBook(source, book, [book.bookUrl, book.tocUrl]);
+
+    return book;
+  }
+
+  private detailFallbackText(content: string, keys: string[]): string {
+    const value = (content || '').trim();
+    if (!value || (!value.startsWith('{') && !value.startsWith('['))) return '';
+    try {
+      const parsed = JSON.parse(value) as Object;
+      const record = Array.isArray(parsed) ?
+        (parsed.length > 0 && parsed[0] && typeof parsed[0] === 'object' ?
+          parsed[0] as Record<string, Object> : null) :
+        (parsed && typeof parsed === 'object' ? parsed as Record<string, Object> : null);
+      if (!record) return '';
+      const wanted = keys.map((key: string): string => key.toLowerCase());
+      const find = (node: Object, depth: number): string => {
+        if (!node || depth > 5) return '';
+        if (Array.isArray(node)) {
+          for (const item of node as Object[]) {
+            const found = item && typeof item === 'object' ? find(item, depth + 1) : '';
+            if (found) return found;
+          }
+          return '';
+        }
+        const current = node as Record<string, Object>;
+        // API-backed sources commonly nest metadata under data/book/result. Search the requested
+        // keys at every object level instead of assuming the first JSON object is the detail record.
+        for (const key of Object.keys(current)) {
+          if (!wanted.includes(key.toLowerCase())) continue;
+          const field = current[key];
+          if (field !== undefined && field !== null && typeof field !== 'object') {
+            const text = String(field).trim();
+            if (text) return text;
+          }
+        }
+        for (const key of Object.keys(current)) {
+          const field = current[key];
+          if (field && typeof field === 'object') {
+            const found = find(field, depth + 1);
+            if (found) return found;
+          }
+        }
+        return '';
+      };
+      return find(record, 0);
+    } catch (_) {
+    }
+    return '';
+  }
+
+  private fallbackTocUrl(bookUrl: string, tocRule: string, baseUrl: string): string {
+    // 从 bookUrl 提取 novelId
+    let novelId = this.extractQueryParam(bookUrl, 'book_id') || this.extractQueryParam(bookUrl, 'bookid') ||
+      this.extractQueryParam(bookUrl, 'bookId') || this.extractQueryParam(bookUrl, 'id');
+    const segs = bookUrl.replace(/\?.*$/, '').split('/').filter(s => s.length > 0);
+    if (!novelId) {
+      for (let i = segs.length - 1; i >= 0; i--) {
+        if (segs[i].match(/^[a-zA-Z0-9_-]{3,40}$/)) { novelId = segs[i]; break; }
+      }
+    }
+    if (!novelId || !tocRule) return bookUrl;
+    const url = tocRule
+      .replace(/\{\{\s*\$\.\.?\w+\s*\}\}/g, novelId)
+      .replace(/\{\{\s*\w+\s*\}\}/g, novelId);
+    if (url.startsWith('http')) return url;
+    return BookUrlResolver.resolve(url, baseUrl);
+  }
+
+  private resolveTocUrl(source: BookSource, book: Book): string {
+    return book.tocUrl || book.bookUrl;
+  }
+
+  private repairUrlWithBookId(url: string, bookUrl: string): string {
+    if (!url || !bookUrl) return url;
+    if (!url.includes('/book/chapters') && !url.includes('/book//')) return url;
+    const bookId = this.extractBookId(bookUrl);
+    if (!bookId) return url;
+
+    return url
+      .replace(/\/{2,}/g, '/')
+      .replace(/^http:\//, 'http://')
+      .replace(/^https:\//, 'https://')
+      .replace(/\/book\/chapters/g, `/book/${bookId}/chapters`)
+      .replace(/\/book\/\//g, `/book/${bookId}/`);
+  }
+
+  private extractBookId(bookUrl: string): string {
+    const clean = bookUrl.replace(/\?.*$/, '');
+    const match = clean.match(/\/book\/([^/]+)$/);
+    if (match) return match[1];
+
+    const segs = clean.split('/').filter(s => s.length > 0);
+    for (let i = segs.length - 1; i >= 0; i--) {
+      if (/^[a-zA-Z0-9_-]{3,40}$/.test(segs[i])) return segs[i];
+    }
+    return '';
+  }
+
+  async getChapterList(source: BookSource, book: Book, maxChapters: number = 0,
+    allowGenericFallback: boolean = true,
+    debugContext: BookSourceDebugContext | null = null,
+    liteFields: boolean = false): Promise<BookChapter[]> {
+    AppStorage.setOrCreate('bookSourceStageLastError', '');
+    BookSourceMetadataSupport.applyBook(source, book, [book.bookUrl, book.tocUrl]);
+    const chapterLimit = maxChapters > 0 ? Math.max(1, Math.round(maxChapters)) : 0;
+    if (BookSourceDataUrlSupport.isEncodedSource(book.tocUrl) || BookSourceDataUrlSupport.isEncodedSource(book.bookUrl)) {
+      const encodedChapters = await BookSourceDataUrlSupport.getChapterList(this.http, source, book);
+      return chapterLimit > 0 ? encodedChapters.slice(0, chapterLimit) : encodedChapters;
+    }
+    console.log('[WS] getChapterList');
+    const tocUrl = this.resolveTocUrl(source, book);
+    const au = new AnalyzeUrl(source, this.http);
+    let resp = EncodedSourceUrl.canHandle(tocUrl) ?
+      await this.fetchEncodedDataUrl(tocUrl, source) : await au.fetch(tocUrl, undefined, debugContext);
+    if (!resp.success || !resp.body) {
+      // A silent empty return left the chapter list showing a generic placeholder with no hint
+      // of whether the network, the tocUrl composition or the API failed.
+      AppStorage.setOrCreate('bookSourceStageLastError', `目录请求失败：${!resp.success ?
+        (resp.statusCode > 0 ? `HTTP ${resp.statusCode}` : (resp.error || '网络异常')) : '接口返回空响应'}`);
+      return [];
+    }
+    const tocApiFailure = this.apiFailureMessage(resp.body);
+    if (tocApiFailure) {
+      // Servers commonly answer a malformed tocUrl (e.g. a missing bookid) with a JSON error.
+      // Record it so the chapter list page can show the real cause instead of 暂无目录.
+      AppStorage.setOrCreate('bookSourceStageLastError', `目录接口返回失败：${tocApiFailure}`);
+      return [];
+    }
+    const ctx = new RuleContext();
+    ctx.loadFromJson(book.variable);
+    this.seedBookVariables(ctx, book.bookUrl);
+    this.seedSourceVariables(ctx, source);
+    const tocRule = source.tocRule;
+    const chapters: BookChapter[] = [];
+    const seenChapterUrls = new Set<string>();
+    const seenPageUrls = new Set<string>();
+    let currentUrl = resp.url || tocUrl;
+    let currentResp = resp;
+    let firstBody = resp.body;
+    let firstBaseUrl = BookUrlResolver.effectiveBase(resp, tocUrl, book.bookUrl || source.bookSourceUrl);
+    // Pagination is already protected by seenPageUrls and the optional chapterLimit. The old
+    // 100-page ceiling truncated long novels at roughly 2,000 chapters (20 chapters/page).
+    // Keep a generous abuse guard while allowing common 4,000–10,000 chapter catalogs.
+    for (let page = 0; page < 1000; page++) {
+      if (!currentResp.success || !currentResp.body) break;
+      const pageKey = this.urlWithoutFragment(currentResp.url || currentUrl);
+      if (seenPageUrls.has(pageKey)) break;
+      seenPageUrls.add(pageKey);
+      if (this.requestVerificationIfNeeded(source, currentUrl, currentResp.body, currentResp.statusCode, tocRule.chapterList)) {
+        break;
+      }
+      const baseUrl = BookUrlResolver.effectiveBase(currentResp, currentUrl, book.bookUrl || source.bookSourceUrl);
+      if (page === 0) {
+        firstBody = currentResp.body;
+        firstBaseUrl = baseUrl;
+      }
+      const remainingLimit = chapterLimit > 0 ? Math.max(0, chapterLimit - chapters.length) : 0;
+      if (chapterLimit > 0 && remainingLimit === 0) break;
+      // The chapterList rule (including <js>/@js scripts) runs on EVERY page, matching Legado's
+      // BookChapterList.analyzeChapterList. The old code ran stage scripts only on page 0 and
+      // returned immediately, so scripted catalogs with nextTocUrl pagination kept only page 1
+      // (a typical 20-30 chapter slice), which made both the reader catalog and the change-source
+      // word-count measurement report a truncated "latest chapter".
+      const pageChapters = await this.parseTocPage(source, book, currentResp.body, currentUrl,
+        baseUrl, ctx, chapters.length, remainingLimit, debugContext, chapters.length === 0,
+        liteFields);
+      let limitReached = false;
+      for (const chapter of pageChapters) {
+        const chapterKey = this.urlWithoutFragment(chapter.url);
+        if (seenChapterUrls.has(chapterKey)) continue;
+        seenChapterUrls.add(chapterKey);
+        chapter.index = chapters.length;
+        chapters.push(chapter);
+        if (chapterLimit > 0 && chapters.length >= chapterLimit) {
+          limitReached = true;
+          break;
+        }
+      }
+      if (chapters.length > 0) {
+        // A later page produced chapters: stale script diagnostics from an empty earlier attempt
+        // must not surface as the catalog error after we return.
+        AppStorage.setOrCreate('bookSourceStageLastError', '');
+      }
+      if (limitReached || (chapterLimit > 0 && chapters.length >= chapterLimit)) break;
+      if (!tocRule.nextTocUrl) break;
+      // Legado evaluates nextTocUrl with getStringList(isUrl=true): one URL means sequential
+      // paging, several URLs mean "fetch every remaining page concurrently". A script/selector
+      // that returned the whole pager used to collapse to a single string and abort pagination,
+      // again leaving just page 1's 20-30 chapters.
+      const nextUrls = await this.evaluateNextTocUrls(source, book, currentResp.body, baseUrl,
+        ctx, debugContext);
+      const pendingUrls: string[] = [];
+      for (const nextUrl of nextUrls) {
+        const nextKey = this.urlWithoutFragment(nextUrl);
+        if (!nextKey || nextKey === pageKey || seenPageUrls.has(nextKey)) continue;
+        // Reserve ahead so fan-out URLs (and a failed sequential fetch) cannot be visited twice.
+        seenPageUrls.add(nextKey);
+        pendingUrls.push(nextUrl);
+      }
+      if (pendingUrls.length === 0) break;
+      const pageBudget = Math.max(0, 1000 - seenPageUrls.size);
+      if (pendingUrls.length === 1) {
+        currentUrl = pendingUrls[0];
+        const nextResp = await this.fetchTocPage(au, source, currentUrl, debugContext);
+        if (!nextResp) break;
+        currentResp = nextResp;
+        continue;
+      }
+      const parallelUrls = pageBudget > 0 ? pendingUrls.slice(0, pageBudget) : [];
+      const parallelPages = await this.fetchTocPagesInParallel(au, source, book, parallelUrls,
+        ctx, debugContext, liteFields);
+      for (const parallelChapters of parallelPages) {
+        for (const chapter of parallelChapters) {
+          const chapterKey = this.urlWithoutFragment(chapter.url);
+          if (seenChapterUrls.has(chapterKey)) continue;
+          seenChapterUrls.add(chapterKey);
+          chapter.index = chapters.length;
+          chapters.push(chapter);
+          if (chapterLimit > 0 && chapters.length >= chapterLimit) {
+            limitReached = true;
+            break;
+          }
+        }
+        if (limitReached) break;
+      }
+      if (chapters.length > 0) {
+        AppStorage.setOrCreate('bookSourceStageLastError', '');
+      }
+      // The enumerated URL list already covers every remaining page; child pages' own nextTocUrl
+      // values are discarded, matching Legado's parallel pagination branch.
+      break;
+    }
+
+    console.log('[WS] getChapterList pages:', seenPageUrls.size, 'chapters:', chapters.length,
+      'nextTocUrl:', tocRule.nextTocUrl ? 'set' : 'empty');
+    book.variable = ctx.toPersistentJson();
+    if (chapters.length > 0) return chapters;
+
+    if (!allowGenericFallback) return chapters;
+
+    const fallbackChapters = this.tryBuildGenericChapterList(book, firstBody, firstBaseUrl);
+    if (fallbackChapters.length > 0) {
+      AppStorage.setOrCreate('bookSourceStageLastError', '正式目录规则未匹配，当前使用临时通用目录');
+      return chapterLimit > 0 ? fallbackChapters.slice(0, chapterLimit) : fallbackChapters;
+    }
+    return chapters;
+  }
+
+  /**
+   * 字数测量链路是否会占用 ArkWeb 阶段宿主池（3 槽、与 JS 书源搜索共享）。
+   * 搜索进行中只允许早期测量"纯本地规则"源：JS 源的详情/目录/正文规则必须排队 ArkWeb 宿主，
+   * 边搜边测会抢占在搜 JS 源（曾经导致搜索限流等待/超时的根因），故 JS 源推迟到搜索结束后测。
+   * needBookInfo 为 true（候选没有 tocUrl）时还要把 bookInfoRule 的 JS 规则计入。
+   */
+  static measurementRequiresStage(source: BookSource, needBookInfo: boolean): boolean {
+    if (WebBookService.ruleObjectHasStageCode(source.tocRule)) return true;
+    if (WebBookService.ruleObjectHasStageCode(source.contentRule)) return true;
+    if (needBookInfo && WebBookService.ruleObjectHasStageCode(source.bookInfoRule)) return true;
+    return false;
+  }
+
+  private static ruleObjectHasStageCode(rule: Object): boolean {
+    if (!rule) return false;
+    const record = rule as Record<string, Object>;
+    const keys = Object.keys(record);
+    for (let i = 0; i < keys.length; i++) {
+      const value = record[keys[i]];
+      if (typeof value !== 'string') continue;
+      const lower = (value as string).toLowerCase();
+      // 与 RuleExecutionService 的派发标记对齐；裸 js: 前缀（整条即脚本）保守计入，
+      // 误判只会把该源推迟到搜索结束后测量，不会在搜索中抢占 ArkWeb 宿主。
+      if (lower.indexOf('<js>') >= 0 || lower.indexOf('@js:') >= 0 || lower.startsWith('js:')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 字数测量专用目录探测。目标只有两个章节：最新一章、当前阅读章节（currentIndex < 0 表示不需要）。
+   *  - nextTocUrl 在首页枚举出全部页码（Legado 列表语义）：只取尾页与当前章所在页，中间页按首页页容估算；
+   *  - nextTocUrl 只给下一页：从首页 HTML 分页栏（尾页/数字页码）识别尾页地址规律，
+   *    且模板必须能渲染出书源规则产出的真实第 2 页 URL（页首"最新章节"区块的假链接过不了这关），
+   *    直接跳取尾页，尾页还必须通过"再无 nextTocUrl"的终局校验；
+   *  - 任何一步证据不足或互相矛盾都回退全量遍历：宁慢勿错，绝不重蹈"短目录冒充长目录"的覆辙。
+   *  阅读器需要完整目录导航，仍走 getChapterList 全量路径，不在此优化范围内。
+   */
+  async probeChaptersForMeasurement(source: BookSource, book: Book, currentIndex: number,
+    currentTitle: string): Promise<MeasurementTocProbe> {
+    const probe = new MeasurementTocProbe();
+    AppStorage.setOrCreate('bookSourceStageLastError', '');
+    BookSourceMetadataSupport.applyBook(source, book, [book.bookUrl, book.tocUrl]);
+    if (BookSourceDataUrlSupport.isEncodedSource(book.tocUrl) ||
+      BookSourceDataUrlSupport.isEncodedSource(book.bookUrl)) {
+      const encodedAll = await this.getChapterList(source, book, 0, false, null, true);
+      return this.fillProbeFromFull(probe, encodedAll, currentIndex, currentTitle);
+    }
+    const tocRule = source.tocRule;
+    const tocUrl = this.resolveTocUrl(source, book);
+    const au = new AnalyzeUrl(source, this.http);
+    let firstResp: HttpResponse;
+    try {
+      firstResp = EncodedSourceUrl.canHandle(tocUrl) ?
+        await this.fetchEncodedDataUrl(tocUrl, source) : await au.fetch(tocUrl, undefined, null);
+    } catch (e) {
+      return probe;
+    }
+    if (!firstResp.success || !firstResp.body) {
+      AppStorage.setOrCreate('bookSourceStageLastError', `目录请求失败：${!firstResp.success ?
+        (firstResp.statusCode > 0 ? `HTTP ${firstResp.statusCode}` : (firstResp.error || '网络异常')) :
+        '接口返回空响应'}`);
+      return probe;
+    }
+    const tocApiFailure = this.apiFailureMessage(firstResp.body);
+    if (tocApiFailure) {
+      AppStorage.setOrCreate('bookSourceStageLastError', `目录接口返回失败：${tocApiFailure}`);
+      return probe;
+    }
+    const ctx = new RuleContext();
+    ctx.loadFromJson(book.variable);
+    this.seedBookVariables(ctx, book.bookUrl);
+    this.seedSourceVariables(ctx, source);
+    const page1Url = firstResp.url || tocUrl;
+    const baseUrl = BookUrlResolver.effectiveBase(firstResp, tocUrl, book.bookUrl || source.bookSourceUrl);
+    if (this.requestVerificationIfNeeded(source, page1Url, firstResp.body, firstResp.statusCode,
+      tocRule.chapterList)) {
+      return probe;
+    }
+    const head = await this.parseTocPage(source, book, firstResp.body, page1Url, baseUrl, ctx,
+      0, 0, null, true, true);
+    if (head.length === 0) return probe;
+    probe.totalCount = head.length;
+    probe.latestChapter = head[head.length - 1];
+    if (currentIndex >= 0 && currentIndex < head.length) {
+      probe.currentChapter = this.pickChapterInSlice(head, 0, currentTitle, currentIndex);
+    }
+    if (!tocRule.nextTocUrl) {
+      console.log('[WS] probeToc mode single-page chapters:', head.length);
+      return probe;
+    }
+    const nextUrls = await this.evaluateNextTocUrls(source, book, firstResp.body, baseUrl, ctx, null);
+    if (nextUrls.length === 0) {
+      console.log('[WS] probeToc mode single-page chapters:', head.length);
+      return probe;
+    }
+    // 列表规则可能把首页自身/重复 URL 一起带回：页码数学依赖"每页一个不重复 URL"，先去重过滤。
+    const page1Key = this.urlWithoutFragment(page1Url);
+    const seenPageKeys: Set<string> = new Set();
+    seenPageKeys.add(page1Key);
+    const pageUrls: string[] = [];
+    for (const candidateUrl of nextUrls) {
+      const pageKey = this.urlWithoutFragment(candidateUrl);
+      if (!pageKey || seenPageKeys.has(pageKey)) continue;
+      seenPageKeys.add(pageKey);
+      pageUrls.push(candidateUrl);
+    }
+    if (pageUrls.length === 0) {
+      console.log('[WS] probeToc mode single-page chapters:', head.length);
+      return probe;
+    }
+    try {
+      if (pageUrls.length >= 2) {
+        if (await this.probeEnumeratedPages(au, source, book, head, pageUrls,
+          currentIndex, currentTitle, probe)) {
+          console.log('[WS] probeToc mode sparse-enumerated pages:', pageUrls.length + 1,
+            'total:', probe.totalCount);
+          return probe;
+        }
+      } else {
+        const template = this.discoverLastPageTemplate(firstResp.body, baseUrl, pageUrls[0]);
+        if (template && await this.probeJumpPages(au, source, book, head, template,
+          currentIndex, currentTitle, probe)) {
+          // 只记录跨页数（page2Token/lastToken 是页码索引，不打印原始值，避免日志策略误判）
+          const jumpPageSpan = template.lastToken - template.page2Token + 1;
+          console.log('[WS] probeToc mode sparse-jump pageSpan:', jumpPageSpan,
+            'total:', probe.totalCount);
+          return probe;
+        }
+      }
+    } catch (e) {
+      console.warn('[WS] probeToc sparse failed, fallback full:', e);
+    }
+    console.log('[WS] probeToc mode full-fallback');
+    const all = await this.getChapterList(source, book, 0, false, null, true);
+    return this.fillProbeFromFull(probe, all, currentIndex, currentTitle);
+  }
+
+  /** nextTocUrl 首页即枚举全部剩余页：pageUrls[0]=第2页 …… pageUrls[last]=尾页，顺序即页码顺序。 */
+  private async probeEnumeratedPages(au: AnalyzeUrl, source: BookSource, book: Book,
+    head: BookChapter[], pageUrls: string[], currentIndex: number, currentTitle: string,
+    probe: MeasurementTocProbe): Promise<boolean> {
+    const lastPage = await this.fetchLiteTocPage(au, source, book, pageUrls[pageUrls.length - 1]);
+    if (!lastPage) return false;
+    const pageSize = head.length;
+    // 中间页按首页页容估算（真实分页页容一致），尾页用实测条数校准总数。
+    probe.totalCount = head.length + (pageUrls.length - 1) * pageSize + lastPage.chapters.length;
+    probe.latestChapter = lastPage.chapters[lastPage.chapters.length - 1];
+    if (currentIndex >= 0 && currentIndex >= head.length) {
+      const pageNo = Math.floor(currentIndex / pageSize); // 0-based：0=首页
+      const urlIndex = pageNo - 1;                        // pageUrls 下标（其 0 = 第2页）
+      const sliceStart = pageNo * pageSize;
+      if (urlIndex > pageUrls.length - 1) {
+        probe.currentChapter = null; // 已在尾页之后：确定未收录
+        return true;
+      }
+      let items: BookChapter[];
+      if (urlIndex === pageUrls.length - 1) {
+        items = lastPage.chapters;
+      } else {
+        const middlePage = await this.fetchLiteTocPage(au, source, book, pageUrls[urlIndex]);
+        if (!middlePage) return false;
+        items = middlePage.chapters;
+      }
+      const offset = currentIndex - sliceStart;
+      if (offset >= items.length) {
+        if (urlIndex === pageUrls.length - 1) {
+          probe.currentChapter = null; // 尾页条数不足：确实未收录
+          return true;
+        }
+        return false; // 中间页页容与估算冲突：回退保真
+      }
+      probe.currentChapter = this.pickChapterInSlice(items, sliceStart, currentTitle, currentIndex);
+    }
+    return true;
+  }
+
+  /** 只发现"下一页"时按分页模板直接跳尾页，并按需补当前章所在页。 */
+  private async probeJumpPages(au: AnalyzeUrl, source: BookSource, book: Book,
+    head: BookChapter[], template: TocPageTemplate, currentIndex: number, currentTitle: string,
+    probe: MeasurementTocProbe): Promise<boolean> {
+    const lastPage = await this.fetchLiteTocPage(au, source, book, template.lastUrl);
+    if (!lastPage) return false;
+    // 尾页终局校验：书源自己的 nextTocUrl 在尾页必须无下一页，否则发现的"尾页"是分页栏的假链接。
+    const tailNextUrls = await this.evaluateNextTocUrls(source, book, lastPage.body,
+      lastPage.baseUrl, new RuleContext(), null);
+    if (tailNextUrls.length > 0) return false;
+    const pageSize = head.length;
+    probe.totalCount = head.length +
+      (template.lastToken - template.page2Token) * pageSize + lastPage.chapters.length;
+    probe.latestChapter = lastPage.chapters[lastPage.chapters.length - 1];
+    if (currentIndex >= 0 && currentIndex >= head.length) {
+      const pageNo = Math.floor(currentIndex / pageSize); // 0-based：0=首页，1=第2页
+      const token = template.page2Token + (pageNo - 1);
+      const sliceStart = pageNo * pageSize;
+      if (token > template.lastToken) {
+        probe.currentChapter = null; // 已在尾页之后：确定未收录
+        return true;
+      }
+      if (token < template.page2Token) return false;
+      let items: BookChapter[];
+      if (token === template.lastToken) {
+        items = lastPage.chapters;
+      } else {
+        const middlePage = await this.fetchLiteTocPage(au, source, book,
+          template.prefix + token + template.suffix);
+        if (!middlePage) return false;
+        items = middlePage.chapters;
+      }
+      const offset = currentIndex - sliceStart;
+      if (offset >= items.length) {
+        if (token === template.lastToken) {
+          probe.currentChapter = null; // 尾页条数不足：确实未收录
+          return true;
+        }
+        return false; // 中间页页容与估算冲突：回退保真
+      }
+      probe.currentChapter = this.pickChapterInSlice(items, sliceStart, currentTitle, currentIndex);
+    }
+    return true;
+  }
+
+  /** 抓取并按 lite 字段解析单个目录页（测量专用，throwaway 规则上下文，与 Legado 子页语义一致）。 */
+  private async fetchLiteTocPage(au: AnalyzeUrl, source: BookSource, book: Book,
+    url: string): Promise<LiteTocPage | null> {
+    const resp = await this.fetchTocPage(au, source, url, null);
+    if (!resp || !resp.success || !resp.body) return null;
+    if (this.requestVerificationIfNeeded(source, url, resp.body, resp.statusCode,
+      source.tocRule.chapterList)) {
+      return null;
+    }
+    const baseUrl = BookUrlResolver.effectiveBase(resp, url, book.bookUrl || source.bookSourceUrl);
+    const pageCtx = new RuleContext();
+    const pageChapters = await this.parseTocPage(source, book, resp.body, url, baseUrl, pageCtx,
+      0, 0, null, false, true);
+    if (pageChapters.length === 0) return null;
+    const page = new LiteTocPage();
+    page.body = resp.body;
+    page.baseUrl = baseUrl;
+    page.chapters = pageChapters;
+    return page;
+  }
+
+  /**
+   * 从首页 HTML 分页栏发现尾页 URL 模板。
+   * 数字页码按"只有一个数字段变化、其余段（书 id 等）恒定"聚合成模板，且必须能渲染出
+   * 书源 nextTocUrl 规则给出的真实第 2 页 URL 才采信——页首"最新章节"区块的链接过不了这关。
+   * 尾页优先取 尾页/末页/last 锚点，没有就用数字页码组的最大 token。
+   */
+  private discoverLastPageTemplate(body: string, baseUrl: string, page2Url: string): TocPageTemplate | null {
+    if (!body || body.indexOf('<a') < 0) return null;
+    const tailTextRe = /^(尾页|末页|最后一页|最后页|last)$/i;
+    let tailHref = '';
+    const groups: Map<string, TocPageAnchorGroup> = new Map();
+    const anchorRe = /<a\b[^>]*?\bhref\s*=\s*["']?([^"'\s>]+)["']?[^>]*>([\s\S]*?)<\/a>/gi;
+    let anchorMatch: RegExpExecArray | null = null;
+    let guard = 0;
+    while ((anchorMatch = anchorRe.exec(body)) !== null && guard < 20000) {
+      guard++;
+      const text = anchorMatch[2].replace(/<[^>]*>/g, '').replace(/\s+/g, '').trim();
+      if (!text) continue;
+      const href = BookUrlResolver.resolve(anchorMatch[1], baseUrl);
+      if (!href || !/^https?:\/\//i.test(href)) continue;
+      if (!tailHref && tailTextRe.test(text)) tailHref = href;
+      if (/^\d{1,6}$/.test(text)) this.collectPageAnchorGroup(groups, href);
+    }
+    const normalizedPage2 = this.normalizePageUrl(page2Url);
+    // 选用能渲染出真实第 2 页、成员数 >=2 的数字页码组。
+    const reconciled = new ReconciledPageTemplate();
+    groups.forEach((group: TocPageAnchorGroup): void => {
+      if (reconciled.group || group.tokens.length < 2) return;
+      for (const token of group.tokens) {
+        if (this.normalizePageUrl(group.prefix + token + group.suffix) === normalizedPage2) {
+          reconciled.group = group;
+          reconciled.token = token;
+          break;
+        }
+      }
+    });
+    if (reconciled.group) {
+      const matchedGroup = reconciled.group;
+      const matchedToken = reconciled.token;
+      let lastToken = 0;
+      let lastUrl = '';
+      if (tailHref) {
+        const tailToken = this.readTemplateToken(matchedGroup, tailHref);
+        if (tailToken !== null && tailToken > matchedToken) {
+          lastToken = tailToken;
+          lastUrl = tailHref;
+        }
+      }
+      if (!lastUrl) {
+        lastToken = matchedGroup.maxToken();
+        lastUrl = matchedGroup.prefix + lastToken + matchedGroup.suffix;
+      }
+      if (lastToken <= matchedToken) return null;
+      const tpl = new TocPageTemplate();
+      tpl.prefix = matchedGroup.prefix;
+      tpl.suffix = matchedGroup.suffix;
+      tpl.page2Token = matchedToken;
+      tpl.lastToken = lastToken;
+      tpl.lastUrl = lastUrl;
+      return tpl;
+    }
+    // 没有成组数字页码、只有"尾页"锚点：从真实第 2 页与尾页 URL 的公共前后缀夹出唯一差异数字段。
+    if (tailHref && this.normalizePageUrl(tailHref) !== normalizedPage2) {
+      return this.buildTemplateFromPagePair(page2Url, tailHref);
+    }
+    return null;
+  }
+
+  private collectPageAnchorGroup(groups: Map<string, TocPageAnchorGroup>, href: string): void {
+    const runRe = /\d+/g;
+    const starts: number[] = [];
+    const ends: number[] = [];
+    const values: number[] = [];
+    let runMatch: RegExpExecArray | null;
+    while ((runMatch = runRe.exec(href)) !== null) {
+      starts.push(runMatch.index);
+      ends.push(runMatch.index + runMatch[0].length);
+      values.push(Number(runMatch[0]));
+    }
+    // 枚举"仅该数字段变化"的签名：其余数字段被夹在 prefix/suffix 里，组键天然要求它们恒定。
+    for (let j = 0; j < values.length; j++) {
+      const prefix = href.substring(0, starts[j]);
+      const suffix = href.substring(ends[j]);
+      const key = `${prefix}\u0000${suffix}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = new TocPageAnchorGroup();
+        group.prefix = prefix;
+        group.suffix = suffix;
+        groups.set(key, group);
+      }
+      group.addToken(values[j]);
+    }
+  }
+
+  private readTemplateToken(group: TocPageAnchorGroup, url: string): number | null {
+    if (url.startsWith(group.prefix) && url.endsWith(group.suffix) &&
+      url.length >= group.prefix.length + group.suffix.length + 1) {
+      const middle = url.substring(group.prefix.length, url.length - group.suffix.length);
+      if (/^\d+$/.test(middle)) return Number(middle);
+    }
+    return null;
+  }
+
+  private buildTemplateFromPagePair(page2Url: string, tailUrl: string): TocPageTemplate | null {
+    let prefixLen = 0;
+    while (prefixLen < page2Url.length && prefixLen < tailUrl.length &&
+      page2Url.charAt(prefixLen) === tailUrl.charAt(prefixLen)) {
+      prefixLen++;
+    }
+    let end2 = page2Url.length;
+    let endTail = tailUrl.length;
+    while (end2 > prefixLen && endTail > prefixLen &&
+      page2Url.charAt(end2 - 1) === tailUrl.charAt(endTail - 1)) {
+      end2--;
+      endTail--;
+    }
+    const mid2 = page2Url.substring(prefixLen, end2);
+    const midTail = tailUrl.substring(prefixLen, endTail);
+    if (!/^\d+$/.test(mid2) || !/^\d+$/.test(midTail)) return null;
+    const page2Token = Number(mid2);
+    const lastToken = Number(midTail);
+    if (lastToken <= page2Token) return null;
+    const tpl = new TocPageTemplate();
+    tpl.prefix = page2Url.substring(0, prefixLen);
+    tpl.suffix = page2Url.substring(end2);
+    tpl.page2Token = page2Token;
+    tpl.lastToken = lastToken;
+    tpl.lastUrl = tailUrl;
+    return tpl;
+  }
+
+  private normalizePageUrl(url: string): string {
+    let value = (url || '').split('#')[0];
+    value = value.replace(/\/index\.(html?|shtml|jsp|php)$/i, '/');
+    if (value.length > 1) value = value.replace(/\/+$/, '');
+    return value;
+  }
+
+  /** 在单个目录页切片内定位当前阅读章节：先按标题就近匹配（兼容合章/拆章），否则按序号偏移取。 */
+  private pickChapterInSlice(items: BookChapter[], sliceStart: number,
+    title: string, targetIndex: number): BookChapter | null {
+    const wanted = (title || '').trim();
+    if (wanted) {
+      let best: BookChapter | null = null;
+      let bestDistance = Number.MAX_SAFE_INTEGER;
+      for (let i = 0; i < items.length; i++) {
+        const itemTitle = items[i].title;
+        if (itemTitle && itemTitle.trim() === wanted) {
+          const distance = Math.abs(sliceStart + i - targetIndex);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            best = items[i];
+          }
+        }
+      }
+      if (best) return best;
+    }
+    const offset = targetIndex - sliceStart;
+    return offset >= 0 && offset < items.length ? items[offset] : null;
+  }
+
+  private fillProbeFromFull(probe: MeasurementTocProbe, chapters: BookChapter[],
+    currentIndex: number, currentTitle: string): MeasurementTocProbe {
+    probe.totalCount = chapters.length;
+    probe.latestChapter = chapters.length > 0 ? chapters[chapters.length - 1] : null;
+    probe.currentChapter = null;
+    if (currentIndex >= 0 && currentIndex <= chapters.length - 1) {
+      probe.currentChapter = this.pickChapterInSlice(chapters, 0, currentTitle, currentIndex);
+    }
+    return probe;
+  }
+
+  /**
+   * Parse one catalog page. Native chapterList rules go through the synchronous rule engine;
+   * <js>/@js list scripts run through the stage runtime. Legado executes the same chapterList
+   * rule on every paginated page, so callers must invoke this per page instead of only once.
+   */
+  private async parseTocPage(source: BookSource, book: Book, pageBody: string, pageUrl: string,
+    baseUrl: string, ctx: RuleContext, startIndex: number, maxItems: number,
+    debugContext: BookSourceDebugContext | null, reportScriptDiagnostics: boolean,
+    liteFields: boolean = false): Promise<BookChapter[]> {
+    const tocRule = source.tocRule;
+    const stageCode = this.stageRuleCode(tocRule.chapterList || '');
+    if (stageCode) {
+      const runtimeInput = this.stageDataUrlInput(tocRule.chapterList, pageUrl, pageBody);
+      const stageBaseUrl = EncodedSourceUrl.decode(pageUrl) ? pageUrl : baseUrl;
+      const runtimeList = await this.runStageRule(source, book, tocRule.chapterList,
+        runtimeInput, stageBaseUrl, SourceRuntimeStage.TOC, null,
+        EncodedSourceUrl.scalarVariables(pageUrl), debugContext);
+      if (runtimeList) {
+        const runtimeChapters = await this.parseStageChapterList(source, book, runtimeList, baseUrl,
+          maxItems, debugContext);
+        if (runtimeChapters.length > 0) return runtimeChapters;
+        if (reportScriptDiagnostics) {
+          AppStorage.setOrCreate('bookSourceStageLastError',
+            `目录脚本已返回内容，但没有转换出章节（返回 ${runtimeList.length} 字符）`);
+        }
+        return [];
+      }
+      if (reportScriptDiagnostics) {
+        const lastError = AppStorage.get<string>('bookSourceStageLastError') || '';
+        if (!lastError) AppStorage.setOrCreate('bookSourceStageLastError', '目录脚本返回空结果');
+      }
+      return [];
+    }
+    return await this.parseChapterPage(source, book, pageBody, baseUrl, ctx,
+      startIndex, maxItems, debugContext, liteFields);
+  }
+
+  /** Fetch a later catalog page. Transport failures must not discard the chapters already
+   *  collected from earlier pages; return null so the pagination loop stops gracefully. */
+  private async fetchTocPage(au: AnalyzeUrl, source: BookSource, url: string,
+    debugContext: BookSourceDebugContext | null): Promise<HttpResponse | null> {
+    try {
+      return EncodedSourceUrl.canHandle(url) ?
+        await this.fetchEncodedDataUrl(url, source) :
+        await au.fetch(url, undefined, debugContext);
+    } catch (e) {
+      console.warn('[WS] getChapterList next page failed:', url, e);
+      return null;
+    }
+  }
+
+  /**
+   * Evaluate ruleToc.nextTocUrl as a URL list (Legado AnalyzeRule.getStringList(rule, isUrl=true)).
+   * One URL drives sequential paging; several URLs drive a concurrent fan-out over all remaining
+   * pages. Plain selectors usually yield one URL; whole-pager selectors and JS arrays yield many.
+   */
+  private async evaluateNextTocUrls(source: BookSource, book: Book, content: string,
+    baseUrl: string, ctx: RuleContext,
+    debugContext: BookSourceDebugContext | null): Promise<string[]> {
+    const rawRule = source.tocRule.nextTocUrl || '';
+    if (!rawRule) return [];
+    const request = new RuleBatchExecutionRequest();
+    request.source = source;
+    request.book = book;
+    request.chapter = null;
+    request.readerActionMode = false;
+    request.stage = SourceRuntimeStage.TOC;
+    request.ownerId = `toc_next_${Date.now()}_${book.bookUrl}`;
+    request.typedContents = [RuleValue.fromExternal(content)];
+    request.contents = [content];
+    request.baseUrl = baseUrl;
+    request.contextValues = ctx.toPersistentRecord();
+    // listResult returns JSON.stringify(getStringList(rule)); URL resolution is applied per item
+    // below because the list branch intentionally ignores field.resolveUrl.
+    request.fields = [new RuleFieldRequest('value', rawRule, false, true)];
+    request.timeoutMs = 15000;
+    request.debugContext = debugContext;
+    try {
+      const batch = await RuleExecutionService.get().executeBatch(request);
+      if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[0]);
+      if (batch.errors.length > 0) {
+        console.warn('[WS] toc next urls error:', source.bookSourceName, batch.errors.join('; '));
+      }
+      if (batch.values.length === 0) return [];
+      const raw = batch.values[0]['value'] || '';
+      if (!raw) return [];
+      const parsed = this.parseStringListValue(raw);
+      const items = parsed.length > 0 ? parsed :
+        raw.split(/\r?\n/).map((item: string): string => item.trim()).filter((item: string): boolean => !!item);
+      const resolved: string[] = [];
+      for (const item of items) {
+        const url = BookUrlResolver.resolve(item, baseUrl);
+        if (url && resolved.indexOf(url) < 0) resolved.push(url);
+      }
+      return resolved;
+    } finally {
+      RuleExecutionService.get().clearOwner(request.ownerId);
+    }
+  }
+
+  /**
+   * Fetch and parse every URL returned at once by nextTocUrl, in URL-enumeration order so chapter
+   * ordering stays stable. Bounded to 8 workers; the per-source rate limiter and the stage-runtime
+   * host pool still cap real downstream parallelism. Each page uses a throwaway rule context,
+   * matching Legado's mapAsync branch which never merges child-page script variables.
+   */
+  private async fetchTocPagesInParallel(au: AnalyzeUrl, source: BookSource, book: Book, urls: string[],
+    sharedCtx: RuleContext, debugContext: BookSourceDebugContext | null,
+    liteFields: boolean = false): Promise<BookChapter[][]> {
+    const results: BookChapter[][] = [];
+    for (let i = 0; i < urls.length; i++) results.push([]);
+    let cursor = 0;
+    const workerCount = Math.min(urls.length, 8);
+    const parseOne = async (index: number): Promise<void> => {
+      const url = urls[index];
+      const pageResp = await this.fetchTocPage(au, source, url, debugContext);
+      if (!pageResp || !pageResp.success || !pageResp.body) return;
+      if (this.requestVerificationIfNeeded(source, url, pageResp.body, pageResp.statusCode,
+        source.tocRule.chapterList)) {
+        return;
+      }
+      const baseUrl = BookUrlResolver.effectiveBase(pageResp, url, book.bookUrl || source.bookSourceUrl);
+      const pageCtx = new RuleContext();
+      pageCtx.loadFromJson(sharedCtx.toPersistentJson());
+      const pageChapters = await this.parseTocPage(source, book, pageResp.body, url,
+        baseUrl, pageCtx, 0, 0, debugContext, false, liteFields);
+      results[index] = pageChapters;
+    };
+    const worker = async (): Promise<void> => {
+      while (cursor < urls.length) {
+        const index = cursor;
+        cursor++;
+        try {
+          await parseOne(index);
+        } catch (e) {
+          console.warn('[WS] getChapterList parallel page failed:', urls[index], e);
+        }
+      }
+    };
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < workerCount; i++) workers.push(worker());
+    await Promise.all(workers);
+    return results;
+  }
+
+  /**
+   * Extract a server-declared failure from a JSON body. Only called before rule parsing; a body
+   * carrying meaningful data keys is treated as success regardless of its message fields.
+   */
+  private apiFailureMessage(body: string): string {
+    const value = (body || '').trim();
+    if (!value.startsWith('{') || value.length > 4096) return '';
+    try {
+      const record = JSON.parse(value) as Record<string, Object>;
+      if (!record || typeof record !== 'object' || Array.isArray(record)) return '';
+      const message = String(record['msg'] || record['message'] || record['error'] || '').trim();
+      if (!message || !/失败|错误|异常|参数|未登录|请登录|无权限|拒绝|invalid|error|fail|missing|cannot/i.test(message)) {
+        return '';
+      }
+      for (const key of ['data', 'list', 'records', 'items', 'books', 'result', 'item_data_list']) {
+        const field = record[key];
+        if (Array.isArray(field) && field.length > 0) return '';
+        if (field && typeof field === 'object' && !Array.isArray(field) &&
+          Object.keys(field as Record<string, Object>).length > 0) return '';
+      }
+      return message.substring(0, 160);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  private bridgeVirtualCatalogMetadata(tocUrl: string, detailUrl: string, allowedKeys: string[]): string {
+    const tocPayload = EncodedSourceUrl.decode(tocUrl || '');
+    const detailPayload = EncodedSourceUrl.decode(detailUrl || '');
+    if (!tocPayload || !detailPayload || !tocPayload.type || !/catalog/i.test(tocPayload.type)) return tocUrl;
+    let changed = false;
+    for (const key of allowedKeys) {
+      const current = tocPayload.data[key];
+      const fallback = detailPayload.data[key];
+      if ((current === undefined || current === null || String(current).trim() === '') &&
+        fallback !== undefined && fallback !== null && typeof fallback !== 'object' && String(fallback).trim()) {
+        tocPayload.data[key] = fallback;
+        changed = true;
+      }
+    }
+    if (!changed) return tocUrl;
+    const type = tocPayload.type || String(tocPayload.options['type'] || 'catalog');
+    return EncodedSourceUrl.encode(tocPayload.data, type);
+  }
+
+  private async parseChapterPage(source: BookSource, book: Book, body: string, baseUrl: string,
+    ctx: RuleContext, startIndex: number, maxItems: number = 0,
+    debugContext: BookSourceDebugContext | null = null,
+    liteFields: boolean = false): Promise<BookChapter[]> {
+    const tocRule = source.tocRule;
+    // A complete list script has already been attempted through ArkWeb by getChapterList. Never
+    // retry it synchronously when it returned no usable chapters.
+    if (this.stageRuleCode(tocRule.chapterList || '')) return [];
+    // 目录页允许解析到 12MB：长目录完整页普遍超过正文场景的 4MB 防护上限。
+    const rule = new AnalyzeRule(body, baseUrl, ctx, TOC_HTML_PARSE_LENGTH);
+    const matchedValues = rule.execute(tocRule.chapterList || '', RuleExecutionTarget.ELEMENTS);
+    const itemValues = maxItems > 0 ? matchedValues.slice(0, maxItems) : matchedValues;
+    const matchedItems = matchedValues.map((item: RuleValue): string => item.asString());
+    const items = itemValues.map((item: RuleValue): string => item.asString());
+    console.log('[WS] getChapterList page items:', matchedItems.length, 'processing:', items.length,
+      'from resp:', body.length);
+    const chapters: BookChapter[] = [];
+    if (items.length === 0) return chapters;
+    const fieldRequest = new RuleBatchExecutionRequest();
+    fieldRequest.source = source;
+    fieldRequest.book = book;
+    fieldRequest.stage = SourceRuntimeStage.TOC;
+    fieldRequest.ownerId = `toc_fields_${Date.now()}_${book.bookUrl}`;
+    fieldRequest.typedContents = itemValues;
+    fieldRequest.contents = items;
+    fieldRequest.baseUrl = baseUrl;
+    fieldRequest.contextValues = ctx.toPersistentRecord();
+    // 字数测量链路只关心章节名与地址：跳过 isVip/isPay/updateTime 三个字段规则，
+    // 长目录多页时每页少跑 3×章节数 条规则（JS 字段规则还要排队 ArkWeb 宿主）。
+    fieldRequest.fields = liteFields ? [
+      new RuleFieldRequest('chapterName', tocRule.chapterName || ''),
+      new RuleFieldRequest('chapterUrl', tocRule.chapterUrl || '')
+    ] : [
+      new RuleFieldRequest('chapterName', tocRule.chapterName || ''),
+      new RuleFieldRequest('chapterUrl', tocRule.chapterUrl || ''),
+      new RuleFieldRequest('isVip', tocRule.isVip || ''),
+      new RuleFieldRequest('isPay', tocRule.isPay || ''),
+      new RuleFieldRequest('updateTime', tocRule.updateTime || '')
+    ];
+    fieldRequest.timeoutMs = 30000;
+    fieldRequest.debugContext = debugContext;
+    let fieldValues: Record<string, string>[] = [];
+    let contextValues: string[] = [];
+    try {
+      const batch = await RuleExecutionService.get().executeBatch(fieldRequest);
+      fieldValues = batch.values;
+      contextValues = batch.contextValues;
+      if (batch.errors.length > 0) {
+        console.warn('[WS] toc field errors:', source.bookSourceName, batch.errors.join('; '));
+        // A failed chapterUrl rule silently empties every chapter; surface the cause on the
+        // catalog page instead of a generic 暂无目录.
+        AppStorage.setOrCreate('bookSourceStageLastError', `目录字段解析失败：${batch.errors[0]}`);
+      }
+    } finally {
+      RuleExecutionService.get().clearOwner(fieldRequest.ownerId);
+    }
+    const parsingSlice = CooperativeScheduler.createTimeSlice();
+    for (let i = 0; i < items.length; i++) {
+      if (i > 0) await parsingSlice.checkpoint();
+      const values = i < fieldValues.length ? fieldValues[i] : {};
+      const chap = new BookChapter();
+      chap.title = this.cleanChapterTitle(values['chapterName'] || `第${startIndex + i + 1}章`);
+      let rawUrl = values['chapterUrl'] || '';
+      if (rawUrl && (rawUrl.startsWith('@js:') || rawUrl.includes('$..') || rawUrl.includes('$.'))) {
+        let itemData: Record<string, Object> | null = null;
+        try { itemData = JSON.parse(items[i]) as Record<string, Object>; } catch (_) {}
+        let tocData: Record<string, Object> | null = null;
+        try { tocData = JSON.parse(body) as Record<string, Object>; } catch (_) {}
+        rawUrl = rawUrl.replace(/^@js:\s*/, '').replace(/\s*,\s*\{[^}]*\}\s*$/, '');
+        rawUrl = rawUrl.replace(/\$\.\.(\w+)/g, (_: string, key: string) => {
+          return this.resolveJsonKey(itemData, tocData, key, true) || '';
+        });
+        rawUrl = rawUrl.replace(/\$\.(\w+)/g, (_: string, key: string) => {
+          return this.resolveJsonKey(itemData, tocData, key, false) || '';
+        });
+        rawUrl = rawUrl.replace(/\s*\+\s*/g, '').replace(/^['"]|['"]$/g, '').trim();
+      }
+      const virtualPayload = this.ruleExpectsHexDataUrlInput(source.contentRule.content || '') ?
+        this.extractVirtualChapterPayload(rawUrl) : '';
+      const resolvedChapterUrl = this.resolveVars(virtualPayload || BookUrlResolver.resolve(rawUrl, baseUrl), ctx);
+      chap.url = this.repairUrlWithBookId(resolvedChapterUrl, book.bookUrl);
+      chap.bookUrl = book.bookUrl;
+      chap.index = startIndex + i;
+      chap.isVip = this.ruleBoolean(values['isVip'] || '');
+      chap.isPay = this.ruleBoolean(values['isPay'] || '');
+      chap.variable = BookUrlResolver.setVariableJson(chap.variable, 'baseUrl', baseUrl);
+      const updateTime = values['updateTime'] || '';
+      if (updateTime) {
+        chap.variable = BookUrlResolver.setVariableJson(chap.variable, 'updateTime', updateTime);
+      }
+      if (chap.title && chap.url) chapters.push(chap);
+    }
+    if (chapters.length === 0 && items.length > 0) {
+      // Every chapter was dropped (chapterUrl rule produced nothing usable). Record why so the
+      // catalog page shows the real cause instead of a silent empty state.
+      const droppedError = AppStorage.get<string>('bookSourceStageLastError') ||
+        `目录匹配 ${items.length} 章，但章节地址全部为空（chapterUrl 规则未生成有效地址）`;
+      AppStorage.setOrCreate('bookSourceStageLastError', droppedError);
+    }
+    if (contextValues.length > 0) ctx.loadFromJson(contextValues[contextValues.length - 1]);
+    return chapters;
+  }
+
+  async getContent(source: BookSource, book: Book, chapter: BookChapter,
+    shouldCancel: (() => boolean) | null = null,
+    debugContext: BookSourceDebugContext | null = null): Promise<string> {
+    if (this.contentRequestCanceled(shouldCancel)) return '';
+    // Validation and reader diagnostics must describe the current content request, not a
+    // stale error left by a previous catalog/script stage.
+    AppStorage.setOrCreate('bookSourceStageLastError', '');
+    if (BookSourceDataUrlSupport.isEncodedSource(chapter.url)) {
+      const shortcutContent = await BookSourceDataUrlSupport.getContent(this.http, source, book, chapter);
+      if (this.contentRequestCanceled(shouldCancel)) return '';
+      const shortcutAudio = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
+      if (!shortcutContent || shortcutAudio) return shortcutContent.trim();
+      const interactiveContent = await BookSourceInteractionPostProcessor.process(source, book, chapter,
+        shortcutContent);
+      if (this.contentRequestCanceled(shouldCancel)) return '';
+      const shortcutContext = new RuleContext();
+      shortcutContext.loadFromJson(book.variable);
+      this.seedBookVariables(shortcutContext, book.bookUrl);
+      this.seedSourceVariables(shortcutContext, source);
+      this.seedChapterVariables(shortcutContext, chapter);
+      return await this.normalizeReaderContent(source,
+        this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex, shortcutContext, chapter,
+          debugContext),
+        chapter.url || book.bookUrl || source.bookSourceUrl);
+    }
+    const isAudioContent = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
+    if (isAudioContent) {
+      const audioRule = (source.contentRule.content || '').trim();
+      const directAudioUrl = this.resolvedAudioChapterUrl(source, book, chapter);
+      // In Legado an empty audio content rule means that the catalog's chapterUrl is already
+      // the playable address. It does not need a filename extension (signed streams commonly do not).
+      if (!audioRule || this.isPureAudioBaseUrlRule(audioRule)) return directAudioUrl;
+      const webViewAudioUrl = await this.tryResolveAudioWebViewUrl(source, chapter, directAudioUrl);
+      if (webViewAudioUrl) return webViewAudioUrl;
+    }
+    const stageContent = await this.tryGetStageContent(source, book, chapter, debugContext);
+    if (this.contentRequestCanceled(shouldCancel)) return '';
+    if (stageContent) {
+      if (isAudioContent) return stageContent.trim();
+      const interactiveContent = await BookSourceInteractionPostProcessor.process(source, book, chapter,
+        stageContent);
+      if (this.contentRequestCanceled(shouldCancel)) return '';
+      return await this.normalizeReaderContent(source,
+        this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex,
+          new RuleContext(), chapter, debugContext), chapter.url);
+    }
+    if (this.stageRuleCode(source.contentRule.content || '')) {
+      // The complete content script was already executed in ArkWeb. Retrying an empty/error result
+      // with the synchronous compatibility engine is precisely the path that can trigger AppFreeze.
+      return '';
+    }
+    console.log('[WS] getContent');
+    if (this.contentRequestCanceled(shouldCancel)) return '';
+    // 阅读路径：取消检查下传到 AnalyzeUrl（限流等待/重定向链可提前退出）；
+    // concurrentRate 限流排队等待设上限，避免带限流配置的书源把章节加载卡在无上限的排队上。
+    const au = new AnalyzeUrl(source, this.http, {}, shouldCancel || undefined);
+    au.setRateLimitHooks({ maxWaitMs: WebBookService.READER_RATE_LIMIT_MAX_WAIT_MS });
+    let resp: HttpResponse = EncodedSourceUrl.canHandle(chapter.url) ?
+      await this.fetchEncodedDataUrl(chapter.url, source) : await au.fetch(chapter.url, undefined, debugContext);
+    if (this.contentRequestCanceled(shouldCancel)) return '';
+    console.log('[WS] getContent resp:', resp.success, 'len:', resp.body.length);
+    if (!resp.success) {
+      if (resp.rateLimited) {
+        AppStorage.setOrCreate('bookSourceStageLastError',
+          '书源访问频率受限（concurrentRate），请稍后重试');
+        return '';
+      }
+      const status = Number(resp.statusCode || 0);
+      const detail = String(resp.error || '').trim();
+      if (status === 401 || status === 403) {
+        AppStorage.setOrCreate('bookSourceStageLastError', `正文请求需要登录、验证或授权（HTTP ${status}）`);
+      } else if (status === 408 || status === 425 || status === 429 || status >= 500 || status === 0) {
+        AppStorage.setOrCreate('bookSourceStageLastError',
+          `正文网络请求暂时失败${status > 0 ? `（HTTP ${status}）` : ''}${detail ? `：${detail}` : ''}`);
+      } else {
+        AppStorage.setOrCreate('bookSourceStageLastError',
+          `正文请求失败（HTTP ${status}）${detail ? `：${detail}` : ''}`);
+      }
+      return '';
+    }
+    if (!resp.body) return '';
+    const ctx = new RuleContext();
+    ctx.loadFromJson(book.variable);
+    this.seedBookVariables(ctx, book.bookUrl);
+    this.seedSourceVariables(ctx, source);
+    this.seedChapterVariables(ctx, chapter);
+    const contentRule = source.contentRule;
+    const parts: string[] = [];
+    const seenPageUrls = new Set<string>();
+    let currentUrl = resp.url || chapter.url;
+    let currentResp = resp;
+    let totalLength = 0;
+    for (let page = 0; page < 50; page++) {
+      if (this.contentRequestCanceled(shouldCancel)) return '';
+      if (!currentResp.success || !currentResp.body) break;
+      const pageKey = this.urlWithoutFragment(currentResp.url || currentUrl);
+      if (seenPageUrls.has(pageKey)) break;
+      seenPageUrls.add(pageKey);
+      if (this.requestVerificationIfNeeded(source, currentUrl, currentResp.body, currentResp.statusCode, contentRule.content)) {
+        break;
+      }
+      const baseUrl = BookUrlResolver.effectiveBase(currentResp,
+        page === 0 ? this.getChapterBaseUrl(chapter, book, source) : currentUrl,
+        book.bookUrl || source.bookSourceUrl);
+      const pageData = await this.parseContentPage(source, book, chapter, currentResp.body, baseUrl, ctx,
+        shouldCancel, debugContext);
+      if (this.contentRequestCanceled(shouldCancel)) return '';
+      if (pageData.content) {
+        totalLength += pageData.content.length;
+        if (totalLength > 8 * 1024 * 1024) break;
+        parts.push(pageData.content);
+      }
+      if (!contentRule.nextContentUrl || !pageData.nextUrl) break;
+      const nextKey = this.urlWithoutFragment(pageData.nextUrl);
+      if (seenPageUrls.has(nextKey)) break;
+      currentUrl = pageData.nextUrl;
+      currentResp = EncodedSourceUrl.canHandle(currentUrl) ?
+        await this.fetchEncodedDataUrl(currentUrl, source) : await au.fetch(currentUrl, undefined, debugContext);
+      if (this.contentRequestCanceled(shouldCancel)) return '';
+    }
+    book.variable = ctx.toPersistentJson();
+    return parts.join('\n\n');
+  }
+
+  private async parseContentPage(source: BookSource, book: Book, chapter: BookChapter, body: string,
+    baseUrl: string, ctx: RuleContext, shouldCancel: (() => boolean) | null = null,
+    debugContext: BookSourceDebugContext | null = null): Promise<ContentPageData> {
+    const data = new ContentPageData();
+    if (this.contentRequestCanceled(shouldCancel)) return data;
+    const contentRule = source.contentRule;
+    const isAudioContent = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
+    const directContent = await this.tryGetDirectAjaxRuleContent(source, body, baseUrl, ctx, contentRule.content);
+    if (this.contentRequestCanceled(shouldCancel)) return data;
+    const fieldRequest = new RuleBatchExecutionRequest();
+    fieldRequest.source = source;
+    fieldRequest.book = book;
+    fieldRequest.chapter = chapter;
+    fieldRequest.readerActionMode = true;
+    fieldRequest.stage = SourceRuntimeStage.CONTENT;
+    fieldRequest.ownerId = `content_fields_${Date.now()}_${chapter.url}`;
+    fieldRequest.typedContents = [RuleValue.fromExternal(body)];
+    fieldRequest.contents = [body];
+    fieldRequest.baseUrl = baseUrl;
+    fieldRequest.contextValues = ctx.toPersistentRecord();
+    fieldRequest.fields = [
+      // A text chapter selector commonly matches one node per paragraph. Content is the one
+      // scalar field where all matches are meaningful; ordinary title/URL fields still use the
+      // first match exactly as before.
+      new RuleFieldRequest('content', directContent ? '' : (contentRule.content || ''), false, false, true),
+      new RuleFieldRequest('nextContentUrl', contentRule.nextContentUrl || '', true),
+      new RuleFieldRequest('images', contentRule.images || '', false, true)
+    ];
+    fieldRequest.timeoutMs = 20000;
+    fieldRequest.debugContext = debugContext;
+    let values: Record<string, string> = {};
+    this.activeContentRuleOwners.add(fieldRequest.ownerId);
+    try {
+      const batch = await RuleExecutionService.get().executeBatch(fieldRequest);
+      if (this.contentRequestCanceled(shouldCancel)) return data;
+      if (batch.values.length > 0) values = batch.values[0];
+      if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[0]);
+      if (batch.errors.length > 0) {
+        console.warn('[WS] content field errors:', source.bookSourceName, batch.errors.join('; '));
+      }
+    } finally {
+      this.activeContentRuleOwners.delete(fieldRequest.ownerId);
+      RuleExecutionService.get().clearOwner(fieldRequest.ownerId);
+    }
+    data.nextUrl = values['nextContentUrl'] || '';
+    let imageRuleValues = this.parseStringListValue(values['images'] || '');
+    if (imageRuleValues.length === 0) {
+      imageRuleValues = this.tryExtractScriptedComicImages(body);
+    }
+    let content = directContent || values['content'] || '';
+    // Audio rules return a media address (or JSON/HTML containing one), not reader text.
+    // Preserve that value so the audio page can resolve relative, escaped and tagged URLs.
+    if (isAudioContent) {
+      if (!content) return data;
+      data.content = this.applyContentReplaceRule(content, contentRule.replaceRegex, ctx, chapter,
+        debugContext).trim();
+      return data;
+    }
+    if (!content || this.isBadExtractedContent(content)) {
+      const fallbackContent = this.tryExtractReadableContentFromHtml(body);
+      if (fallbackContent) content = fallbackContent;
+    }
+    if (!content && imageRuleValues.length === 0) return data;
+    content = this.applyContentReplaceRule(content, contentRule.replaceRegex, ctx, chapter, debugContext);
+    if (this.contentRequestCanceled(shouldCancel)) return data;
+    data.content = await this.normalizeReaderContent(source, content, baseUrl, imageRuleValues);
+    if (this.contentRequestCanceled(shouldCancel)) data.content = '';
+    return data;
+  }
+
+  /**
+   * Some lightweight comic sites create their image tags in an inline script
+   * instead of including them in the returned HTML.  The common shape is a
+   * base path plus a page count.  Supporting that shape here avoids executing
+   * arbitrary imported JavaScript while still allowing the chapter to stream
+   * through the normal reader image pipeline.
+   */
+  private tryExtractScriptedComicImages(body: string): string[] {
+    if (!body) return [];
+    const pathMatch = body.match(/\b(?:pasd|imagePath|image_path)\s*=\s*["']([^"']+)["']/i);
+    const countMatch = body.match(/\b(?:num|imageCount|image_count)\s*=\s*(?:eval\s*\(\s*)?["']?(\d{1,4})/i);
+    if (!pathMatch || !pathMatch[1] || !countMatch || !countMatch[1]) return [];
+
+    const count = Math.min(parseInt(countMatch[1]), 500);
+    if (!Number.isFinite(count) || count <= 0) return [];
+    const extensionMatch = body.match(/(?:pasd|imagePath|image_path)\s*\+\s*[^+;]+\+\s*["'](\.(?:avif|gif|jpe?g|png|webp))["']/i);
+    const extension = extensionMatch && extensionMatch[1] ? extensionMatch[1] : '.webp';
+    const images: string[] = [];
+    for (let index = 1; index <= count; index++) {
+      images.push(`${pathMatch[1]}${index}${extension}`);
+    }
+    return images;
+  }
+
+  private async tryGetDirectAjaxRuleContent(source: BookSource, body: string, baseUrl: string,
+    ctx: RuleContext, contentRule: string): Promise<string> {
+    const plan = AjaxRuleCompat.directResultPlan(contentRule);
+    if (!plan) return '';
+
+    const urlAnalyze = new AnalyzeRule(body, baseUrl, ctx);
+    const requestUrl = urlAnalyze.getString(plan.urlRule, true);
+    if (!requestUrl || !/^https?:\/\//.test(requestUrl)) return '';
+
+    const response = await new AnalyzeUrl(source, this.http).fetch(requestUrl);
+    if (!response.success || !response.body) return '';
+
+    return AjaxRuleCompat.applyReplaceChain(response.body, plan.jsCode);
+  }
+
+  private async fetchEncodedDataUrl(url: string, source: BookSource): Promise<{ url: string, statusCode: number, headers: Record<string, string>, body: string, success: boolean, error?: string }> {
+    const root = await EncodedSourceUrl.requestJsonForDataUrl(this.http, url, source);
+    if (!root) {
+      return { url: url, statusCode: 0, headers: {}, body: '', success: false, error: 'encoded data url request failed' };
+    }
+    return { url: url, statusCode: 200, headers: {}, body: JSON.stringify(root), success: true };
+  }
+
+  private requestVerificationIfNeeded(source: BookSource, requestUrl: string, body: string, statusCode: number, rule: string): boolean {
+    if (!VerificationSupport.shouldRequestBrowserVerification(source, body, statusCode, rule)) {
+      return false;
+    }
+    const verifyUrl = VerificationSupport.pickVerificationUrl(source, requestUrl, rule);
+    VerificationSupport.requestVerification(verifyUrl, `${source.bookSourceName} 验证`, source);
+    console.warn('[WS] source needs browser verification:', source.bookSourceName, verifyUrl);
+    return true;
+  }
+
+  private isBadExtractedContent(content: string): boolean {
+    if (!content) return false;
+    const sample = content.substring(0, Math.min(content.length, 1200));
+    // A failed combined extraction rule must never become chapter text. Require several strong
+    // script markers together so ordinary novels that merely mention code are not rejected.
+    const leakedRuleScript = /(?:result\s*\.\s*match|\.match\s*\(\s*\/\^https?)/i.test(sample) &&
+      /java\s*\.\s*ajax\s*\(/i.test(sample) && /java\s*\.\s*base64Decode\s*\(/i.test(sample);
+    return leakedRuleScript || sample.includes('font-family:') || sample.includes('-webkit-text-size-adjust') ||
+      sample.includes('.nuxt-progress') || sample.includes('box-sizing:border-box') ||
+      sample.includes('<!doctype html') || sample.includes('<html');
+  }
+
+  private tryBuildGenericChapterList(book: Book, body: string, baseUrl: string): BookChapter[] {
+    if (!body) return [];
+    const bookKey = this.extractGenericBookKey(book.tocUrl || book.bookUrl || baseUrl);
+    const catalogHtml = this.pickGenericCatalogBlock(body, baseUrl, bookKey);
+    let links = this.collectGenericChapterLinks(catalogHtml, baseUrl, bookKey, catalogHtml !== body);
+    if (catalogHtml !== body) {
+      const bodyLinks = this.collectGenericChapterLinks(body, baseUrl, bookKey, false);
+      // A named catalog container can itself be the short "latest chapters" widget. Prefer the
+      // full-page candidate when it contains substantially more chapter-like links.
+      if (links.length < 3 || bodyLinks.length > links.length * 2) links = bodyLinks;
+    }
+    links = this.normalizeGenericChapterLinks(links);
+    if (links.length < 3) return [];
+
+    const chapters: BookChapter[] = [];
+    for (const link of links) {
+      const chapter = new BookChapter();
+      chapter.title = this.cleanChapterTitle(link['title'] || `第${chapters.length + 1}章`);
+      chapter.url = link['url'] || '';
+      chapter.bookUrl = book.bookUrl;
+      chapter.index = chapters.length;
+      chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'baseUrl', chapter.url || baseUrl);
+      chapter.variable = BookUrlResolver.setVariableJson(chapter.variable,
+        WebBookService.GENERIC_TOC_FALLBACK_KEY, 'true');
+      if (chapter.title && chapter.url) chapters.push(chapter);
+    }
+    console.log('[WS] 通用目录兜底:', chapters.length);
+    return chapters;
+  }
+
+  private tryExtractReadableContentFromHtml(body: string): string {
+    if (!body) return '';
+    const names = [
+      'nr1',
+      'chaptercontent',
+      'chapter-content',
+      'chapter_content',
+      'reader-content',
+      'read-content',
+      'article-content',
+      'article_content',
+      'TxtContent',
+      'txtcontent',
+      'word_read',
+      'readtxt',
+      'booktext',
+      'BookText',
+      'content',
+      'post'
+    ];
+    const blocks: string[] = [];
+    for (const name of names) {
+      blocks.push(this.extractIdBlock(body, name));
+      blocks.push(this.extractClassBlock(body, name));
+    }
+    blocks.push(this.extractTagBlock(body, 'article'));
+
+    let best = '';
+    let bestScore = 0;
+    for (const block of blocks) {
+      const text = this.cleanReadableContentText(block);
+      const score = this.scoreReadableContent(text);
+      if (score > bestScore) {
+        best = text;
+        bestScore = score;
+      }
+    }
+
+    if (!best) {
+      const text = this.cleanReadableContentText(body);
+      if (this.isUsableReadableContent(text)) best = text;
+    }
+    return best;
+  }
+
+  private pickGenericCatalogBlock(body: string, baseUrl: string, bookKey: string): string {
+    const names = [
+      'book-list',
+      'chapter-list',
+      'chapterlist',
+      'catalog-list',
+      'catalog',
+      'directory',
+      'book-chapter-list',
+      'chapters',
+      'listmain',
+      'list',
+      'play_0',
+      'volume-list',
+      'chapter'
+    ];
+    let best = '';
+    let bestCount = 0;
+    for (const name of names) {
+      const block = this.extractClassBlock(body, name) || this.extractIdBlock(body, name);
+      if (!block) continue;
+      const count = this.collectGenericChapterLinks(block, baseUrl, bookKey, true).length;
+      if (count > bestCount) {
+        best = block;
+        bestCount = count;
+      }
+    }
+    return bestCount >= 3 ? best : body;
+  }
+
+  private collectGenericChapterLinks(html: string, baseUrl: string, bookKey: string, inCatalogBlock: boolean):
+    Record<string, string>[] {
+    const links: Record<string, string>[] = [];
+    const re = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(html || '')) !== null) {
+      const attrs = match[1] || '';
+      const hrefMatch = attrs.match(/\shref\s*=\s*["']([^"']+)["']/i);
+      if (!hrefMatch || !hrefMatch[1]) continue;
+      const url = BookUrlResolver.resolve(this.decodeHtmlEntities(hrefMatch[1]), baseUrl);
+      const chapterKey = this.normalizeChapterLinkKey(url);
+      if (!chapterKey) continue;
+      const titleMatch = attrs.match(/\stitle\s*=\s*["']([^"']+)["']/i);
+      const title = this.cleanInlineText(titleMatch && titleMatch[1] ? titleMatch[1] : match[2]);
+      if (!title || this.isNavigationTitle(title)) continue;
+      const likelyChapter = this.isLikelyChapterTitle(title) || this.isLikelyChapterUrl(url, baseUrl, bookKey);
+      if (!inCatalogBlock && !likelyChapter) continue;
+      links.push({
+        title: title,
+        url: url,
+        key: chapterKey,
+        likely: likelyChapter ? 'true' : 'false'
+      });
+      if (links.length > 20000) break;
+    }
+    return links;
+  }
+
+  private normalizeGenericChapterLinks(links: Record<string, string>[]): Record<string, string>[] {
+    // Pages commonly render a short "latest chapters" block before the complete catalog. Keep
+    // duplicate URLs until this point so trimming the leading teaser cannot also discard the same
+    // chapters from the complete list.
+    const withoutTeaser = this.trimLeadingTeaserLinks(links);
+    const unique: Record<string, string>[] = [];
+    const seen = new Set<string>();
+    for (const link of withoutTeaser) {
+      const key = link['key'] || this.normalizeChapterLinkKey(link['url'] || '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(link);
+    }
+    if (unique.length < 3) return [];
+
+    let likelyCount = 0;
+    for (const link of unique) {
+      if (link['likely'] === 'true') likelyCount++;
+    }
+    if (likelyCount < 3 && unique.length > likelyCount * 2) return [];
+    return this.normalizeGenericChapterOrder(unique);
+  }
+
+  private normalizeGenericChapterOrder(links: Record<string, string>[]): Record<string, string>[] {
+    const ordinals: number[] = [];
+    for (const link of links) {
+      const ordinal = this.extractGenericChapterOrdinal(link['title'] || '');
+      if (ordinal >= 0) ordinals.push(ordinal);
+    }
+    if (ordinals.length < 4) return links;
+    let ascending = 0;
+    let descending = 0;
+    for (let index = 1; index < ordinals.length; index++) {
+      if (ordinals[index] > ordinals[index - 1]) ascending++;
+      if (ordinals[index] < ordinals[index - 1]) descending++;
+    }
+    // Only reverse when the evidence is strong. Volume resets and numbered side stories can create
+    // occasional decreases in an otherwise ascending catalog and must not flip the whole book.
+    if (descending >= 3 && descending > ascending * 2 && ordinals[0] > ordinals[ordinals.length - 1]) {
+      return links.slice().reverse();
+    }
+    return links;
+  }
+
+  private extractGenericChapterOrdinal(title: string): number {
+    const compact = (title || '').replace(/\s+/g, '').toLowerCase();
+    const chineseStyle = compact.match(/^第(\d+)[章节節回卷]/);
+    if (chineseStyle) return parseInt(chineseStyle[1]);
+    const westernStyle = compact.match(/^(?:chapter|ch\.?)(\d+)/);
+    if (westernStyle) return parseInt(westernStyle[1]);
+    return -1;
+  }
+
+  private trimLeadingTeaserLinks(links: Record<string, string>[]): Record<string, string>[] {
+    if (links.length < 6) return links;
+    for (let i = 0; i < links.length; i++) {
+      if (this.isLikelyFirstChapterTitle(links[i]['title'] || '')) {
+        const remain = links.length - i;
+        if (i > 0 && remain >= 3) return links.slice(i);
+        return links;
+      }
+    }
+    return links;
+  }
+
+  private isLikelyFirstChapterTitle(title: string): boolean {
+    const compact = (title || '').replace(/\s+/g, '').toLowerCase();
+    return /^chapter0/.test(compact) || /^chapter1/.test(compact) ||
+      /^第(一|1|１|壹)[章节節回]/.test(compact) || /^第0[章节節回]/.test(compact) ||
+      compact.startsWith('序章') || compact.startsWith('楔子') ||
+      compact.startsWith('引子') || compact.startsWith('前言');
+  }
+
+  private isLikelyChapterTitle(title: string): boolean {
+    const compact = (title || '').replace(/\s+/g, '').toLowerCase();
+    return /^chapter\d+/.test(compact) || /^ch\.\d+/.test(compact) ||
+      /^第[\d一二三四五六七八九十百千万零〇壹贰叁肆伍陆柒捌玖拾兩两]+[章节節回卷]/.test(compact) ||
+      compact.startsWith('序章') || compact.startsWith('楔子') || compact.startsWith('引子') ||
+      compact.startsWith('前言') || compact.startsWith('番外');
+  }
+
+  private isNavigationTitle(title: string): boolean {
+    const compact = (title || '').replace(/\s+/g, '');
+    return !compact || compact === '開始閱讀' || compact === '开始阅读' || compact === '最近閱讀' ||
+      compact === '最近阅读' || compact === '上次閱讀' || compact === '上次阅读' ||
+      compact === '阅读记录' || compact === '書頁/目錄' || compact === '书页/目录' ||
+      compact === '上一章' || compact === '下一章' || compact === '上一頁' || compact === '下一頁' ||
+      compact === '上一页' || compact === '下一页' || compact === '首頁' || compact === '首页' ||
+      compact === '返回目录' || compact === '返回目錄' || compact === '書庫' || compact === '书库' ||
+      compact === '作者' || compact === '目录' || compact === '目錄' || compact === '首页';
+  }
+
+  private cleanChapterTitle(title: string): string {
+    const original = this.cleanInlineText(title || '');
+    const cleaned = original
+      .replace(/\s+/g, ' ')
+      .replace(/[\s·|｜/／-]*上次(?:阅读|閱讀)(?:[\s:：，,。]*.*)?$/g, '')
+      .replace(/^上次(?:阅读|閱讀)[\s:：，,。]*/g, '')
+      .trim();
+    return cleaned || original;
+  }
+
+  private extractGenericBookKey(url: string): string {
+    const clean = (url || '').replace(/[?#].*$/, '').replace(/\.html?$/i, '');
+    const segments = clean.split('/').filter(part => part.length > 0);
+    if (segments.length === 0) return '';
+    const last = segments[segments.length - 1];
+    if (/^[A-Za-z0-9_-]{2,60}$/.test(last)) return last;
+    return '';
+  }
+
+  private normalizeChapterLinkKey(url: string): string {
+    const clean = (url || '').replace(/#[\s\S]*$/, '').replace(/[?&](?:from|spm|utm_[^=]+)=[^&]*/g, '');
+    return clean.replace(/[?&]$/g, '').replace(/\/$/g, '');
+  }
+
+  private isLikelyChapterUrl(url: string, baseUrl: string, bookKey: string): boolean {
+    const clean = (url || '').replace(/[?#].*$/, '').toLowerCase();
+    if (!clean || clean === (baseUrl || '').replace(/[?#].*$/, '').toLowerCase()) return false;
+    if (bookKey && clean.includes(`/${bookKey.toLowerCase()}/`)) return true;
+    if (/\/(?:chapter|read|content|book)\/[^/]+\/[^/]+/.test(clean)) return true;
+    const last = clean.split('/').filter(part => part.length > 0).pop() || '';
+    return /^(?:\d+|chapter[_-]?\d+|ch[_-]?\d+|read[_-]?\d+)\.html?$/.test(last);
+  }
+
+  private cleanInlineText(value: string): string {
+    return this.decodeHtmlEntities(value || '')
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private cleanReadableContentText(html: string): string {
+    if (!html) return '';
+    const raw = this.decodeHtmlEntities(html)
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      // A number of novel sites use one <div> per paragraph. Keep a blank line
+      // so the reader's soft-line normalizer cannot merge adjacent paragraphs.
+      .replace(/<\/div>/gi, '\n\n')
+      .replace(/<\/li>/gi, '\n')
+      .replace(/<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>/gi, '\n')
+      .replace(/<[^>]+>/g, '\n')
+      .replace(/\r\n?/g, '\n');
+    const lines: string[] = [];
+    for (const sourceLine of raw.split('\n')) {
+      let line = sourceLine.replace(/\s+/g, ' ').trim();
+      if (!line || this.isNoiseLine(line)) continue;
+      line = this.repairReversedLine(line);
+      if (line && !this.isNoiseLine(line)) lines.push(line);
+      if (lines.length > 4000) break;
+    }
+    return lines.join('\n\n')
+      .replace(/\(本章完\)/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  private repairReversedLine(line: string): string {
+    const value = line.trim();
+    if (!/^[。！？!?，,、；;：:）」』”]/.test(value)) return value;
+    let reversed = '';
+    for (let i = value.length - 1; i >= 0; i--) {
+      reversed += value.charAt(i);
+    }
+    return reversed
+      .replace(/([\u3400-\u9fff])\s+(?=[\u3400-\u9fff])/g, '$1')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private isNoiseLine(line: string): boolean {
+    const compact = (line || '').replace(/\s+/g, '');
+    return !compact || compact === 'A-AA+' || compact === '默認米黃護眼' || compact === '默认米黄护眼' ||
+      compact.includes('檢舉本章錯誤') || compact.includes('检举本章错误') ||
+      compact.includes('猜你喜歡') || compact.includes('猜你喜欢') ||
+      compact.includes('確認檢舉') || compact.includes('确认检举') ||
+      compact.includes('請選擇檢舉原因') || compact.includes('请选择检举原因') ||
+      compact.includes('版權所有') || compact.includes('版权所有') ||
+      compact.includes('如果被转码') || compact.includes('如果被轉碼') ||
+      compact.includes('阅读模式') || compact.includes('閱讀模式') ||
+      compact.includes('本章没完') || compact.includes('本章未完') ||
+      compact.includes('继续阅读') || compact.includes('繼續閱讀') ||
+      compact.includes('上一章') || compact.includes('下一章') ||
+      compact.includes('上一頁') || compact.includes('下一頁') ||
+      compact.includes('书页/目录') || compact.includes('書頁/目錄');
+  }
+
+  private scoreReadableContent(text: string): number {
+    if (!this.isUsableReadableContent(text)) return 0;
+    const lines = text.split('\n').filter(line => line.trim().length > 0).length;
+    return text.length + lines * 80;
+  }
+
+  private isUsableReadableContent(text: string): boolean {
+    if (!text || text.length < 30) return false;
+    const compact = text.replace(/\s+/g, '');
+    if (compact.includes('搜尋書名或作者') && compact.length < 200) return false;
+    if (compact.includes('請輸入書名') && compact.length < 300) return false;
+    if (compact.includes('请输入书名') && compact.length < 300) return false;
+    return true;
+  }
+
+  private extractClassBlock(html: string, className: string): string {
+    return this.extractAttrBlock(html, 'class', className);
+  }
+
+  private extractIdBlock(html: string, id: string): string {
+    return this.extractAttrBlock(html, 'id', id);
+  }
+
+  private extractAttrBlock(html: string, attrName: string, attrValue: string): string {
+    const re = new RegExp(`<([a-zA-Z][\\w-]*)([^>]*\\s${attrName}=["'][^"']*\\b` +
+      `${this.escapeRegex(attrValue)}\\b[^"']*["'][^>]*)>`, 'i');
+    const m = re.exec(html);
+    if (!m) return '';
+    const start = m.index;
+    const tag = m[1];
+    const tagRe = new RegExp(`<\\/?${this.escapeRegex(tag)}(?:\\s[^>]*)?>`, 'gi');
+    tagRe.lastIndex = start;
+    let depth = 0;
+    let tm: RegExpExecArray | null;
+    while ((tm = tagRe.exec(html)) !== null) {
+      if (tm[0].startsWith('</')) {
+        depth--;
+        if (depth === 0) return html.substring(start, tagRe.lastIndex);
+      } else if (!tm[0].endsWith('/>')) {
+        depth++;
+      }
+    }
+    return html.substring(start);
+  }
+
+  private extractTagBlock(html: string, tagName: string): string {
+    if (!html || !tagName) return '';
+    const tag = this.escapeRegex(tagName);
+    const re = new RegExp(`<${tag}(?:\\s[^>]*)?>`, 'i');
+    const m = re.exec(html);
+    if (!m) return '';
+    const start = m.index;
+    const tagRe = new RegExp(`<\\/?${tag}(?:\\s[^>]*)?>`, 'gi');
+    tagRe.lastIndex = start;
+    let depth = 0;
+    let tm: RegExpExecArray | null;
+    while ((tm = tagRe.exec(html)) !== null) {
+      if (tm[0].startsWith('</')) {
+        depth--;
+        if (depth === 0) return html.substring(start, tagRe.lastIndex);
+      } else if (!tm[0].endsWith('/>')) {
+        depth++;
+      }
+    }
+    return html.substring(start);
+  }
+
+  private decodeHtmlEntities(value: string): string {
+    return (value || '')
+      .replace(/&#x([0-9a-fA-F]+);/g, (_: string, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/&#(\d+);/g, (_: string, num: string) => String.fromCharCode(parseInt(num, 10)))
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#39;/g, "'");
+  }
+
+  private async normalizeReaderContent(source: BookSource, content: string, baseUrl: string,
+    imageRuleValues: string[] = []): Promise<string> {
+    const explicitImages = this.collectReaderImageUrls(imageRuleValues, baseUrl, true);
+    if (explicitImages.length > 0) {
+      return await this.materializeReaderImageMarkers(source,
+        explicitImages.map((url: string): string => ReaderImageMarker.create(url)).join('\n\n'));
+    }
+
+    let value = content || '';
+    value = this.convertReaderNativeActions(source, value, baseUrl);
+    value = value.replace(/<(?:img|image)\b[^>]*>/gi, (tag: string): string => {
+      const images = this.collectReaderImageUrls([tag], baseUrl, false);
+      return images.length > 0 ? `\n\n${ReaderImageMarker.create(images[0])}\n\n` : ' ';
+    });
+    value = value.replace(/!\[[^\]]*\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g,
+      (_all: string, rawUrl: string): string => {
+        const url = this.normalizeReaderImageUrl(rawUrl, baseUrl, true);
+        return url ? `\n\n${ReaderImageMarker.create(url)}\n\n` : ' ';
+      });
+
+    const lines: string[] = [];
+    for (const rawLine of value.replace(/\r\n?/g, '\n').split('\n')) {
+      const line = rawLine.trim();
+      const imageUrl = this.normalizeReaderImageUrl(line, baseUrl, false);
+      if (imageUrl && this.isLikelyReaderImageUrl(line)) {
+        lines.push(ReaderImageMarker.create(imageUrl));
+      } else {
+        lines.push(rawLine);
+      }
+    }
+
+    const normalized = lines.join('\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      // Preserve block-level paragraph boundaries from div-based chapter HTML.
+      .replace(/<\/div>/gi, '\n\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    return await this.materializeReaderImageMarkers(source, ReaderActionMarker.limit(normalized));
+  }
+
+  private convertReaderNativeActions(_source: BookSource, content: string, _baseUrl: string): string {
+    if (!content) return content;
+    let value = this.convertReaderImageScriptActions(content);
+    value = value.replace(/<p\b[^>]*>\s*<img\b([^>]*\bident\s*=\s*["'][^"']+["'][^>]*)\/?\s*>\s*<\/p>/gi,
+      (_all: string, attrs: string): string => {
+        const identMatch = /\bident\s*=\s*["']([^"']+)["']/i.exec(attrs || '');
+        const url = this.decodeHtmlEntities(identMatch && identMatch[1] ? identMatch[1] : '');
+        const marker = ReaderActionMarker.create('神评论', url, '神评论');
+        return marker ? `${marker}\n` : '';
+      });
+    value = value.replace(/<p\b[^>]*>([\s\S]*?)<comment\b([^>]*)\/?>([\s\S]*?)<\/p>/gi,
+      (_all: string, before: string, attrs: string, after: string): string => {
+        const text = this.decodeHtmlEntities(`${before || ''}${after || ''}`.replace(/<[^>]+>/g, '')).trim();
+        const marker = this.readerActionMarkerFromCommentAttributes(attrs || '');
+        return `${text}${marker}\n`;
+      });
+    if (!/<(?:div|span)\b[^>]*\brs-native\b/i.test(value)) return value;
+    return value.replace(/<(div|span)\b[^>]*\brs-native\b[^>]*>([\s\S]*?)<\/\1>/gi,
+      (_all: string, _tagName: string, inner: string): string => {
+        const comment = /<comment\b([^>]*)>/i.exec(inner || '');
+        const text = this.decodeHtmlEntities((inner || '').replace(/<comment\b[^>]*>/gi, '')
+          .replace(/<[^>]+>/g, '')).trim();
+        if (!comment) return text ? `${text}\n` : '';
+        const marker = this.readerActionMarkerFromCommentAttributes(comment[1] || '');
+        return `${text}${marker}\n`;
+      });
+  }
+
+  /**
+   * Android-style Legado sources can render a clickable data-image whose trailing source options
+   * contain a click/js expression. Convert that expression into a deferred reader action. The
+   * expression is executed only after the user taps it, in the same bounded source runtime.
+   */
+  private convertReaderImageScriptActions(content: string): string {
+    return (content || '').replace(/<img\b[^>]*>/gi, (tag: string): string => {
+      const data = /data:image\/[A-Za-z0-9.+-]+;base64,([A-Za-z0-9+/=]+),(\{[\s\S]*\})/i.exec(tag);
+      if (!data || !data[2]) return tag;
+      const action = this.readerImageOptionString(data[2], 'click') ||
+        this.readerImageOptionString(data[2], 'js');
+      if (!action) return tag;
+      // Chapter-tail cards mark themselves with a distinct marker id; everything else with a
+      // count bubble is a paragraph comment.
+      const isChapterTail = this.readerImageOptionString(data[2], 'marker').startsWith('xyCommentTail');
+      const count = isChapterTail ? '' : this.readerDataImageLabel(data[1] || '');
+      const label = isChapterTail ? '章评' : (count ? `段评 ${count}` : '段评');
+      const marker = ReaderActionMarker.createSourceScript(label, action, isChapterTail ? '章评' : '段评');
+      // This data-image is an interaction control, not正文 artwork. If its imported click script exceeds the
+      // bounded action budget, drop the control instead of passing the enormous base64/options tag into the
+      // ordinary image pipeline (the latter can exhaust memory while opening the chapter).
+      return marker ? `${marker}\n` : '';
+    });
+  }
+
+  /**
+   * Read one string option from the trailing source options of a data-image tag. The options are
+   * JSON whose string values may embed quote characters escaped as `\"` (Legado sources quote
+   * URLs inside the click expression), so a naive "read until the next quote" scan truncates the
+   * script mid-expression. Parse as JSON first, then fall back to an escape-aware scan.
+   */
+  private readerImageOptionString(optionsText: string, key: string): string {
+    const value = String(optionsText || '');
+    if (!value) return '';
+    try {
+      const parsed = JSON.parse(value) as Record<string, Object> | null;
+      const direct = parsed ? parsed[key] : '';
+      if (typeof direct === 'string' && direct.trim()) {
+        return this.decodeHtmlEntities(direct).trim();
+      }
+    } catch (_) {
+    }
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const head = new RegExp(`["']${escapedKey}["']\\s*:\\s*(["'])`, 'i').exec(value);
+    if (!head) return '';
+    const quote = head[1];
+    let collected = '';
+    for (let index = head.index + head[0].length; index < value.length; index++) {
+      const char = value.charAt(index);
+      if (char === '\\') {
+        collected += char;
+        if (index + 1 < value.length) collected += value.charAt(index + 1);
+        index++;
+        continue;
+      }
+      if (char === quote) break;
+      collected += char;
+    }
+    // The scanned value is a string-literal body: resolve JSON/JS escapes such as \" before use.
+    try {
+      collected = JSON.parse(`"${collected}"`) as string;
+    } catch (_) {
+    }
+    return this.decodeHtmlEntities(collected).trim();
+  }
+
+  private readerDataImageLabel(encoded: string): string {
+    try {
+      const bytes = new util.Base64Helper().decodeSync(encoded || '');
+      const svg = util.TextDecoder.create('utf-8').decodeWithStream(bytes, { stream: false });
+      const labels = svg.match(/<text\b[^>]*>([^<]{1,24})<\/text>/gi) || [];
+      for (const item of labels) {
+        const text = this.decodeHtmlEntities(item.replace(/<[^>]+>/g, '')).trim();
+        if (/^(?:\d+|99\+)$/.test(text)) return text;
+      }
+    } catch (_) {
+    }
+    return '';
+  }
+
+  private readerActionMarkerFromCommentAttributes(attrs: string): string {
+    const countMatch = /\bcount\s*=\s*["']([^"']*)["']/i.exec(attrs || '');
+    const identMatch = /\bident\s*=\s*["']([^"']*)["']/i.exec(attrs || '');
+    const pressMatch = /\b(?:onPress|onClick|click)\s*=\s*(["'])([\s\S]*?)\1/i.exec(attrs || '');
+    const actionMatch = pressMatch ?
+      /java\.(?:showReadingBrowser|startBrowserDp|startBrowser|showBrowser)\(\s*(["'])([\s\S]*?)\1(?:\s*,\s*(["'])([\s\S]*?)\3)?/i.exec(pressMatch[2]) : null;
+    const url = this.decodeHtmlEntities(actionMatch && actionMatch[2] ? actionMatch[2] :
+      (identMatch && identMatch[1] ? identMatch[1] : ''));
+    if (!url) return '';
+    const rawTitle = this.decodeHtmlEntities(actionMatch && actionMatch[4] ? actionMatch[4] : '');
+    const count = this.decodeHtmlEntities(countMatch && countMatch[1] ? countMatch[1] : '');
+    const isComment = /\/comments(?:[/?#]|$)|\/idea_comment(?:[/?#]|$)|\/get_review(?:[/?#]|$)/i.test(url);
+    const title = isComment ? (rawTitle ? `段评 · ${rawTitle}` : '段评') : (rawTitle || '打开');
+    const label = isComment ? (count ? `段评 ${count}` : '段评') : (count ? `${title} ${count}` : title);
+    return ReaderActionMarker.create(label, url, title);
+  }
+
+  private async materializeReaderImageMarkers(source: BookSource, content: string): Promise<string> {
+    if (!content || !content.includes(ReaderImageMarker.PREFIX)) return content;
+    const pattern = new RegExp(`${this.escapeRegex(ReaderImageMarker.PREFIX)}([^\\]]+)` +
+      `${this.escapeRegex(ReaderImageMarker.SUFFIX)}`, 'g');
+    const values: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(content)) !== null) {
+      try {
+        const raw = decodeURIComponent(match[1]);
+        if (raw && !values.includes(raw)) values.push(raw);
+      } catch (_) {
+      }
+    }
+    if (values.length === 0) return content;
+    const resolved: Record<string, string> = {};
+    for (let start = 0; start < values.length; start += 4) {
+      const batch = values.slice(start, start + 4);
+      const paths = await Promise.all(batch.map((value: string): Promise<string> =>
+        ComicImagePipeline.materialize(this.http, source, value)));
+      for (let index = 0; index < batch.length; index++) {
+        resolved[batch[index]] = paths[index] || batch[index];
+      }
+    }
+    return content.replace(pattern, (_all: string, encoded: string): string => {
+      try {
+        const raw = decodeURIComponent(encoded);
+        return ReaderImageMarker.create(resolved[raw] || raw);
+      } catch (_) {
+        return _all;
+      }
+    });
+  }
+
+  private collectReaderImageUrls(values: string[], baseUrl: string, trustPlainValue: boolean): string[] {
+    const result: string[] = [];
+    const seen = new Set<string>();
+    for (const rawValue of values) {
+      const value = this.decodeHtmlEntities(rawValue || '').trim();
+      if (!value) continue;
+      const tags = value.match(/<(?:img|image|source|object)\b[^>]*>/gi) || [];
+      for (const tag of tags) {
+        const attrValue = this.findReaderImageAttribute(tag);
+        this.appendReaderImageUrl(result, seen, attrValue, baseUrl, true);
+      }
+      const markdown = /!\[[^\]]*\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
+      let markdownMatch: RegExpExecArray | null;
+      while ((markdownMatch = markdown.exec(value)) !== null) {
+        this.appendReaderImageUrl(result, seen, markdownMatch[1], baseUrl, true);
+      }
+      if (tags.length === 0 && trustPlainValue) {
+        const parts = this.splitReaderImageRuleValue(value);
+        for (const part of parts) {
+          this.appendReaderImageUrl(result, seen, part, baseUrl, true);
+        }
+      }
+    }
+    return result;
+  }
+
+  private appendReaderImageUrl(result: string[], seen: Set<string>, rawUrl: string, baseUrl: string,
+    trustValue: boolean): void {
+    const url = this.normalizeReaderImageUrl(rawUrl, baseUrl, trustValue);
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    result.push(url);
+  }
+
+  private findReaderImageAttribute(tag: string): string {
+    const protectedSource = /(?:^|\s)(?:src|data-r-src|data-src)\s*=\s*["']([\s\S]*,\s*\{[\s\S]*\})["']/i.exec(tag);
+    if (protectedSource && protectedSource[1]) return protectedSource[1];
+    const names = ['data-original', 'data-src', 'data-url', 'data-lazy-src', 'data-echo', 'src',
+      'data-r-src', 'xlink:href', 'href', 'srcset'];
+    for (const name of names) {
+      const escaped = name.replace(':', '\\:');
+      const quoted = new RegExp(`(?:^|\\s)${escaped}\\s*=\\s*["']([^"']+)["']`, 'i').exec(tag);
+      if (quoted && quoted[1]) return name === 'srcset' ? quoted[1].split(',')[0].trim().split(/\s+/)[0] : quoted[1];
+      const unquoted = new RegExp(`(?:^|\\s)${escaped}\\s*=\\s*([^\\s>]+)`, 'i').exec(tag);
+      if (unquoted && unquoted[1]) return name === 'srcset' ? unquoted[1].split(',')[0].trim().split(/\s+/)[0] : unquoted[1];
+    }
+    return '';
+  }
+
+  private splitReaderImageRuleValue(value: string): string[] {
+    const trimmed = value.trim().replace(/^\[|\]$/g, '');
+    if (!trimmed) return [];
+    return trimmed.split(/(?:\r?\n|\|\||,\s*(?=["']?(?:https?:|\/|\.\.?\/)))/)
+      .map((item: string): string => item.trim().replace(/^['"]|['"]$/g, ''))
+      .filter((item: string): boolean => item.length > 0);
+  }
+
+  private normalizeReaderImageUrl(rawUrl: string, baseUrl: string, trustValue: boolean): string {
+    let value = this.decodeHtmlEntities(rawUrl || '').trim()
+      .replace(/^url\(\s*|\s*\)$/gi, '')
+      .replace(/^['"]|['"]$/g, '');
+    if (!value || /^(?:javascript:|about:|#)/i.test(value)) return '';
+    const optionIndex = this.readerImageOptionIndex(value);
+    const options = optionIndex >= 0 ? value.substring(optionIndex) : '';
+    if (optionIndex >= 0) value = value.substring(0, optionIndex).trim();
+    if (!trustValue && !this.isLikelyReaderImageUrl(value)) return '';
+    if (/^data:image\//i.test(value)) return value;
+    if (/^(?:https?:)?\/\//i.test(value) || /^\.?\.?\//.test(value)) {
+      const resolved = BookUrlResolver.resolve(value, baseUrl);
+      return resolved ? `${resolved}${options}` : '';
+    }
+    if (trustValue && !/\s/.test(value) && !value.startsWith('<') && !value.startsWith('{')) {
+      const resolved = BookUrlResolver.resolve(value, baseUrl);
+      return resolved ? `${resolved}${options}` : '';
+    }
+    return '';
+  }
+
+  private readerImageOptionIndex(value: string): number {
+    for (let index = value.length - 1; index >= 0; index--) {
+      if (value.charAt(index) !== ',') continue;
+      const tail = value.substring(index + 1).trim();
+      if (tail.startsWith('{') && tail.endsWith('}')) return index;
+    }
+    return -1;
+  }
+
+  private isLikelyReaderImageUrl(value: string): boolean {
+    const clean = (value || '').trim();
+    return /^data:image\//i.test(clean) ||
+      /\.(?:avif|bmp|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i.test(clean);
+  }
+
+  private escapeRegex(value: string): string {
+    return (value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private applyContentReplaceRule(content: string, replaceRule: string, ctx: RuleContext,
+    chapter: BookChapter, debugContext: BookSourceDebugContext | null = null): string {
+    if (!content) return content;
+    let value = content
+      .replace(/<\/p>\s*<p/gi, '</p>\n<p')
+      .replace(/<br\s*\/?>/gi, (match: string) => `${match}\n`);
+    const beforeReplace = value;
+    if (!replaceRule) {
+      if (debugContext) debugContext.recordContentReplaceComparison(beforeReplace, value);
+      return value;
+    }
+    const jsIndex = replaceRule.indexOf('@js:');
+    const regexPart = (jsIndex >= 0 ? replaceRule.substring(0, jsIndex) : replaceRule).trim();
+    const jsPart = jsIndex >= 0 ? replaceRule.substring(jsIndex + 4).trim() : '';
+    if (regexPart) {
+      let pattern = '';
+      let replacement = '';
+      if (regexPart.startsWith('##')) {
+        pattern = regexPart.substring(2);
+      } else {
+        const delimiter = this.findUnescapedDoubleHash(regexPart);
+        if (delimiter >= 0) {
+          pattern = regexPart.substring(0, delimiter);
+          replacement = regexPart.substring(delimiter + 2);
+        } else {
+          pattern = regexPart;
+        }
+      }
+      pattern = this.expandRuleTemplate(pattern.replace(/\\##/g, '##'), ctx);
+      replacement = this.expandRuleTemplate(replacement.replace(/\\##/g, '##'), ctx);
+      if (pattern) {
+        // 灾难性回溯守卫：书源 replaceRegex 在主线程同步执行，嵌套量词会冻结 UI，直接跳过。
+        if (!RegexSafetyGuard.isLikelyCatastrophic(pattern)) {
+          try {
+            // 书源的正文替换净化沿用 Android 的 Java 正则方言。
+            const replaced = value.replace(JavaRegexCompat.compile(pattern, 'g'),
+              JavaRegexCompat.convertReplacement(replacement));
+            // 误删防护：替换结果为空而替换前文本非空时视为误删，保留替换前文本。
+            if (replaced.trim() || !value.trim()) {
+              value = replaced;
+            } else {
+              console.warn(`书源 replaceRegex 把整章清空，已回滚: ${pattern}`);
+            }
+          } catch (_) {
+          }
+        } else {
+          console.warn(`书源 replaceRegex 存在灾难性回溯风险，已跳过: ${pattern}`);
+        }
+      }
+    }
+    if (jsPart) {
+      const env = new ScriptEngineContext();
+      env.content = value;
+      env.baseUrl = chapter.url;
+      env.ctx = ctx;
+      const result = new ScriptEngine(new JsRuntime()).evalResultJs(jsPart, value, env);
+      if (result.handled) value = result.value;
+    }
+    if (debugContext) debugContext.recordContentReplaceComparison(beforeReplace, value);
+    return value;
+  }
+
+  private findUnescapedDoubleHash(value: string): number {
+    for (let i = 0; i < value.length - 1; i++) {
+      if (value.charAt(i) === '#' && value.charAt(i + 1) === '#' && value.charAt(i - 1) !== '\\') {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private expandRuleTemplate(value: string, ctx: RuleContext): string {
+    return (value || '').replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_: string, key: string) => {
+      return ctx.get(key.trim());
+    });
+  }
+
+  private async runStageRule(source: BookSource, book: Book, rawRule: string, content: string,
+    baseUrl: string, stage: string, chapter: BookChapter | null = null,
+    variables: Record<string, string> = {}, debugContext: BookSourceDebugContext | null = null): Promise<string> {
+    const code = this.stageRuleCode(rawRule);
+    if (!code) return '';
+    const decision = BookSourceRuntimeRouter.decide(stage, `${source.jsLib || ''}\n${code}`);
+    if (decision.runtime !== 'arkweb') {
+      AppStorage.setOrCreate('bookSourceStageLastError', `${stage} 阶段未路由到完整脚本运行层`);
+      return '';
+    }
+    const runtime = BookSourceStageWebRuntime.get();
+    if (!await runtime.waitUntilAvailable()) {
+      AppStorage.setOrCreate('bookSourceStageLastError', `${stage} 阶段脚本运行环境未就绪`);
+      return '';
+    }
+    const request = new StageWebRuntimeRequest();
+    request.applyStageBudget(stage);
+    request.source = source;
+    request.book = book;
+    request.chapter = chapter;
+    request.readerActionMode = stage === SourceRuntimeStage.CONTENT;
+    request.code = code;
+    request.content = content || '';
+    request.contextContent = '';
+    request.baseUrl = baseUrl || book.bookUrl || source.bookSourceUrl;
+    request.variables = { ...variables, ...(chapter ? EncodedSourceUrl.scalarVariables(chapter.url) : {}) };
+    request.debugContext = debugContext;
+    try {
+      const result = await runtime.execute(request);
+      let value = result.value || '';
+      const trailingRule = this.stageTrailingRule(rawRule);
+      if (value && trailingRule) {
+        const transformed = this.applyStageTrailingRule(value, trailingRule, request.baseUrl);
+        console.info('[WS] stage trailing rule:', stage, trailingRule,
+          'input:', value.length, 'output:', transformed.length);
+        value = transformed;
+      }
+      return value;
+    } catch (error) {
+      console.warn('[WS] stage runtime failed:', source.bookSourceName, stage, error);
+      const message = error instanceof Error ? error.message : String(error || '');
+      AppStorage.setOrCreate('bookSourceStageLastError', `${stage} 阶段：${message || '脚本执行失败'}`);
+      return '';
+    }
+  }
+
+  private parseStringListValue(value: string): string[] {
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value) as Object;
+      if (!Array.isArray(parsed)) return [];
+      return (parsed as Object[]).map((item: Object): string => String(item || ''))
+        .filter((item: string): boolean => !!item);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  private stageRuleCode(rawRule: string): string {
+    const raw = (rawRule || '').trim();
+    if (/^@?js:/i.test(raw)) return raw.replace(/^@?js:\s*/i, '');
+    const leadingBlock = raw.match(/^<js>\s*([\s\S]*?)<\/js>/i);
+    if (leadingBlock) return leadingBlock[1] || '';
+    return '';
+  }
+
+  private stageTrailingRule(rawRule: string): string {
+    const raw = (rawRule || '').trim();
+    if (!raw.toLowerCase().startsWith('<js>')) return '';
+    const closeIndex = raw.toLowerCase().indexOf('</js>');
+    if (closeIndex < 0) return '';
+    const trailing = raw.substring(closeIndex + 5).trim();
+    if (!trailing || trailing.startsWith('##') || /^@?js:/i.test(trailing)) return '';
+    return trailing;
+  }
+
+  private applyStageTrailingRule(value: string, trailingRule: string, baseUrl: string): string {
+    // Scalar extraction normally returns the first match, but a stage pipeline must preserve
+    // an array selected by a simple JSONPath (for example a complete catalog in $.data or
+    // $.[*]). AnalyzeRule#getString joins wildcard matches as text, which removes the outer
+    // JSON array and makes the following stage unable to deserialize the item list.
+    const normalizedRule = trailingRule.replace(/\.\[\*\]$/, '[*]');
+    const preserveArray = normalizedRule.endsWith('[*]');
+    const propertyRule = preserveArray ? normalizedRule.substring(0, normalizedRule.length - 3) : normalizedRule;
+    if (propertyRule === '$' || /^\$(?:\.[A-Za-z_$][A-Za-z0-9_$-]*)+$/.test(propertyRule)) {
+      try {
+        let current = JSON.parse(value || '{}') as Object;
+        const parts = propertyRule === '$' ? [] : propertyRule.substring(2).split('.');
+        for (const part of parts) {
+          if (!current || typeof current !== 'object' || Array.isArray(current)) return '';
+          current = (current as Record<string, Object>)[part];
+        }
+        if (current === undefined || current === null) return '';
+        if (preserveArray && !Array.isArray(current)) return '';
+        return typeof current === 'string' ? current as string : JSON.stringify(current);
+      } catch (_) {
+      }
+    }
+    return new AnalyzeRule(value, baseUrl).getString(trailingRule);
+  }
+
+  private async parseStageChapterList(source: BookSource, book: Book, raw: string,
+    baseUrl: string, maxItems: number = 0,
+    debugContext: BookSourceDebugContext | null = null): Promise<BookChapter[]> {
+    let values: Object[] = [];
+    try {
+      const parsed = JSON.parse(raw || '[]') as Object;
+      if (Array.isArray(parsed)) values = parsed;
+    } catch (_) {
+      return [];
+    }
+    const chapters: BookChapter[] = [];
+    const tocRule = source.tocRule;
+    const records: Record<string, Object>[] = [];
+    const items: string[] = [];
+    for (const value of values) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      records.push(value as Record<string, Object>);
+      items.push(JSON.stringify(value));
+      if (maxItems > 0 && items.length >= maxItems) break;
+    }
+    if (items.length === 0) return chapters;
+    const ctx = new RuleContext();
+    ctx.loadFromJson(book.variable);
+    this.seedBookVariables(ctx, book.bookUrl);
+    this.seedSourceVariables(ctx, source);
+    const fieldRequest = new RuleBatchExecutionRequest();
+    fieldRequest.source = source;
+    fieldRequest.book = book;
+    fieldRequest.stage = SourceRuntimeStage.TOC;
+    fieldRequest.ownerId = `stage_toc_fields_${Date.now()}_${book.bookUrl}`;
+    fieldRequest.typedContents = records.map((record: Record<string, Object>, index: number): RuleValue => {
+      return RuleValue.jsonValue(record, items[index] || JSON.stringify(record));
+    });
+    fieldRequest.contents = items;
+    fieldRequest.baseUrl = baseUrl;
+    fieldRequest.contextValues = ctx.toPersistentRecord();
+    fieldRequest.fields = [
+      new RuleFieldRequest('chapterName', tocRule.chapterName || ''),
+      new RuleFieldRequest('chapterUrl', tocRule.chapterUrl || ''),
+      new RuleFieldRequest('isVip', tocRule.isVip || ''),
+      new RuleFieldRequest('updateTime', tocRule.updateTime || '')
+    ];
+    fieldRequest.timeoutMs = 30000;
+    fieldRequest.debugContext = debugContext;
+    let parsedFields: Record<string, string>[] = [];
+    try {
+      const batch = await RuleExecutionService.get().executeBatch(fieldRequest);
+      parsedFields = batch.values;
+      if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[batch.contextValues.length - 1]);
+      if (batch.errors.length > 0) {
+        console.warn('[WS] stage toc field errors:', source.bookSourceName, batch.errors.join('; '));
+      }
+    } finally {
+      RuleExecutionService.get().clearOwner(fieldRequest.ownerId);
+    }
+    const parsingSlice = CooperativeScheduler.createTimeSlice();
+    for (let index = 0; index < records.length; index++) {
+      if (index > 0) await parsingSlice.checkpoint();
+      const record = records[index];
+      const fields = index < parsedFields.length ? parsedFields[index] : {};
+      const isVolume = record['isVolume'] === true || String(record['isVolume'] || '') === 'true';
+      const title = this.cleanChapterTitle(fields['chapterName'] || String(record['title'] || ''));
+      let url = fields['chapterUrl'] || String(record['url'] || '');
+      if (!title || isVolume || !url) continue;
+      const virtualPayload = this.ruleExpectsHexDataUrlInput(source.contentRule.content || '') ?
+        this.extractVirtualChapterPayload(url) : '';
+      if (virtualPayload) url = virtualPayload;
+      else if (!url.startsWith('data:')) url = BookUrlResolver.resolve(url, baseUrl);
+      const chapter = new BookChapter();
+      chapter.title = title;
+      chapter.url = url;
+      chapter.bookUrl = book.bookUrl;
+      chapter.index = chapters.length;
+      chapter.isVip = fields['isVip'] === 'true' || record['v'] === true;
+      chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'baseUrl', baseUrl);
+      const updateTime = fields['updateTime'] || String(record['t'] || '');
+      if (updateTime) chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'updateTime', updateTime);
+      chapters.push(chapter);
+    }
+    book.variable = ctx.toPersistentJson();
+    return chapters;
+  }
+
+  private async tryGetStageContent(source: BookSource, book: Book, chapter: BookChapter,
+    debugContext: BookSourceDebugContext | null = null): Promise<string> {
+    const rawRule = source.contentRule.content || '';
+    const code = this.stageRuleCode(rawRule);
+    if (!code) return '';
+    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.CONTENT,
+      `${source.jsLib || ''}\n${code}`);
+    if (decision.runtime !== 'arkweb') return '';
+    const runtime = BookSourceStageWebRuntime.get();
+    if (!await runtime.waitUntilAvailable()) return '';
+    let content = '';
+    let baseUrl = chapter.url || book.bookUrl || source.bookSourceUrl;
+    const virtualChapterPayload = this.extractVirtualChapterPayload(chapter.url);
+    console.info('[WS] stage content input:', source.bookSourceName,
+      virtualChapterPayload ? `virtual(${virtualChapterPayload.length})` : `url(${(chapter.url || '').length})`);
+    const payload = EncodedSourceUrl.decode(chapter.url);
+    const dataUrlInput = this.stageDataUrlContentInput(chapter.url, rawRule);
+    if (dataUrlInput) {
+      content = dataUrlInput;
+    } else if (payload) {
+      // A source-defined data URL is an opaque chapter descriptor. Legado exposes its decoded
+      // identity to the content script; it must never be sent to the native HTTP client as if it
+      // were a remote URL. Keep baseUrl unchanged so scripts can still read the full descriptor.
+      content = payload.text || virtualChapterPayload || chapter.url;
+    } else if (this.ruleExpectsHexDataUrlInput(rawRule) && virtualChapterPayload) {
+      // Aggregating sources often return a chapter identity such as
+      // `book_id=...&item_id=...`. It is rule input, not a relative web address. Legado exposes
+      // this value to the content script as bytes; mirror that contract without interpreting it.
+      content = this.textToHex(virtualChapterPayload);
+    } else {
+      const response = await new AnalyzeUrl(source, this.http)
+        .setRateLimitHooks({ maxWaitMs: WebBookService.READER_RATE_LIMIT_MAX_WAIT_MS })
+        .fetch(chapter.url, undefined, debugContext);
+      if (!response.success || !response.body) return '';
+      content = response.body;
+      baseUrl = BookUrlResolver.effectiveBase(response, chapter.url, book.bookUrl || source.bookSourceUrl);
+      if (source.bookSourceType === 1 || (Number(book.type) & 32) !== 0) {
+        const mediaUrl = this.extractAudioSourceRegexUrl(source.contentRule.sourceRegex || '',
+          response.url || baseUrl, content, baseUrl);
+        if (mediaUrl) return mediaUrl;
+      }
+    }
+    return await this.runStageRule(source, book, rawRule, content, baseUrl,
+      SourceRuntimeStage.CONTENT, chapter, {}, debugContext);
+  }
+
+  private resolvedAudioChapterUrl(source: BookSource, book: Book, chapter: BookChapter): string {
+    const analyzer = new AnalyzeUrl(source, this.http);
+    const config = analyzer.parse(chapter.url || '');
+    const value = config.url || chapter.url || '';
+    return BookUrlResolver.resolve(value, book.bookUrl || source.bookSourceUrl);
+  }
+
+  private isPureAudioBaseUrlRule(rawRule: string): boolean {
+    const normalized = (rawRule || '').trim()
+      .replace(/^<js>\s*|\s*<\/js>$/gi, '')
+      .replace(/^@?js:\s*/i, '')
+      .replace(/;\s*$/, '')
+      .trim();
+    return normalized === 'baseUrl' || normalized === 'String(baseUrl)';
+  }
+
+  private async tryResolveAudioWebViewUrl(source: BookSource, chapter: BookChapter,
+    resolvedChapterUrl: string): Promise<string> {
+    const sourceRegex = source.contentRule.sourceRegex || '';
+    if (!sourceRegex || !this.audioChapterRuleUsesWebView(source)) return '';
+    const runtime = BookSourceAudioWebRuntime.get();
+    if (!await runtime.waitUntilAvailable()) return '';
+    try {
+      return await runtime.resolveAudioUrl(resolvedChapterUrl, sourceRegex,
+        this.audioSourceUserAgent(source), 15000);
+    } catch (error) {
+      console.warn('[WS] audio WebView source interception failed, fallback HTTP:',
+        source.bookSourceName, chapter.title, error);
+      return '';
+    }
+  }
+
+  private audioChapterRuleUsesWebView(source: BookSource): boolean {
+    const raw = source.tocRule.chapterUrl || '';
+    return /["'“”]?webView["'“”]?\s*:\s*["'“”]?true["'“”]?/i.test(raw);
+  }
+
+  private audioSourceUserAgent(source: BookSource): string {
+    const raw = source.header || '';
+    try {
+      const parsed = JSON.parse(raw.replace(/[“”]/g, '"').replace(/'/g, '"')) as Record<string, Object>;
+      for (const key of Object.keys(parsed)) {
+        if (key.toLowerCase() === 'user-agent') return String(parsed[key] || '');
+      }
+    } catch (_) {
+      const match = raw.match(/["']?User-Agent["']?\s*:\s*["']([^"']+)["']/i);
+      if (match && match[1]) return match[1].trim();
+    }
+    return '';
+  }
+
+  private extractAudioSourceRegexUrl(rawRegex: string, responseUrl: string,
+    body: string, baseUrl: string): string {
+    const pattern = (rawRegex || '').trim();
+    if (!pattern) return '';
+    const matches = (candidate: string): boolean => {
+      try {
+        const literal = pattern.match(/^\/([\s\S]+)\/([dgimsuvy]*)$/);
+        const regex = literal ? new RegExp(literal[1], literal[2]) : new RegExp(pattern, 'i');
+        return regex.test(candidate);
+      } catch (_) {
+        return /\.(?:aac|flac|m3u8|m4a|mp3|mp4|ogg|opus|wav)(?:[?#]|$)/i.test(candidate);
+      }
+    };
+    const candidates: string[] = [];
+    const append = (value: string): void => {
+      const decoded = String(value || '').replace(/&amp;/gi, '&').replace(/\\\//g, '/').trim();
+      if (!decoded) return;
+      const resolved = BookUrlResolver.resolve(decoded, baseUrl);
+      if (resolved && !candidates.includes(resolved)) candidates.push(resolved);
+    };
+    append(responseUrl);
+    const tagPattern = /<(?:audio|source|video)\b[^>]*(?:src|data-src|data-url)\s*=\s*["']([^"']+)["']/gi;
+    let tagMatch: RegExpExecArray | null;
+    while ((tagMatch = tagPattern.exec(body || '')) !== null && candidates.length < 512) {
+      append(tagMatch[1] || '');
+    }
+    const urlPattern = /(?:https?:)?\/\/[^\s"'<>\\]+/gi;
+    let urlMatch: RegExpExecArray | null;
+    while ((urlMatch = urlPattern.exec(body || '')) !== null && candidates.length < 1024) {
+      append(urlMatch[0] || '');
+    }
+    for (const candidate of candidates) {
+      if (matches(candidate)) return candidate;
+    }
+    return '';
+  }
+
+  private stageDataUrlInput(rawRule: string, url: string, fallback: string): string {
+    if (!this.ruleExpectsHexDataUrlInput(rawRule)) return fallback;
+    const payload = EncodedSourceUrl.decode(url);
+    return payload ? this.textToHex(payload.text) : fallback;
+  }
+
+  /**
+   * Input prepared for a content rule whose chapter address is a source-owned data URL.
+   *
+   * Android Legado exposes a data URI to the rule pipeline as the hexadecimal encoding of its
+   * decoded bytes whenever the URL's trailing options object declares a `type`
+   * (`AnalyzeUrl.getStrResponseAwait`: `if (type != null) StrResponse(url, HexUtil.encodeHexStr(...))`).
+   * That declaration belongs to the address, not to the rule: packed sources routinely hide the
+   * decoder in jsLib (`var payload = xyChapterPayload(this, result)` where the helper calls
+   * java.hexDecodeToString), so scanning the content rule alone misses the contract and hands the
+   * script plain JSON text instead of the byte string. The script then fails while decoding the
+   * address and no request is ever issued, which surfaces as an empty chapter.
+   *
+   * Returns '' when the address is not a data URL, or when neither the address nor the rule asks
+   * for the byte-string form.
+   */
+  private stageDataUrlContentInput(chapterUrl: string, rawRule: string): string {
+    const payload = EncodedSourceUrl.decode(chapterUrl);
+    if (!payload) return '';
+    if (payload.declaredType) return this.textToHex(payload.text);
+    // Compatibility fallback for sources that spell the decoder inside the content rule itself.
+    if (this.ruleExpectsHexDataUrlInput(rawRule)) return this.textToHex(payload.text);
+    return '';
+  }
+
+  private ruleExpectsHexDataUrlInput(rawRule: string): boolean {
+    const rule = rawRule || '';
+    if (/\bjava\s*\.\s*hexDecodeToString\s*\(\s*(?:String\s*\(\s*)?result\b/.test(rule)) return true;
+    // Packed source scripts commonly rename `result` before calling the decoder. The content
+    // field still receives the same Legado byte-string contract, so presence of the decoder in
+    // an executable JS content rule is the reliable capability signal.
+    return /\bhexDecodeToString\b/.test(rule) &&
+      /(?:<js>|@js:|\beval\s*\()/i.test(rule);
+  }
+
+  private extractVirtualChapterPayload(url: string): string {
+    const value = (url || '').trim();
+    if (!value) return '';
+    // A data URL is already a complete virtual chapter descriptor. Its Base64 payload may contain
+    // `/`, and the suffix after that slash can coincidentally look like `name=value`. Running the
+    // generic relative-query matcher over it truncates the descriptor and makes the content rule
+    // parse a Base64 tail instead of the decoded chapter JSON. Keep compatibility only for the old
+    // cached form that appended a real query string after the trailing options object.
+    if (EncodedSourceUrl.isEncodedDataUrl(value)) {
+      const legacyAppended = /}\s*((?:[A-Za-z_$][\w$.-]*=[^&\s]*)(?:&[A-Za-z_$][\w$.-]*=[^&\s]*)*)$/.exec(value);
+      return legacyAppended && legacyAppended[1] ? legacyAppended[1] : '';
+    }
+    // Recover legacy cached values produced by concatenating a virtual data: base directly with
+    // the chapter payload (there may be no slash between the metadata object and the first key).
+    const appended = /(?:^|[}\/])((?:[A-Za-z_$][\w$.-]*=[^&\s]*)(?:&[A-Za-z_$][\w$.-]*=[^&\s]*)*)$/.exec(value);
+    if (appended && appended[1]) return appended[1];
+    let candidate = value;
+    const slash = value.lastIndexOf('/');
+    const tail = slash >= 0 ? value.substring(slash + 1) : '';
+    if (/^(?:[A-Za-z_$][\w$.-]*=[^\s]*)(?:&[A-Za-z_$][\w$.-]*=[^\s]*)*$/.test(tail)) return tail;
+    if (/^https?:/i.test(value)) candidate = tail;
+    if (/^(?:[A-Za-z_$][\w$.-]*=[^\s]*)(?:&[A-Za-z_$][\w$.-]*=[^\s]*)*$/.test(candidate)) {
+      return candidate;
+    }
+    if (!/^(?:https?:|data:|\/|\.\/|\.\.\/)/i.test(candidate) &&
+      ((candidate.startsWith('{') && candidate.endsWith('}')) ||
+        (candidate.startsWith('[') && candidate.endsWith(']')))) return candidate;
+    return '';
+  }
+
+  private textToHex(value: string): string {
+    const bytes = new util.TextEncoder().encodeInto(value || '');
+    let result = '';
+    for (const byte of bytes) result += Number(byte).toString(16).padStart(2, '0');
+    return result;
+  }
+
+  private resolveVars(url: string, ctx: RuleContext): string {
+    // 替换 @get:{key} 模式
+    return url.replace(/@get:\{(\w+)\}/g, (_: string, key: string) => {
+      return ctx.get(key);
+    });
+  }
+
+  private ruleBoolean(value: string): boolean {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes' ||
+      normalized === 'vip' || normalized === 'pay' || normalized === 'paid' ||
+      normalized === '付费' || normalized === '收费';
+  }
+
+  private getChapterBaseUrl(chapter: BookChapter, book: Book, source: BookSource): string {
+    return BookUrlResolver.getVariableJson(chapter.variable, 'baseUrl') || chapter.url || book.tocUrl || book.bookUrl || source.bookSourceUrl;
+  }
+
+  private seedBookVariables(ctx: RuleContext, bookUrl: string): void {
+    if (!bookUrl) return;
+    ctx.put('book.bookUrl', bookUrl);
+    ctx.put('bookUrl', bookUrl);
+    const id = this.extractQueryParam(bookUrl, 'book_id') || this.extractQueryParam(bookUrl, 'bookid') ||
+      this.extractQueryParam(bookUrl, 'id') || this.extractBookId(bookUrl);
+    if (id) {
+      if (!ctx.get('book')) ctx.put('book', id);
+      if (!ctx.get('book_id')) ctx.put('book_id', id);
+      if (!ctx.get('id')) ctx.put('id', id);
+    }
+  }
+
+  private seedChapterVariables(ctx: RuleContext, chapter: BookChapter): void {
+    ctx.put('chapter.title', chapter.title || '');
+    ctx.put('chapter.url', chapter.url || '');
+    ctx.put('chapter.index', String(chapter.index));
+    ctx.put('chapterTitle', chapter.title || '');
+    const encodedVariables = EncodedSourceUrl.scalarVariables(chapter.url);
+    for (const key in encodedVariables) ctx.put(key, encodedVariables[key]);
+  }
+
+  private urlWithoutFragment(url: string): string {
+    const index = (url || '').indexOf('#');
+    return index >= 0 ? url.substring(0, index) : (url || '');
+  }
+
+  private seedSourceVariables(ctx: RuleContext, source: BookSource): void {
+    ctx.put('source.bookSourceUrl', source.bookSourceUrl || '');
+    ctx.put('bookSourceUrl', source.bookSourceUrl || '');
+    ctx.put('source.bookSourceName', source.bookSourceName || '');
+    ctx.put('bookSourceName', source.bookSourceName || '');
+    ctx.put('source.bookSourceGroup', source.bookSourceGroup || '');
+    ctx.put('bookSourceGroup', source.bookSourceGroup || '');
+    ctx.put('source.bookSourceComment', source.bookSourceComment || '');
+    ctx.put('bookSourceComment', source.bookSourceComment || '');
+    ctx.put('source.jsLib', source.jsLib || '');
+    ctx.put('jsLib', source.jsLib || '');
+    if (!ctx.has('source.variable')) ctx.put('source.variable', source.variable || '');
+  }
+
+  private extractQueryParam(url: string, key: string): string {
+    const re = new RegExp(`[?&]${key}=([^&]+)`, 'i');
+    const m = url.match(re);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  private resolveJsonKey(itemData: Record<string, Object> | null, tocData: Record<string, Object> | null, key: string, deep: boolean): string {
+    // 优先从 item 数据查找
+    if (itemData) {
+      const v = deep ? this.deepSearch(itemData, key) : String(itemData[key] ?? '');
+      if (v) return v;
+    }
+    // 回退到 TOC 完整数据
+    if (tocData) {
+      const v = deep ? this.deepSearch(tocData, key) : String(tocData[key] ?? '');
+      if (v) return v;
+    }
+    return '';
+  }
+
+  private deepSearch(obj: Object, key: string): string {
+    if (!obj || typeof obj !== 'object') return '';
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        const r = this.deepSearch(item as Object, key);
+        if (r) return r;
+      }
+    } else {
+      const rec = obj as Record<string, Object>;
+      if (rec[key] !== undefined) return String(rec[key]);
+      for (const k in rec) {
+        const r = this.deepSearch(rec[k] as Object, key);
+        if (r) return r;
+      }
+    }
+    return '';
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "C:\\Users\\riska\\AppData\\Roaming\\uv\\tools\\code-review-graph\\Scripts\\python.exe",
+      "args": [
+        "-m",
+        "code_review_graph",
+        "serve"
+      ],
+      "cwd": "C:\\Users\\riska\\ideaProjects\\legado-Harmony",
+      "type": "stdio"
+    }
+  }
+}

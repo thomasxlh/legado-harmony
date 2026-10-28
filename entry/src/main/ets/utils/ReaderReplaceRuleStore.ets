@@ -1,0 +1,353 @@
+import { Context } from '@kit.AbilityKit';
+import preferences from '@ohos.data.preferences';
+import { Book } from '../model/data/Book';
+import { JavaRegexCompat } from '../core/rule/JavaRegexCompat';
+import { ImportedReplaceRule } from '../core/rule/ReplaceRuleImport';
+import { RegexSafetyGuard } from '../core/rule/RegexSafetyGuard';
+import { QuickJsReplaceEvaluator } from '../core/script/QuickJsScriptRuntime';
+
+export class ReaderReplaceRule {
+  id: number = 0;
+  name: string = '';
+  group: string = '默认';
+  pattern: string = '';
+  replacement: string = '';
+  applyToTitle: boolean = true;
+  applyToContent: boolean = true;
+  isRegex: boolean = true;
+  scope: string = '';
+  excludeScope: string = '';
+  timeoutMs: number = 3000;
+  enabled: boolean = true;
+}
+
+export class ReaderReplaceRuleCheck {
+  state: string = 'noMatch';
+  label: string = '当前章节未匹配';
+  valid: boolean = true;
+  scopeMatched: boolean = true;
+  titleMatched: boolean = false;
+  contentMatched: boolean = false;
+  changed: boolean = false;
+  compatibilityNotes: string[] = [];
+}
+
+export class ReaderReplaceRuleStore {
+  static readonly UPDATE_TIME_KEY: string = 'readerReplaceRulesUpdateTime';
+  private static readonly STORE_NAME: string = 'reader_replace_rules';
+  private static readonly RULES_KEY: string = 'rulesV1';
+  private static cachedRules: ReaderReplaceRule[] | null = null;
+
+  /** 云端偏好应用后失效内存缓存，下次 load() 重新读 Preferences。 */
+  static invalidateCache(): void {
+    ReaderReplaceRuleStore.cachedRules = null;
+  }
+
+  static async load(context: Context, force: boolean = false): Promise<ReaderReplaceRule[]> {
+    if (!force && ReaderReplaceRuleStore.cachedRules) {
+      return ReaderReplaceRuleStore.cloneRules(ReaderReplaceRuleStore.cachedRules);
+    }
+    const store = await preferences.getPreferences(context, ReaderReplaceRuleStore.STORE_NAME);
+    const value = await store.get(ReaderReplaceRuleStore.RULES_KEY, '');
+    const raw = typeof value === 'string' ? value : '';
+    const rules = ReaderReplaceRuleStore.decode(raw);
+    ReaderReplaceRuleStore.cachedRules = ReaderReplaceRuleStore.cloneRules(rules);
+    return rules;
+  }
+
+  static async save(context: Context, rules: ReaderReplaceRule[]): Promise<void> {
+    const normalized = rules.map((rule: ReaderReplaceRule) => ReaderReplaceRuleStore.normalize(rule));
+    ReaderReplaceRuleStore.cachedRules = ReaderReplaceRuleStore.cloneRules(normalized);
+    const store = await preferences.getPreferences(context, ReaderReplaceRuleStore.STORE_NAME);
+    await store.put(ReaderReplaceRuleStore.RULES_KEY, JSON.stringify(normalized));
+    await store.flush();
+    AppStorage.setOrCreate(ReaderReplaceRuleStore.UPDATE_TIME_KEY, Date.now());
+  }
+
+  static newRule(): ReaderReplaceRule {
+    const rule = new ReaderReplaceRule();
+    rule.id = Date.now();
+    return rule;
+  }
+
+  static applyTitle(text: string, rules: ReaderReplaceRule[], book: Book | null): string {
+    return ReaderReplaceRuleStore.apply(text, rules, book, true);
+  }
+
+  static applyContent(text: string, rules: ReaderReplaceRule[], book: Book | null): string {
+    return ReaderReplaceRuleStore.apply(text, rules, book, false);
+  }
+
+  static checkRule(sourceRule: ReaderReplaceRule, book: Book | null,
+    title: string, content: string): ReaderReplaceRuleCheck {
+    const result = new ReaderReplaceRuleCheck();
+    const rule = ReaderReplaceRuleStore.normalize(sourceRule);
+    if (!rule.enabled) {
+      result.state = 'disabled';
+      result.label = '已禁用';
+      return result;
+    }
+    if (!rule.pattern) {
+      result.state = 'invalid';
+      result.label = '规则无效：匹配内容为空';
+      result.valid = false;
+      return result;
+    }
+    if (rule.isRegex && RegexSafetyGuard.isLikelyCatastrophic(rule.pattern)) {
+      // 灾难性回溯的正则会在主线程/TaskPool 同步执行时冻结界面或永久占用 worker，直接标记无效。
+      result.state = 'invalid';
+      result.label = '规则无效：嵌套量词或重叠分支存在灾难性回溯风险，已跳过执行';
+      result.valid = false;
+      return result;
+    }
+    result.scopeMatched = ReaderReplaceRuleStore.matchesBookScope(rule, book);
+    if (!result.scopeMatched) {
+      result.state = 'outOfScope';
+      result.label = '不适用于当前书籍';
+      return result;
+    }
+    try {
+      if (rule.isRegex) {
+        // 规则多数来自 Android 阅读，按 Java 正则方言编译后再校验。
+        const titleRegex = JavaRegexCompat.compile(rule.pattern, 'g');
+        const contentRegex = JavaRegexCompat.compile(rule.pattern, 'g');
+        result.compatibilityNotes = JavaRegexCompat.notes(rule.pattern);
+        if (rule.replacement.indexOf('@js:') === 0) {
+          // @js: 脚本在 QuickJS 沙箱内按 Rhino 程序完成值语义求值；预览必须与阅读时同路径，
+          // 否则会把脚本字面量当替换串写进预览。
+          const evaluator = new QuickJsReplaceEvaluator(rule.replacement.substring(4), rule.timeoutMs);
+          if (!evaluator.begin()) {
+            result.state = 'invalid';
+            result.label = '规则无效：@js: 脚本无法在 QuickJS 沙箱中执行';
+            result.valid = false;
+            return result;
+          }
+          try {
+            result.titleMatched = rule.applyToTitle && !!title && titleRegex.test(title);
+            result.contentMatched = rule.applyToContent && !!content && contentRegex.test(content);
+            if (result.titleMatched) {
+              result.changed = QuickJsReplaceEvaluator.applyToText(title, titleRegex, evaluator) !== title;
+            }
+            if (result.contentMatched) {
+              result.changed = result.changed ||
+                QuickJsReplaceEvaluator.applyToText(content, contentRegex, evaluator) !== content;
+            }
+          } finally {
+            evaluator.end();
+          }
+          result.compatibilityNotes = result.compatibilityNotes.concat('@js: 脚本由 QuickJS 沙箱执行');
+          return ReaderReplaceRuleStore.finalizeCheck(result);
+        }
+        const replacement = JavaRegexCompat.convertReplacement(rule.replacement);
+        result.titleMatched = rule.applyToTitle && !!title && titleRegex.test(title);
+        result.contentMatched = rule.applyToContent && !!content && contentRegex.test(content);
+        if (result.titleMatched) {
+          result.changed = title.replace(JavaRegexCompat.compile(rule.pattern, 'g'), replacement) !== title;
+        }
+        if (result.contentMatched) {
+          result.changed = result.changed ||
+            content.replace(JavaRegexCompat.compile(rule.pattern, 'g'), replacement) !== content;
+        }
+      } else {
+        result.titleMatched = rule.applyToTitle && !!title && title.includes(rule.pattern);
+        result.contentMatched = rule.applyToContent && !!content && content.includes(rule.pattern);
+        if (result.titleMatched) {
+          result.changed = title.split(rule.pattern).join(rule.replacement) !== title;
+        }
+        if (result.contentMatched) {
+          result.changed = result.changed || content.split(rule.pattern).join(rule.replacement) !== content;
+        }
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      const hint = JavaRegexCompat.unsupportedHint(rule.pattern);
+      result.state = 'invalid';
+      result.label = hint ? `规则无效：${reason}（${hint}）` : `规则无效：${reason}`;
+      result.valid = false;
+      return result;
+    }
+    return ReaderReplaceRuleStore.finalizeCheck(result);
+  }
+
+  private static finalizeCheck(result: ReaderReplaceRuleCheck): ReaderReplaceRuleCheck {
+    if (result.titleMatched || result.contentMatched) {
+      result.state = result.changed ? 'effective' : 'matched';
+      result.label = result.changed ? '当前章节已生效' : '已匹配，替换结果未变化';
+    }
+    return result;
+  }
+
+  private static apply(
+    text: string,
+    rules: ReaderReplaceRule[],
+    book: Book | null,
+    title: boolean
+  ): string {
+    if (!text || rules.length === 0) {
+      return text;
+    }
+    let result = text;
+    for (const sourceRule of rules) {
+      const rule = ReaderReplaceRuleStore.normalize(sourceRule);
+      if (!rule.enabled || !rule.pattern || (title ? !rule.applyToTitle : !rule.applyToContent) ||
+        !ReaderReplaceRuleStore.matchesBookScope(rule, book)) {
+        continue;
+      }
+      const startedAt = Date.now();
+      try {
+        if (rule.isRegex) {
+          if (RegexSafetyGuard.isLikelyCatastrophic(rule.pattern)) {
+            // 守卫拦截的规则在预览/主线程路径同样跳过，避免灾难性回溯冻结 UI。
+            console.warn(`替换净化规则存在灾难性回溯风险，已跳过: ${rule.name || rule.pattern}`);
+            continue;
+          }
+          if (rule.replacement.indexOf('@js:') === 0) {
+            // @js: 脚本替换：与 TaskPool 阅读路径同一 QuickJS 沙箱求值，失败的匹配保留原文。
+            const evaluator = new QuickJsReplaceEvaluator(rule.replacement.substring(4), rule.timeoutMs);
+            if (!evaluator.begin()) {
+              console.warn(`@js: 替换脚本无法在 QuickJS 沙箱执行，已跳过: ${rule.name || rule.pattern}`);
+              continue;
+            }
+            try {
+              const replaced = QuickJsReplaceEvaluator.applyToText(result,
+                JavaRegexCompat.compile(rule.pattern, 'g'), evaluator);
+              // 误删防护：单条规则把全文清空而原文非空时视为误删，回滚该规则。
+              if (replaced.trim() || !result.trim()) {
+                result = replaced;
+              } else {
+                console.warn(`替换净化规则把全文清空，已回滚: ${rule.name || rule.pattern}`);
+              }
+            } finally {
+              evaluator.end();
+            }
+          } else {
+            const replaced = result.replace(JavaRegexCompat.compile(rule.pattern, 'g'),
+              JavaRegexCompat.convertReplacement(rule.replacement));
+            // 误删防护：单条规则把全文清空而原文非空时视为误删，回滚该规则。
+            if (replaced.trim() || !result.trim()) {
+              result = replaced;
+            } else {
+              console.warn(`替换净化规则把全文清空，已回滚: ${rule.name || rule.pattern}`);
+            }
+          }
+        } else {
+          result = result.split(rule.pattern).join(rule.replacement);
+        }
+      } catch (error) {
+        console.warn(`替换净化规则无效: ${rule.name || rule.pattern}`, error);
+      }
+      if (Date.now() - startedAt > rule.timeoutMs) {
+        console.warn(`替换净化规则执行超时: ${rule.name || rule.pattern}`);
+      }
+    }
+    return result;
+  }
+
+  private static matchesBookScope(rule: ReaderReplaceRule, book: Book | null): boolean {
+    const target = ReaderReplaceRuleStore.bookScopeText(book);
+    const includes = ReaderReplaceRuleStore.scopeTokens(rule.scope);
+    if (includes.length > 0 && !includes.some((token: string) =>
+      ReaderReplaceRuleStore.scopeTokenMatches(token, target))) {
+      return false;
+    }
+    const excludes = ReaderReplaceRuleStore.scopeTokens(rule.excludeScope);
+    return !excludes.some((token: string) => ReaderReplaceRuleStore.scopeTokenMatches(token, target));
+  }
+
+  private static bookScopeText(book: Book | null): string {
+    if (!book) {
+      return '';
+    }
+    return `${book.name || ''}\n${book.author || ''}\n${book.originName || ''}\n` +
+      `${book.origin || ''}\n${book.bookUrl || ''}`.toLowerCase();
+  }
+
+  private static scopeTokens(value: string): string[] {
+    return (value || '').split(/[\n,，;；]+/)
+      .map((item: string) => item.trim().toLowerCase())
+      .filter((item: string) => !!item);
+  }
+
+  private static scopeTokenMatches(token: string, target: string): boolean {
+    if (!token) {
+      return false;
+    }
+    if (token.startsWith('/') && token.lastIndexOf('/') > 0) {
+      const end = token.lastIndexOf('/');
+      try {
+        return new RegExp(token.substring(1, end), token.substring(end + 1)).test(target);
+      } catch (_) {
+        return target.includes(token);
+      }
+    }
+    if (token.includes('*')) {
+      const escaped = token.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+      try {
+        return new RegExp(escaped, 'i').test(target);
+      } catch (_) {
+        return false;
+      }
+    }
+    return target.includes(token);
+  }
+
+  private static decode(raw: string): ReaderReplaceRule[] {
+    if (!raw) {
+      return [];
+    }
+    try {
+      const values = JSON.parse(raw) as ReaderReplaceRule[];
+      if (!Array.isArray(values)) {
+        return [];
+      }
+      return values.map((rule: ReaderReplaceRule) => ReaderReplaceRuleStore.normalize(rule));
+    } catch (error) {
+      console.warn('读取替换净化规则失败:', error);
+      return [];
+    }
+  }
+
+  private static normalize(source: ReaderReplaceRule): ReaderReplaceRule {
+    const rule = new ReaderReplaceRule();
+    rule.id = Number(source?.id) > 0 ? Number(source.id) : Date.now();
+    rule.name = `${source?.name || ''}`.trim();
+    rule.group = `${source?.group || '默认'}`.trim() || '默认';
+    rule.pattern = `${source?.pattern || ''}`;
+    rule.replacement = `${source?.replacement || ''}`;
+    rule.applyToTitle = source?.applyToTitle !== false;
+    rule.applyToContent = source?.applyToContent !== false;
+    rule.isRegex = source?.isRegex !== false;
+    rule.scope = `${source?.scope || ''}`;
+    rule.excludeScope = `${source?.excludeScope || ''}`;
+    const timeout = Math.round(Number(source?.timeoutMs));
+    rule.timeoutMs = Number.isNaN(timeout) ? 3000 : Math.max(100, Math.min(timeout, 10000));
+    rule.enabled = source?.enabled !== false;
+    return rule;
+  }
+
+  static cloneRule(source: ReaderReplaceRule): ReaderReplaceRule {
+    return ReaderReplaceRuleStore.normalize(source);
+  }
+
+  /** 把导入适配器的条目（已按别名统一字段）转成本应用的规则对象。 */
+  static fromImportEntry(entry: ImportedReplaceRule): ReaderReplaceRule {
+    const rule = new ReaderReplaceRule();
+    rule.id = Number.isFinite(entry.id) && entry.id > 0 ? Math.round(entry.id) : 0;
+    rule.name = entry.name;
+    rule.group = entry.group;
+    rule.pattern = entry.pattern;
+    rule.replacement = entry.replacement;
+    rule.isRegex = entry.isRegex;
+    rule.enabled = entry.enabled;
+    rule.applyToTitle = entry.applyToTitle;
+    rule.applyToContent = entry.applyToContent;
+    rule.scope = entry.scope;
+    rule.excludeScope = entry.excludeScope;
+    rule.timeoutMs = entry.timeoutMs;
+    return ReaderReplaceRuleStore.normalize(rule);
+  }
+
+  private static cloneRules(rules: ReaderReplaceRule[]): ReaderReplaceRule[] {
+    return rules.map((rule: ReaderReplaceRule) => ReaderReplaceRuleStore.cloneRule(rule));
+  }
+}

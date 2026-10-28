@@ -1,0 +1,179 @@
+export class ThemeIds {
+  static readonly CUSTOM: string = 'custom';
+  static readonly PLAIN_DEFAULT: string = 'plain-default';
+}
+
+export class ThemeComponentSourceIds {
+  startupThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  paletteThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  readerThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  bubbleThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  navigationThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  bookThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  typographyThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  layoutThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  radiusThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  glassThemeId: string = ThemeIds.PLAIN_DEFAULT;
+}
+
+export class ThemeRegexEmphasisModes {
+  static readonly INHERIT: string = 'inherit';
+  static readonly NONE: string = 'none';
+  static readonly TEXT: string = 'text';
+  static readonly HIGHLIGHT: string = 'highlight';
+  static readonly BUBBLE: string = 'bubble';
+}
+
+export class ThemeBubbleStyles {
+  static readonly INHERIT: string = 'inherit';
+  static readonly QQ_SOFT: string = 'qq-soft';
+  static readonly QQ_SOLID: string = 'qq-solid';
+  static readonly CAPSULE: string = 'capsule';
+  static readonly PAPER: string = 'paper';
+  static readonly NEON: string = 'neon';
+  static readonly CLASSIC_GLASS: string = 'classic-glass';
+  static readonly WARM_SCROLL: string = 'warm-scroll';
+  static readonly FOREST_DEW: string = 'forest-dew';
+  static readonly INK_BRUSH: string = 'ink-brush';
+  static readonly NEON_PULSE: string = 'neon-pulse';
+  static readonly STRAWBERRY_RIBBON: string = 'strawberry-ribbon';
+  static readonly CRIMSON_STAMP: string = 'crimson-stamp';
+  static readonly CELADON_SLIP: string = 'celadon-slip';
+  static readonly ROSE_FRAME: string = 'rose-frame';
+  static readonly MOON_HALO: string = 'moon-halo';
+  static readonly SWORD_TALISMAN: string = 'sword-talisman';
+  static readonly QINGLUAN_JADE: string = 'qingluan-jade';
+  static readonly PIPI_SOFT_PAW: string = 'pipi-soft-paw';
+}
+
+export class ThemeColorTokens {
+  pageColor: string = '#F5F5F5';
+  cardColor: string = '#FFFFFF';
+  inputColor: string = '#F0F2F5';
+  primaryTextColor: string = '#1F1F1F';
+  // 浅色次要文本默认值需满足 WCAG AA 4.5:1（#888888 在白底仅 3.5:1 不达标）。
+  subTextColor: string = '#666B72';
+  dividerColor: string = '#E0E0E0';
+  accentColor: string = '#007DFF';
+  buttonColor: string = '#007DFF';
+  dangerColor: string = '#E53935';
+  /**
+   * 成功/生效态（如替换规则命中、校验通过）。
+   * 内置主题包暂不逐包定义，由 ThemeRuntime 提供默认值；自定义主题可覆盖。
+   */
+  successColor: string = '#1E8E3E';
+  /**
+   * 警示/待确认态（如规则部分匹配、云同步确认中）。
+   * 同 successColor，由 ThemeRuntime 提供默认值。
+   */
+  warningColor: string = '#D17A00';
+}
+
+export class ThemeReaderTokens {
+  backgroundColor: string = '#F7F1E3';
+  backgroundAssetId: string = '';
+  backgroundImageFit: string = 'cover';
+  textColor: string = '#2F261D';
+  subTextColor: string = '#7A6F63';
+  contentTone: string = 'light';
+}
+
+export class ThemeRegexEmphasisTokens {
+  emphasisMode: string = ThemeRegexEmphasisModes.BUBBLE;
+  bubbleStyle: string = ThemeBubbleStyles.QQ_SOFT;
+  emphasisColor: string = '#D9ECFF';
+  emphasisTextColor: string = '#1B4168';
+}
+
+export class ThemeVariant {
+  colors: ThemeColorTokens = new ThemeColorTokens();
+  reader: ThemeReaderTokens = new ThemeReaderTokens();
+  regexEmphasis: ThemeRegexEmphasisTokens = new ThemeRegexEmphasisTokens();
+}
+
+export class ThemeTypographyTokens {
+  appFontFamily: string = 'sans-serif';
+}
+
+export class ThemeReaderLayoutTokens {
+  fontSize: number = 20;
+  letterSpacing: number = 0;
+  lineHeight: number = 12;
+  paragraphSpacing: number = 0;
+  marginLeft: number = 18;
+  marginRight: number = 18;
+  marginTop: number = 18;
+  marginBottom: number = 18;
+}
+
+export class ThemeNavigationTokens {
+  iconPackId: string = 'classic';
+}
+
+export class ThemeStartupTokens {
+  styleId: string = ThemeIds.PLAIN_DEFAULT;
+}
+
+export class ThemeRadiusTokens {
+  small: number = 6;
+  medium: number = 10;
+  large: number = 16;
+  card: number = 10;
+  button: number = 20;
+  bubble: number = 6;
+}
+
+export class ThemeGlassSurfaceTokens {
+  blurRadius: number = 22;
+  cornerRadius: number = 16;
+}
+
+export class ThemeGlassTokens {
+  enabled: boolean = true;
+  panel: ThemeGlassSurfaceTokens = new ThemeGlassSurfaceTokens();
+  popover: ThemeGlassSurfaceTokens = new ThemeGlassSurfaceTokens();
+  button: ThemeGlassSurfaceTokens = new ThemeGlassSurfaceTokens();
+  overlay: ThemeGlassSurfaceTokens = new ThemeGlassSurfaceTokens();
+  menu: ThemeGlassSurfaceTokens = new ThemeGlassSurfaceTokens();
+  lightTintOpacity: number = 85;
+  darkTintOpacity: number = 78;
+  lightBorderOpacity: number = 65;
+  darkBorderOpacity: number = 22;
+  borderWidth: number = 1;
+  shadowEnabled: boolean = true;
+  lightShadowOpacity: number = 17;
+  darkShadowOpacity: number = 44;
+  shadowRadius: number = 18;
+  shadowOffsetX: number = 0;
+  shadowOffsetY: number = 6;
+  adaptiveColor: boolean = true;
+  materialScale: number = 1;
+
+  constructor() {
+    this.panel.blurRadius = 22;
+    this.panel.cornerRadius = 16;
+    this.popover.blurRadius = 18;
+    this.popover.cornerRadius = 14;
+    this.button.blurRadius = 12;
+    this.button.cornerRadius = 24;
+    this.overlay.blurRadius = 28;
+    this.overlay.cornerRadius = 20;
+    this.menu.blurRadius = 10;
+    this.menu.cornerRadius = 12;
+  }
+}
+
+export class ThemePack {
+  schemaVersion: number = 3;
+  id: string = ThemeIds.PLAIN_DEFAULT;
+  name: string = '默认主题';
+  description: string = '';
+  light: ThemeVariant = new ThemeVariant();
+  dark: ThemeVariant = new ThemeVariant();
+  typography: ThemeTypographyTokens = new ThemeTypographyTokens();
+  readerLayout: ThemeReaderLayoutTokens = new ThemeReaderLayoutTokens();
+  navigation: ThemeNavigationTokens = new ThemeNavigationTokens();
+  startup: ThemeStartupTokens = new ThemeStartupTokens();
+  radius: ThemeRadiusTokens = new ThemeRadiusTokens();
+  glass: ThemeGlassTokens = new ThemeGlassTokens();
+}

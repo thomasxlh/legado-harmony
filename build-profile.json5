@@ -1,0 +1,73 @@
+{
+  app: {
+    signingConfigs: [],
+    products: [
+      {
+        name: 'default',
+        compatibleSdkVersion: '5.0.0(12)',
+        runtimeOS: 'HarmonyOS',
+        buildOption: {
+          strictMode: {
+            caseSensitiveCheck: true,
+            useNormalizedOHMUrl: true,
+          },
+        },
+        targetSdkVersion: '26.0.0',
+      },
+      {
+        name: 'release',
+        compatibleSdkVersion: '5.0.0(12)',
+        runtimeOS: 'HarmonyOS',
+        buildOption: {
+          strictMode: {
+            caseSensitiveCheck: true,
+            useNormalizedOHMUrl: true,
+          },
+        },
+        targetSdkVersion: '26.0.0',
+      },
+    ],
+    buildModeSet: [
+      {
+        name: 'debug',
+      },
+      {
+        name: 'release',
+      },
+    ],
+    capabilities: [
+      {
+        bundleName: 'legado.intrimple.com',
+        config: [],
+      },
+    ],
+  },
+  modules: [
+    {
+      name: 'entry',
+      srcPath: './entry',
+      targets: [
+        {
+          name: 'default',
+          applyToProducts: [
+            'default',
+            'release',
+          ],
+        },
+      ],
+    },
+    {
+      name: 'quickjs',
+      srcPath: './quickjs',
+      targets: [
+        {
+          name: 'default',
+          applyToProducts: [
+            'default',
+            'release',
+          ],
+        },
+      ],
+    },
+  ],
+}

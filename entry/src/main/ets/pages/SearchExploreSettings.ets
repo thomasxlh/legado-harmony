@@ -1,0 +1,349 @@
+import { router } from '@kit.ArkUI';
+import { syncSystemBars } from '../utils/SystemBars';
+import { SearchExploreSettings, SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
+import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppBackgroundLayer } from '../components/AppBackgroundLayer';
+import { SettingsTitleBar } from '../components/SettingsTitleBar';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+
+@Entry
+@Component
+struct SearchExploreSettingsPage {
+  @StorageLink('searchExploreShowResultCover') searchExploreShowResultCover: boolean = true;
+  @StorageLink('searchExploreUseBookshelfCoverGallery') searchExploreUseBookshelfCoverGallery: boolean = false;
+  @StorageLink('searchExploreShowResultTags') searchExploreShowResultTags: boolean = true;
+  @StorageLink('searchExploreAggregateResults') searchExploreAggregateResults: boolean = true;
+  @StorageLink('searchExplorePromptAddToShelfOnBack') searchExplorePromptAddToShelfOnBack: boolean = true;
+  @StorageLink('searchExploreExactSearch') searchExploreExactSearch: boolean = false;
+  @StorageLink('searchExploreExactSearchMatchAuthor') searchExploreExactSearchMatchAuthor: boolean = true;
+  @StorageLink('searchExploreShowSearchProgress') searchExploreShowSearchProgress: boolean = true;
+  @StorageLink('searchExploreSearchConcurrency') searchExploreSearchConcurrency: number = 100;
+  /** 攒够该数量的搜索结果就提前收工；0 表示搜完全部书源。 */
+  @StorageLink('searchExploreStopAfterResults') searchExploreStopAfterResults: number = 0;
+  @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('themeRevision') themeRevision: number = 0;
+  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
+  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
+  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
+  @StorageProp('navBarHeight') navBarHeight: number = 0;
+
+  aboutToAppear(): void {
+    this.reloadSettings();
+    this.syncBars();
+  }
+
+  onPageShow(): void {
+    this.reloadSettings();
+    this.syncBars();
+  }
+
+  build() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      AppBackgroundLayer()
+      Scroll() {
+        Column() {
+          this.sectionTitle('结果展示')
+          Column() {
+          this.switchItem('显示结果封面', '开启后搜索和发现结果展示书籍封面',
+            this.searchExploreShowResultCover, (value: boolean) => {
+              this.searchExploreShowResultCover = value;
+              this.onSettingChanged();
+            })
+          if (this.searchExploreShowResultCover) {
+            this.switchItem('使用书架图集', '开启后结果列表封面使用书架封面设置的浅色/深色图集',
+              this.searchExploreUseBookshelfCoverGallery, (value: boolean) => {
+                this.searchExploreUseBookshelfCoverGallery = value;
+                this.onSettingChanged();
+              })
+          }
+          this.switchItem('显示结果标签', '开启后搜索和发现结果展示书籍标签',
+            this.searchExploreShowResultTags, (value: boolean) => {
+              this.searchExploreShowResultTags = value;
+              this.onSettingChanged();
+            })
+          }
+          .width('calc(100% - 24vp)')
+          .margin({ left: 12, right: 12 })
+          .borderRadius(16)
+          .clip(true)
+          .backgroundColor(this.cardColor())
+
+          this.sectionTitle('书架提示')
+          Column() {
+            this.switchItem('返回提示加入书架', '从搜索或发现详情点击阅读后，返回时询问是否加入书架',
+              this.searchExplorePromptAddToShelfOnBack, (value: boolean) => {
+                this.searchExplorePromptAddToShelfOnBack = value;
+                this.onSettingChanged();
+              })
+          }
+          .width('calc(100% - 24vp)')
+          .margin({ left: 12, right: 12 })
+          .borderRadius(16)
+          .clip(true)
+          .backgroundColor(this.cardColor())
+
+          this.sectionTitle('搜索设置')
+          Column() {
+          this.switchItem('精准搜索', '开启后仅保留书名与关键词完全匹配的搜索结果',
+            this.searchExploreExactSearch, (value: boolean) => {
+              this.searchExploreExactSearch = value;
+              this.onSettingChanged();
+            })
+          this.switchItem('匹配作者', '精准搜索开启时，关键词同时匹配作者',
+            this.searchExploreExactSearchMatchAuthor, (value: boolean) => {
+              this.searchExploreExactSearchMatchAuthor = value;
+              this.onSettingChanged();
+            })
+          this.switchItem('显示搜索进度', '开启后搜索过程中显示已搜索书源数量和结果数量',
+            this.searchExploreShowSearchProgress, (value: boolean) => {
+              this.searchExploreShowSearchProgress = value;
+              this.onSettingChanged();
+            })
+          this.switchItem('聚合同名结果', '开启后同名书籍合并展示，点击后查看各个书源结果',
+            this.searchExploreAggregateResults, (value: boolean) => {
+              this.searchExploreAggregateResults = value;
+              this.onSettingChanged();
+            })
+          this.numberSettingItem('搜索并发数', '控制书籍检索、书源校验和换源同时并发请求的数量',
+            this.searchExploreSearchConcurrency, 1, 999, (value: number) => {
+              this.searchExploreSearchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(value);
+              this.onSettingChanged();
+            })
+          this.numberSettingItem('提前结束搜索', '搜到该数量的结果后不再搜索剩余书源，加快换源与搜索；0 表示搜完全部书源',
+            this.searchExploreStopAfterResults, 0, 300, (value: number) => {
+              this.searchExploreStopAfterResults = SearchExploreSettingsStore.normalizeStopAfterResults(value);
+              this.onSettingChanged();
+            })
+          }
+          .width('calc(100% - 24vp)')
+          .margin({ left: 12, right: 12 })
+          .borderRadius(16)
+          .clip(true)
+          .backgroundColor(this.cardColor())
+
+        }
+        .width('100%')
+        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
+      }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .width('100%')
+      .height('100%')
+      .align(Alignment.TopStart)
+
+      SettingsTitleBar({ title: '搜索/发现配置', appDarkMode: this.appDarkMode, statusBarHeight: this.statusBarHeight })
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.pageColorBehind())
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  async reloadSettings(): Promise<void> {
+    try {
+      const settings = await SearchExploreSettingsStore.load(getContext(this));
+      this.searchExploreShowResultCover = settings.showResultCover;
+      this.searchExploreUseBookshelfCoverGallery = settings.useBookshelfCoverGallery;
+      this.searchExploreShowResultTags = settings.showResultTags;
+      this.searchExploreAggregateResults = settings.aggregateSearchResults;
+      this.searchExplorePromptAddToShelfOnBack = settings.promptAddToShelfOnBack;
+      this.searchExploreExactSearch = settings.exactSearch;
+      this.searchExploreExactSearchMatchAuthor = settings.exactSearchMatchAuthor;
+      this.searchExploreShowSearchProgress = settings.showSearchProgress;
+      this.searchExploreSearchConcurrency = settings.searchConcurrency;
+      this.searchExploreStopAfterResults = settings.stopAfterResults;
+    } catch (e) {
+      console.warn('重新加载搜索/发现配置失败:', e);
+    }
+  }
+
+  onSettingChanged(): void {
+    SearchExploreSettingsStore.load(getContext(this)).then((settings: SearchExploreSettings) => {
+      settings.showResultCover = this.searchExploreShowResultCover;
+      settings.useBookshelfCoverGallery = this.searchExploreUseBookshelfCoverGallery;
+      settings.showResultTags = this.searchExploreShowResultTags;
+      settings.aggregateSearchResults = this.searchExploreAggregateResults;
+      settings.promptAddToShelfOnBack = this.searchExplorePromptAddToShelfOnBack;
+      settings.exactSearch = this.searchExploreExactSearch;
+      settings.exactSearchMatchAuthor = this.searchExploreExactSearchMatchAuthor;
+      settings.showSearchProgress = this.searchExploreShowSearchProgress;
+      settings.searchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(this.searchExploreSearchConcurrency);
+      settings.stopAfterResults = SearchExploreSettingsStore.normalizeStopAfterResults(this.searchExploreStopAfterResults);
+      SearchExploreSettingsStore.applyToStorage(settings);
+      return SearchExploreSettingsStore.save(getContext(this), settings);
+    }).catch((e: Error) => {
+      console.warn('保存搜索/发现配置失败:', e);
+    });
+  }
+
+  pageColor(): string {
+    return ThemeRuntime.pageColor(this.appDarkMode);
+  }
+
+  // 背景铺到全部页面时，页面底色改为半透明，让底层的主题背景图透出来。
+  pageColorBehind(): string {
+    return ThemeRuntime.pageColorBehind(this.appDarkMode);
+  }
+
+  cardColor(): string {
+    return ThemeRuntime.cardColorBehind(this.appDarkMode);
+  }
+
+  primaryTextColor(): string {
+    return ThemeRuntime.primaryTextColor(this.appDarkMode);
+  }
+
+  subTextColor(): string {
+    return ThemeRuntime.subTextColor(this.appDarkMode);
+  }
+
+  buttonColor(): string {
+    return ThemeRuntime.buttonColor(this.appDarkMode);
+  }
+
+  syncBars(): void {
+    syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
+  }
+
+  @Builder
+  sectionTitle(title: string) {
+    Text(title)
+      .fontSize(13)
+      .fontColor(this.subTextColor())
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+  }
+
+  @Builder
+  switchItem(title: string, desc: string, value: boolean, onChange: (value: boolean) => void) {
+    Row() {
+      Column() {
+        Text(title)
+          .fontSize(16)
+          .fontColor(this.primaryTextColor())
+        Text(desc)
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+          .margin({ top: 4 })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      AdaptiveSwitch({
+        isOn: value,
+        selectedColor: this.buttonColor(),
+        onChange: (checked: boolean) => {
+          onChange(checked);
+        }
+      })
+    }
+    .width('calc(100% - 32vp)')
+    .constraintSize({ minHeight: 64 })
+    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
+    .margin({ left: 16, right: 16 })
+    .backgroundColor(Color.Transparent)
+    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  numberSettingItem(title: string, desc: string, value: number, minValue: number, maxValue: number,
+    onChange: (value: number) => void) {
+    Row() {
+      Column() {
+        Text(title)
+          .fontSize(16)
+          .fontColor(this.primaryTextColor())
+        Text(desc)
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+          .margin({ top: 4 })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Row() {
+        Text('−')
+          .fontSize(18)
+          .fontColor(this.primaryTextColor())
+          .width(30)
+          .height(30)
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            onChange(Math.max(minValue, value - 1));
+          })
+
+        TextInput({
+          text: `${value}`,
+        })
+          .type(InputType.Number)
+          .width(56)
+          .height(32)
+          .fontSize(15)
+          .fontColor(this.primaryTextColor())
+          .caretColor(this.primaryTextColor())
+          .textAlign(TextAlign.Center)
+          .backgroundColor(this.appDarkMode ? '#24FFFFFF' : '#14000000')
+          .borderRadius(8)
+          .padding({ left: 4, right: 4 })
+          .onChange((text: string) => {
+            // 允许清空输入框再输入：空串按 0 处理（提前收工阈值 0 是合法值）。
+            const parsed = text.trim() === '' ? 0 : Number.parseInt(text, 10);
+            if (!Number.isNaN(parsed)) {
+              onChange(Math.min(maxValue, Math.max(minValue, parsed)));
+            }
+          })
+
+        Text('+')
+          .fontSize(18)
+          .fontColor(this.primaryTextColor())
+          .width(30)
+          .height(30)
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            onChange(Math.min(maxValue, value + 1));
+          })
+      }
+      .height(32)
+      .alignItems(VerticalAlign.Center)
+    }
+    .width('calc(100% - 32vp)')
+    .constraintSize({ minHeight: 64 })
+    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
+    .margin({ left: 16, right: 16 })
+    .backgroundColor(Color.Transparent)
+    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  navItem(title: string, desc: string, url: string) {
+    Row() {
+      Column() {
+        Text(title)
+          .fontSize(16)
+          .fontColor(this.primaryTextColor())
+        Text(desc)
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+          .margin({ top: 4 })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(18)
+        .fontColor([this.subTextColor()])
+    }
+    .width('calc(100% - 32vp)')
+    .height(64)
+    .padding({ left: 0, right: 0 })
+    .margin({ left: 16, right: 16 })
+    .backgroundColor(Color.Transparent)
+    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      router.pushUrl({ url: url });
+    })
+  }
+
+}
