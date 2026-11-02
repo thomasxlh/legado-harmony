@@ -1,6 +1,6 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { BookSource, SearchBook, BookListRule, SearchRule, ExploreRule, BookInfoRule, TocRule, ContentRule } from '../model/data/Book';
-import { AppDatabase } from '../model/data/AppDatabase';
+import { AppDatabase, BookSourceImportBatchResult } from '../model/data/AppDatabase';
 import { HttpClient, HttpResponse } from '../core/http/HttpClient';
 import { RawHttpTextClient } from '../core/http/RawHttpTextClient';
 import { SearchCoordinator, SearchProgress, SearchSourceResult } from '../core/book/SearchCoordinator';
@@ -7015,29 +7015,29 @@ struct BookSourcePage {
   async persistImportedSources(sources: BookSource[]): Promise<void> {
     const db = AppDatabase.getInstance();
     await db.initWithContext(getContext(this));
+    // 单事务批量写入：逐条 insert + 逐条读回校验会把导入拖到分钟级。
+    const result: BookSourceImportBatchResult = await db.insertBookSourcesBatch(sources);
+
+    // 写后校验：批量读回比对，未通过的不计入成功。
+    const storedSources = await db.getBookSourcesByUrls(
+      result.importedSources.map((source: BookSource): string => source.bookSourceUrl));
+    const storedByUrl = new Map<string, BookSource>();
+    for (const stored of storedSources) {
+      storedByUrl.set(stored.bookSourceUrl, stored);
+    }
     let importCount = 0;
-    let failedCount = 0;
-    let lockedCount = 0;
-    let lastInsertError = '';
-    for (const source of sources) {
-      if (source.bookSourceUrl && source.bookSourceName) {
-        try {
-          const stored = await db.insertBookSource(source);
-          if (stored) {
-            if (!await this.verifyImportedBookSource(db, source)) {
-              throw new Error('写入后校验失败，书源内容未完整保存');
-            }
-            importCount++;
-          } else {
-            lockedCount++;
-          }
-        } catch (insertErr) {
-          failedCount++;
-          lastInsertError = this.importErrorMessage(insertErr as Object);
-          console.error('插入书源失败:', source.bookSourceName, insertErr);
-        }
+    let failedCount = result.failedCount;
+    let lastInsertError = result.lastErrorMessage;
+    for (const source of result.importedSources) {
+      const actual = storedByUrl.get(source.bookSourceUrl);
+      if (actual && this.verifyImportedBookSource(actual, source)) {
+        importCount++;
+      } else {
+        failedCount++;
+        lastInsertError = '写入后校验失败，书源内容未完整保存';
       }
     }
+    const lockedCount = result.lockedCount;
 
     if (importCount === 0) {
       if (lockedCount > 0 && failedCount === 0) {
@@ -7351,9 +7351,7 @@ struct BookSourcePage {
     return source;
   }
 
-  async verifyImportedBookSource(db: AppDatabase, expected: BookSource): Promise<boolean> {
-    const actual = await db.getBookSource(expected.bookSourceUrl);
-    if (!actual) return false;
+  verifyImportedBookSource(actual: BookSource, expected: BookSource): boolean {
     return actual.rawSourceJson === expected.rawSourceJson &&
       actual.jsLib === expected.jsLib &&
       actual.loginUrl === expected.loginUrl &&

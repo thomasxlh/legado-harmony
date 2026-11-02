@@ -24,6 +24,23 @@ export class BookSourceLocal {
   rawSourceJson: string = '';
 }
 
+/** 批量导入书源的结果：成功列表已按 insertBookSource 的语义就地更新（customOrder 等），供调用方写后校验。 */
+export class BookSourceImportBatchResult {
+  importedSources: BookSource[] = [];
+  lockedCount: number = 0;
+  failedCount: number = 0;
+  lastErrorMessage: string = '';
+}
+
+/** 导入前预加载的既有书源行：只取合并语义需要的列。 */
+class ExistingBookSourceRow {
+  bookSourceUrl: string = '';
+  isLocked: number = 0;
+  customOrder: number = 0;
+  isPinned: number = 0;
+  variable: string = '';
+}
+
 /** theme_assets 行：主题/背景图片的端云同步镜像，file 为 ASSET 列。 */
 export class ThemeAssetRow {
   assetKey: string = '';
@@ -2075,6 +2092,220 @@ export class AppDatabase {
     }
     CloudSyncService.notifyLocalChange();
     return true;
+  }
+
+  /**
+   * 批量导入书源：单事务内完成全部写入。
+   *
+   * 逐条调用 insertBookSource 时，每行都要经历 查存在性 → 查 MAX(customOrder) →
+   * 写本机表 → 写同步表 共 4 次以上异步 RDB 往返，且每行独立提交各触发一次落盘；
+   * 上千书源导入耗时以分钟计。这里改为分块 IN 预加载既有行 + 单事务批量写，
+   * 行级合并语义（锁定跳过、保留 customOrder/isPinned/variable、凭据并回本机表）
+   * 与 insertBookSource 保持一致。
+   */
+  async insertBookSourcesBatch(sources: BookSource[]): Promise<BookSourceImportBatchResult> {
+    const result = new BookSourceImportBatchResult();
+    if (!this.store) {
+      result.failedCount = sources.length;
+      result.lastErrorMessage = '数据库未初始化';
+      return result;
+    }
+    const validSources = sources.filter((source: BookSource): boolean =>
+      !!source.bookSourceUrl && !!source.bookSourceName);
+    if (validSources.length === 0) return result;
+
+    const chunkSize = AppDatabase.BATCH_INSERT_CHUNK_SIZE;
+
+    // 预加载同步表既有行（锁定/顺序/置顶/变量）。
+    const existingByUrl = new Map<string, ExistingBookSourceRow>();
+    for (let offset = 0; offset < validSources.length; offset += chunkSize) {
+      const chunkUrls = validSources.slice(offset, offset + chunkSize)
+        .map((source: BookSource): string => source.bookSourceUrl);
+      const placeholders = chunkUrls.map((): string => '?').join(', ');
+      const resultSet = await this.store.querySql(
+        `SELECT bookSourceUrl, isLocked, customOrder, isPinned, variable FROM book_sources ` +
+        `WHERE bookSourceUrl IN (${placeholders})`, chunkUrls);
+      try {
+        while (resultSet.goToNextRow()) {
+          const row = new ExistingBookSourceRow();
+          row.bookSourceUrl = this.getStringColumn(resultSet, 'bookSourceUrl');
+          row.isLocked = this.getLongColumn(resultSet, 'isLocked');
+          row.customOrder = this.getLongColumn(resultSet, 'customOrder');
+          row.isPinned = this.getLongColumn(resultSet, 'isPinned');
+          row.variable = this.getStringColumn(resultSet, 'variable');
+          existingByUrl.set(row.bookSourceUrl, row);
+        }
+      } finally {
+        resultSet.close();
+      }
+    }
+
+    // 预加载本机凭据表。
+    const localByUrl = new Map<string, BookSourceLocal>();
+    for (let offset = 0; offset < validSources.length; offset += chunkSize) {
+      const chunkUrls = validSources.slice(offset, offset + chunkSize)
+        .map((source: BookSource): string => source.bookSourceUrl);
+      const placeholders = chunkUrls.map((): string => '?').join(', ');
+      const resultSet = await this.store.querySql(
+        `SELECT bookSourceUrl, loginHeader, loginInfo, rawSourceJson FROM book_source_local ` +
+        `WHERE bookSourceUrl IN (${placeholders})`, chunkUrls);
+      try {
+        while (resultSet.goToNextRow()) {
+          const record = new BookSourceLocal();
+          record.bookSourceUrl = this.getStringColumn(resultSet, 'bookSourceUrl');
+          record.loginHeader = this.getStringColumn(resultSet, 'loginHeader');
+          record.loginInfo = this.getStringColumn(resultSet, 'loginInfo');
+          record.rawSourceJson = this.getStringColumn(resultSet, 'rawSourceJson');
+          localByUrl.set(record.bookSourceUrl, record);
+        }
+      } finally {
+        resultSet.close();
+      }
+    }
+
+    // 新书源追加到现有顺序末尾：只查一次 MAX，之后在内存里递增。
+    let nextOrder = 0;
+    const maxOrderResult = await this.store.querySql('SELECT MAX(customOrder) AS maxOrder FROM book_sources');
+    try {
+      if (maxOrderResult.goToFirstRow()) {
+        nextOrder = this.getLongColumn(maxOrderResult, 'maxOrder', -1) + 1;
+      }
+    } finally {
+      maxOrderResult.close();
+    }
+
+    const transaction = await this.store.createTransaction();
+    try {
+      for (const source of validSources) {
+        const url = source.bookSourceUrl;
+        try {
+          const existing = existingByUrl.get(url);
+          if (existing && existing.isLocked === 1) {
+            result.lockedCount++;
+            continue;
+          }
+          const bucket: relationalStore.ValuesBucket = {
+            bookSourceUrl: source.bookSourceUrl,
+            bookSourceName: source.bookSourceName,
+            bookSourceType: source.bookSourceType,
+            bookSourceGroup: source.bookSourceGroup,
+            bookSourceComment: source.bookSourceComment,
+            loginUrl: source.loginUrl,
+            loginUi: source.loginUi,
+            loginCheckJs: source.loginCheckJs,
+            // 登录凭据与原始 JSON 副本不进同步表：book_source_local 未注册为分布式表。
+            loginHeader: '',
+            loginInfo: '',
+            rawSourceJson: '',
+            bookUrlPattern: source.bookUrlPattern,
+            searchUrl: source.searchUrl,
+            exploreUrl: source.exploreUrl,
+            jsLib: source.jsLib,
+            header: source.header,
+            bookListRule: JSON.stringify(source.bookListRule),
+            searchRule: JSON.stringify(source.searchRule),
+            exploreRule: JSON.stringify(source.exploreRule),
+            bookInfoRule: JSON.stringify(source.bookInfoRule),
+            tocRule: JSON.stringify(source.tocRule),
+            contentRule: JSON.stringify(source.contentRule),
+            variableComment: source.variableComment,
+            variable: source.variable,
+            lastUpdateTime: source.lastUpdateTime,
+            respondTime: source.respondTime,
+            customOrder: source.customOrder,
+            customButton: source.customButton ? 1 : 0,
+            eventListener: source.eventListener ? 1 : 0,
+            isPinned: source.isPinned ? 1 : 0,
+            enabled: source.enabled ? 1 : 0,
+            enabledExplore: source.enabledExplore ? 1 : 0,
+            isLocked: source.isLocked ? 1 : 0,
+            validationStatus: this.normalizeBookSourceValidationStatus(source.validationStatus),
+            weight: source.weight,
+            concurrentRate: source.concurrentRate,
+            enabledCookieJar: source.enabledCookieJar ? 1 : 0
+          };
+          if (existing) {
+            // 导入更新已有书源时保留用户在管理页设置的顺序与置顶。
+            bucket['customOrder'] = existing.customOrder;
+            source.customOrder = existing.customOrder;
+            bucket['isPinned'] = existing.isPinned;
+            source.isPinned = existing.isPinned === 1;
+            // 脚本设置与运行时缓存属于用户状态，更新书源定义时不能被覆盖。
+            bucket['variable'] = existing.variable;
+            source.variable = existing.variable;
+          } else {
+            source.customOrder = Math.max(0, nextOrder);
+            bucket['customOrder'] = source.customOrder;
+            nextOrder++;
+          }
+
+          // 本机凭据表：同步表对应列保持为空，凭据与原始 JSON 写这里。
+          const existingLocal = localByUrl.get(url);
+          const localRecord = new BookSourceLocal();
+          localRecord.bookSourceUrl = url;
+          localRecord.loginHeader = source.loginHeader || (existingLocal ? existingLocal.loginHeader : '');
+          localRecord.loginInfo = source.loginInfo || (existingLocal ? existingLocal.loginInfo : '');
+          localRecord.rawSourceJson = source.rawSourceJson || (existingLocal ? existingLocal.rawSourceJson : '');
+          source.loginHeader = localRecord.loginHeader;
+          source.loginInfo = localRecord.loginInfo;
+          source.rawSourceJson = localRecord.rawSourceJson;
+          const localBucket: relationalStore.ValuesBucket = {
+            bookSourceUrl: url,
+            loginHeader: localRecord.loginHeader,
+            loginInfo: localRecord.loginInfo,
+            rawSourceJson: localRecord.rawSourceJson,
+            updatedAt: Date.now()
+          };
+          if (existingLocal) {
+            const localPredicates = new relationalStore.RdbPredicates('book_source_local');
+            localPredicates.equalTo('bookSourceUrl', url);
+            await transaction.update(localBucket, localPredicates);
+          } else {
+            await transaction.insert('book_source_local', localBucket);
+          }
+
+          const predicates = new relationalStore.RdbPredicates('book_sources');
+          predicates.equalTo('bookSourceUrl', url);
+          if (existing) {
+            await transaction.update(bucket, predicates);
+          } else {
+            await transaction.insert('book_sources', bucket);
+          }
+          result.importedSources.push(source);
+        } catch (insertError) {
+          result.failedCount++;
+          result.lastErrorMessage = insertError instanceof Error ? insertError.message : String(insertError);
+          console.error('插入书源失败:', source.bookSourceName, insertError);
+        }
+      }
+      await transaction.commit();
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+    CloudSyncService.notifyLocalChange();
+    return result;
+  }
+
+  /** 批量读取指定 URL 的书源（含本机凭据合并），供导入后的写后校验使用。 */
+  async getBookSourcesByUrls(urls: string[]): Promise<BookSource[]> {
+    if (!this.store || urls.length === 0) return [];
+    const sources: BookSource[] = [];
+    const chunkSize = AppDatabase.BATCH_INSERT_CHUNK_SIZE;
+    for (let offset = 0; offset < urls.length; offset += chunkSize) {
+      const chunkUrls = urls.slice(offset, offset + chunkSize);
+      const placeholders = chunkUrls.map((): string => '?').join(', ');
+      const resultSet = await this.store.querySql(
+        `SELECT * FROM book_sources WHERE bookSourceUrl IN (${placeholders})`, chunkUrls);
+      try {
+        while (resultSet.goToNextRow()) {
+          sources.push(this.resultSetToBookSource(resultSet));
+        }
+      } finally {
+        resultSet.close();
+      }
+    }
+    return await this.hydrateBookSourcesLocal(sources);
   }
 
   async updateBookSource(source: BookSource, originalBookSourceUrl: string = ''): Promise<void> {

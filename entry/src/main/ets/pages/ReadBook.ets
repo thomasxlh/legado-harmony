@@ -46,8 +46,8 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ReaderThemeBackground } from '../components/ReaderThemeBackground';
 import { ReaderPageCurlPainter } from '../components/ReaderPageCurlPainter';
 import { ReaderEmulationFlipPainter, ReaderEmulationFlipRegion } from '../components/ReaderEmulationFlipPainter';
-import { ReaderTtsPlayerPanel } from '../components/ReaderTtsPlayerPanel';
 import { TtsCatalogSheet, CatalogTitleDataSource } from '../components/TtsCatalogSheet';
+import { TtsGlobalCapsule } from '../components/TtsGlobalCapsule';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from '../core/book/BookSourceStageWebRuntime';
@@ -477,9 +477,6 @@ struct ReadBookPage {
   @State isTtsPaused: boolean = false;
   @State ttsPagedScrollOverride: boolean = false;
   @State ttsMediaControlsExpanded: boolean = false;
-  @State showTtsQuickPlayer: boolean = false;
-  @StorageLink('globalTtsCapsulePositionX') ttsMiniPlayerPositionX: number = 16;
-  @StorageLink('globalTtsCapsulePositionY') ttsMiniPlayerPositionY: number = -1;
   @State ttsDisplayText: string = '';
   @State ttsHighlightStart: number = -1;
   @State ttsHighlightEnd: number = -1;
@@ -501,12 +498,9 @@ struct ReadBookPage {
   @StorageLink('globalTtsOffsetStart') globalTtsOffsetStart: number = -1;
   @StorageLink('globalTtsOffsetEnd') globalTtsOffsetEnd: number = -1;
   @StorageLink('globalTtsRevision') @Watch('onGlobalTtsRevisionChanged') globalTtsRevision: number = 0;
-  @State showGlobalTtsQuickPlayer: boolean = false;
   @State showGlobalTtsCatalog: boolean = false;
   @State globalTtsCatalogReverseOrder: boolean = false;
   private ttsFloatingSessionOwnerId: string = `reader_${Date.now()}_${Math.random()}`;
-  private ttsMiniPlayerDragOriginX: number = 0;
-  private ttsMiniPlayerDragOriginY: number = 0;
   private pendingRestorePageIndex: number = -1;
   private tocScroller: Scroller = new Scroller();
   private tocLoadingPreviousPage: boolean = false;
@@ -583,6 +577,12 @@ struct ReadBookPage {
   private ttsSessionTakeoverInProgress: boolean = false;
   private ttsSessionTakeoverStartedAt: number = 0;
   private ttsSessionTakeoverPollScheduled: boolean = false;
+  // 句边界接管武装：进入阅读页瞬间，当前句已由后台宿主在播。立刻接管会让这句话从头
+  // 重播一遍（听感为“重复播报当前句”）。先武装记录在播句锚点并镜像跟随本句，等后台
+  // 宿主推进到下一句（锚点变化）时才接管，由本页从新句开头续播，旧宿主在同一句边界
+  // 被停掉，全程无重复。
+  private ttsTakeoverArmedChapterIndex: number = -1;
+  private ttsTakeoverArmedOffsetStart: number = -1;
   private ttsProgressSaveTimerId: number = -1;
   private ttsAutoTurningPage: boolean = false;
   private ttsPageTurnSerial: number = 0;
@@ -1120,7 +1120,6 @@ struct ReadBookPage {
 
   onGlobalTtsActiveChanged(): void {
     if (!this.globalTtsActive) {
-      this.showGlobalTtsQuickPlayer = false;
       this.clearMirroredTtsFocus();
     }
   }
@@ -1156,14 +1155,6 @@ struct ReadBookPage {
     }
     if (this.showGlobalTtsCatalog) {
       this.closeGlobalTtsCatalog();
-      return true;
-    }
-    if (this.showTtsQuickPlayer) {
-      this.closeTtsQuickPlayer();
-      return true;
-    }
-    if (this.showGlobalTtsQuickPlayer) {
-      this.closeGlobalTtsQuickPlayer();
       return true;
     }
     if (this.showTtsVoiceDropdown) {
@@ -1499,8 +1490,13 @@ struct ReadBookPage {
       const savedChapterIndex = activeTtsChapterIndex >= 0 ? activeTtsChapterIndex : engine.curIdx;
       this.currentChapterIndex = this.clampChapterIndex(savedChapterIndex);
       const savedPosition = this.currentChapterIndex === savedChapterIndex ? Math.max(0, engine.curPos) : 0;
+      // 镜像打开（后台朗读进行中重进）：落页锚点直接取后台会话正在朗读的句偏移，而不是
+      // 滞后的保存进度/引擎页码。首帧即定位到朗读句所在页，避免“先落旧页、镜像同步或
+      // 接管完成时再明显跳到朗读页”的二次跳动干扰。
+      const liveTtsAnchorOffset = activeTtsChapterIndex >= 0 && Number.isFinite(this.globalTtsOffsetStart) ?
+        Math.max(0, Math.round(this.globalTtsOffsetStart)) : -1;
       const savedOffset = activeTtsChapterIndex < 0 ?
-        savedReaderProgressOffset(this.book, this.currentChapterIndex) : -1;
+        savedReaderProgressOffset(this.book, this.currentChapterIndex) : liveTtsAnchorOffset;
       if (savedOffset >= 0) {
         this.setReaderTypographyRestoreOffset(savedOffset);
         this.pendingRestorePageIndex = -1;
@@ -3319,18 +3315,7 @@ struct ReadBookPage {
         this.globalTtsMiniPlayer()
       }
 
-      if (this.showTtsQuickPlayer) {
-        this.sharedTtsPlayerPanel(true)
-      }
-
-      if (this.globalTtsActive && this.showGlobalTtsQuickPlayer) {
-        this.sharedTtsPlayerPanel(false)
-      }
-
-      // The catalog overlay serves both panel owners: the reader's own quick player
-      // and the floating panel published while another page is in front.
-      if (this.showGlobalTtsCatalog &&
-        (this.showTtsQuickPlayer || (this.globalTtsActive && this.showGlobalTtsQuickPlayer))) {
+      if (this.showGlobalTtsCatalog) {
         this.globalTtsCatalogOverlay()
       }
 
@@ -5463,9 +5448,9 @@ struct ReadBookPage {
         containerHeight: 48,
         startInset: 0,
         compactLayout: true,
-        accessibilityLabel: this.isTtsSpeaking ? '展开朗读控制' : '开始朗读',
+        accessibilityLabel: '开始朗读',
         onBack: () => {
-          this.openTtsQuickPlayer();
+          this.handleTtsQuickAction();
         }
       })
 
@@ -5488,16 +5473,13 @@ struct ReadBookPage {
     })
   }
 
-  async openTtsQuickPlayer(): Promise<void> {
+  async handleTtsQuickAction(): Promise<void> {
     if (this.isReaderComicModeActive()) return;
     // The quick-action tap is above the page-turn layer. Consume its trailing click and discard
     // page turns queued while the menu was animating, otherwise they can execute many seconds
     // later between TTS focus turns and move the reader to an older chapter.
     this.suppressReaderTapClick = true;
     this.clearQueuedReaderPageTurns();
-    this.showMenu = false;
-    this.showToc = false;
-    this.showSettings = false;
     this.ttsMediaControlsExpanded = false;
     // 僵尸会话同步：续播链路中断后 isTtsSpeaking 仍为 true 但朗读器已结束。
     // 先收尾旧会话，让下方分支从当前位置重新开始朗读并重新发布悬浮会话与目录。
@@ -5505,50 +5487,29 @@ struct ReadBookPage {
       !this.ttsChapterSwitching && !this.ttsManualPageTurnResumePending) {
       this.finishTtsReading();
     }
-    animateTo({ duration: 280, curve: Curve.Friction }, () => {
-      this.showTtsQuickPlayer = true;
-    });
     this.loadTtsSettingsAndVoices();
     if (!this.isTtsSpeaking && !this.ttsReader.isSpeaking()) {
       await this.startTtsReadingFromCurrentPosition(true);
       this.ttsMediaControlsExpanded = false;
+    } else {
+      this.toggleTtsReading();
     }
   }
 
   shouldShowTtsMiniPlayer(): boolean {
-    return this.showMenu && !this.showTtsQuickPlayer && !this.isReaderComicModeActive() &&
+    return this.showMenu && !this.isReaderComicModeActive() &&
       (this.isTtsSpeaking || this.ttsReader.isSpeaking()) && !this.shouldBlockReaderInteraction();
   }
 
   shouldShowGlobalTtsMiniPlayer(): boolean {
-    return this.showMenu && this.globalTtsActive && !this.showGlobalTtsQuickPlayer &&
+    return this.showMenu && this.globalTtsActive &&
       !ReaderTtsFloatingSession.isOwner(this.ttsFloatingSessionOwnerId) &&
       !this.isReaderComicModeActive() && !this.shouldBlockReaderInteraction();
   }
 
-  closeTtsQuickPlayer(): void {
-    this.showGlobalTtsCatalog = false;
-    animateTo({ duration: 190, curve: Curve.EaseIn }, () => {
-      this.showTtsQuickPlayer = false;
-    });
-  }
-
-  openGlobalTtsQuickPlayer(): void {
-    animateTo({ duration: 280, curve: Curve.Friction }, () => {
-      this.showGlobalTtsQuickPlayer = true;
-    });
-  }
-
-  closeGlobalTtsQuickPlayer(): void {
-    this.showGlobalTtsCatalog = false;
-    animateTo({ duration: 190, curve: Curve.EaseIn }, () => {
-      this.showGlobalTtsQuickPlayer = false;
-    });
-  }
-
   openGlobalTtsCatalog(): void {
     this.ttsCatalogFromLocalChapters = ReaderTtsFloatingSession.catalogTitles().length === 0 &&
-      this.showTtsQuickPlayer && this.chapters.length > 0;
+      this.isTtsSpeaking && this.chapters.length > 0;
     const titles = this.ttsCatalogTitles();
     if (titles.length === 0) {
       HdsFeedback.showToast('暂未获取到听书目录');
@@ -5654,207 +5615,44 @@ struct ReadBookPage {
     }, 0);
   }
 
-  ttsMiniPlayerLeft(): number {
-    return this.clampTtsMiniPlayerPositionX(this.ttsMiniPlayerPositionX);
-  }
-
-  ttsMiniPlayerTop(): number {
-    const viewportHeight = this.pageViewHeight > 0 ? this.pageViewHeight : 720;
-    const capsuleHeight = 46;
-    const menuGap = 8;
-    // The capsule is only shown while the reader menu is open. Keep its default anchor above the
-    // whole bottom menu (including the optional chapter quick-jump track), instead of merely
-    // clearing the system navigation bar. A non-negative stored position is user-controlled and
-    // remains untouched.
-    const defaultTop = viewportHeight - this.readerBottomMenuOverlayHeight() - capsuleHeight - menuGap;
-    return this.clampTtsMiniPlayerPositionY(this.ttsMiniPlayerPositionY < 0 ?
-      defaultTop : this.ttsMiniPlayerPositionY);
-  }
-
-  clampTtsMiniPlayerPositionX(position: number): number {
-    const viewportWidth = this.pageViewWidth > 0 ? this.pageViewWidth : 360;
-    const capsuleWidth = 184;
-    const edgeInset = 8;
-    const minLeft = edgeInset;
-    const maxLeft = Math.max(minLeft, viewportWidth - capsuleWidth - edgeInset);
-    return Math.max(minLeft, Math.min(position, maxLeft));
-  }
-
-  clampTtsMiniPlayerPositionY(position: number): number {
-    const viewportHeight = this.pageViewHeight > 0 ? this.pageViewHeight : 720;
-    const minTop = this.getReaderTopSafePadding() + 8;
-    const maxTop = Math.max(minTop, viewportHeight - this.navBarHeight - 54);
-    return Math.max(minTop, Math.min(position, maxTop));
-  }
-
-  ttsMiniPlayerTransition(): TransitionEffect {
-    const appear = TransitionEffect.scale({ x: 0.84, y: 0.84, centerX: '50%', centerY: '50%' })
-      .combine(TransitionEffect.opacity(0))
-      .animation({ duration: 240, curve: Curve.Friction });
-    const disappear = TransitionEffect.scale({ x: 0.9, y: 0.9, centerX: '50%', centerY: '50%' })
-      .combine(TransitionEffect.opacity(0))
-      .animation({ duration: 170, curve: Curve.EaseIn });
-    return TransitionEffect.asymmetric(appear, disappear);
-  }
-
   @Builder
   ttsMiniPlayer() {
-    Row({ space: 7 }) {
-      Row({ space: 7 }) {
-        Stack({ alignContent: Alignment.Center }) {
-          Circle().width(30).height(30).fill(this.accentColor())
-          SymbolGlyph($r('sys.symbol.speaker_wave_3'))
-            .fontSize(15)
-            .fontColor(['#FFFFFF'])
-        }
-        Column({ space: 1 }) {
-          Text(this.isTtsPaused ? '已暂停' : '朗读中')
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.getTextColor())
-          Text(`${this.currentChapterIndex + 1}/${Math.max(1, this.chapters.length)}章`)
-            .fontSize(11)
-            .fontColor(this.getSubTextColor())
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
+    // 当前朗读页内的浮标：展示与书架一致的共享胶囊，但不显示“回到阅读页”书本按钮
+    //（人就在朗读页里，该按钮无意义）。播放/暂停、停止由共享组件统一路由到会话宿主。
+    TtsGlobalCapsule({
+      darkMode: this.isReaderThemeDark(),
+      accentColor: this.accentColor(),
+      showOpenReader: false,
+      viewportWidth: this.pageViewWidth > 0 ? this.pageViewWidth : 360,
+      viewportHeight: this.pageViewHeight > 0 ? this.pageViewHeight : 720,
+      topInset: this.getReaderTopSafePadding(),
+      bottomInset: this.navBarHeight,
+      onOpenCatalog: () => this.openGlobalTtsCatalog(),
+      onOpenReader: () => {
+        this.jumpToGlobalTtsPosition().catch((error: Error) => {
+          console.warn('跳转后台朗读位置失败:', error);
+        });
       }
-      .layoutWeight(1)
-      .onClick(() => this.openTtsQuickPlayer())
-      SymbolGlyph(this.isTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
-        .id(`tts_capsule_playback_${this.isTtsSpeaking}_${this.isTtsPaused}`)
-        .fontSize(17)
-        .fontColor([this.getTextColor()])
-        .width(28)
-        .height(34)
-        .onClick(() => this.toggleTtsReading())
-      SymbolGlyph($r('sys.symbol.xmark'))
-        .fontSize(14)
-        .fontColor([this.getSubTextColor()])
-        .width(24)
-        .height(34)
-        .onClick(() => this.stopTtsReading())
-    }
-    .width(184)
-    .height(46)
-    .padding({ left: 8, right: 5 })
-    .borderRadius(23)
-    .clip(true)
-    .backgroundColor(this.readerGlassPanelColor())
-    .backdropBlur(ThemeRuntime.glassBlur('button', 18))
-    .border({ width: ThemeRuntime.glassBorderWidth('button'), color: this.readerGlassBorderColor() })
-    .shadow({ radius: ThemeRuntime.glassShadowRadius('button'), color: this.readerGlassShadowColor(),
-      offsetX: ThemeRuntime.glassShadowOffsetX('button'), offsetY: ThemeRuntime.glassShadowOffsetY('button') })
-    .position({ x: 0, y: 0 })
-    .translate({
-      x: this.ttsMiniPlayerLeft(),
-      y: this.ttsMiniPlayerTop()
     })
-    .parallelGesture(
-      PanGesture({ direction: PanDirection.All, distance: 4 })
-        .onActionStart(() => {
-          this.ttsMiniPlayerDragOriginX = this.ttsMiniPlayerLeft();
-          this.ttsMiniPlayerDragOriginY = this.ttsMiniPlayerTop();
-        })
-        .onActionUpdate((event: GestureEvent) => {
-          this.ttsMiniPlayerPositionX = this.clampTtsMiniPlayerPositionX(
-            this.ttsMiniPlayerDragOriginX + event.offsetX);
-          this.ttsMiniPlayerPositionY = this.clampTtsMiniPlayerPositionY(
-            this.ttsMiniPlayerDragOriginY + event.offsetY);
-        })
-    )
-    .transition(this.ttsMiniPlayerTransition())
   }
 
   @Builder
   globalTtsMiniPlayer() {
-    Row({ space: 7 }) {
-      Row({ space: 7 }) {
-        Stack({ alignContent: Alignment.Center }) {
-          Circle().width(30).height(30).fill(this.accentColor())
-          SymbolGlyph($r('sys.symbol.speaker_wave_3'))
-            .fontSize(15)
-            .fontColor(['#FFFFFF'])
-        }
-        Column({ space: 1 }) {
-          Text(this.globalTtsPaused ? '已暂停' : (this.globalTtsMode === 'audio' ? '听书中' : '朗读中'))
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.getTextColor())
-          Text(this.globalTtsChapterProgress || (this.globalTtsMode === 'audio' ? '后台听书' : '后台朗读'))
-            .fontSize(11)
-            .fontColor(this.getSubTextColor())
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-      }
-      .layoutWeight(1)
-      .onClick(() => this.openGlobalTtsQuickPlayer())
-      SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
-        .id(`global_tts_capsule_playback_${this.globalTtsPaused}`)
-        .fontSize(17)
-        .fontColor([this.getTextColor()])
-        .width(28)
-        .height(34)
-        .onClick(() => ReaderTtsFloatingSession.toggle())
-      SymbolGlyph($r('sys.symbol.xmark'))
-        .fontSize(14)
-        .fontColor([this.getSubTextColor()])
-        .width(24)
-        .height(34)
-        .onClick(() => {
-          this.closeGlobalTtsQuickPlayer();
-          ReaderTtsFloatingSession.stop();
-        })
-    }
-    .width(184)
-    .height(46)
-    .padding({ left: 8, right: 5 })
-    .borderRadius(23)
-    .clip(true)
-    .backgroundColor(this.readerGlassPanelColor())
-    .backdropBlur(ThemeRuntime.glassBlur('button', 18))
-    .border({ width: ThemeRuntime.glassBorderWidth('button'), color: this.readerGlassBorderColor() })
-    .shadow({ radius: ThemeRuntime.glassShadowRadius('button'), color: this.readerGlassShadowColor(),
-      offsetX: ThemeRuntime.glassShadowOffsetX('button'), offsetY: ThemeRuntime.glassShadowOffsetY('button') })
-    .position({ x: 0, y: 0 })
-    .translate({
-      x: this.ttsMiniPlayerLeft(),
-      y: this.ttsMiniPlayerTop()
-    })
-    .parallelGesture(
-      PanGesture({ direction: PanDirection.All, distance: 4 })
-        .onActionStart(() => {
-          this.ttsMiniPlayerDragOriginX = this.ttsMiniPlayerLeft();
-          this.ttsMiniPlayerDragOriginY = this.ttsMiniPlayerTop();
-        })
-        .onActionUpdate((event: GestureEvent) => {
-          this.ttsMiniPlayerPositionX = this.clampTtsMiniPlayerPositionX(
-            this.ttsMiniPlayerDragOriginX + event.offsetX);
-          this.ttsMiniPlayerPositionY = this.clampTtsMiniPlayerPositionY(
-            this.ttsMiniPlayerDragOriginY + event.offsetY);
-        })
-    )
-    .transition(this.ttsMiniPlayerTransition())
-  }
-
-  @Builder
-  sharedTtsPlayerPanel(localOwner: boolean) {
-    ReaderTtsPlayerPanel({
+    // 他书/后台会话浮标：与书架完全一致的共享胶囊，书本按钮跳回朗读位置。
+    TtsGlobalCapsule({
       darkMode: this.isReaderThemeDark(),
       accentColor: this.accentColor(),
-      primaryTextColor: this.getTextColor(),
-      subTextColor: this.getSubTextColor(),
-      panelColor: this.readerGlassPanelColor(),
-      topInset: this.statusBarSafeHeight,
-      bottomInset: this.navBarHeight,
+      showOpenReader: true,
+      viewportWidth: this.pageViewWidth > 0 ? this.pageViewWidth : 360,
       viewportHeight: this.pageViewHeight > 0 ? this.pageViewHeight : 720,
-      onClose: () => localOwner ? this.closeTtsQuickPlayer() : this.closeGlobalTtsQuickPlayer(),
+      topInset: this.getReaderTopSafePadding(),
+      bottomInset: this.navBarHeight,
       onOpenCatalog: () => this.openGlobalTtsCatalog(),
-      showOpenReader: !localOwner && !!this.globalTtsBookUrl && this.globalTtsBookUrl !== this.bookUrl,
-      onOpenReader: () => this.openGlobalTtsReaderPage()
+      onOpenReader: () => {
+        this.jumpToGlobalTtsPosition().catch((error: Error) => {
+          console.warn('跳转后台朗读位置失败:', error);
+        });
+      }
     })
   }
 
@@ -5867,6 +5665,35 @@ struct ReadBookPage {
     router.pushUrl({ url: 'pages/ReadBook', params: { bookUrl: bookUrl } }).catch((error: Error) => {
       console.warn('从听书面板返回朗读书籍阅读页失败:', error);
     });
+  }
+
+  // 全局浮标“定位”按钮：同书跳到后台朗读锚点页；他书朗读则打开对应阅读页。
+  async jumpToGlobalTtsPosition(): Promise<void> {
+    if (this.globalTtsBookUrl && this.bookUrl && this.globalTtsBookUrl !== this.bookUrl) {
+      this.openGlobalTtsReaderPage();
+      return;
+    }
+    const chapterIndex = this.activeMirroredTtsChapterIndex();
+    if (chapterIndex < 0) {
+      HdsFeedback.showToast('暂未获取到朗读位置');
+      return;
+    }
+    const anchor = Math.max(0, Math.round(this.globalTtsOffsetStart));
+    if (chapterIndex !== this.currentChapterIndex) {
+      const loaded = await this.loadContent(true, chapterIndex);
+      if (!loaded || this.currentChapterIndex !== chapterIndex) {
+        return;
+      }
+    }
+    const pageIndex = this.normalizeReaderSpreadPageIndex(this.findPageIndexByOffset(anchor));
+    if (pageIndex < 0 || pageIndex >= this.contentPages.length) {
+      return;
+    }
+    if (pageIndex !== this.currentPageIndex) {
+      this.finishPageTurnAnimation();
+      this.currentPageIndex = pageIndex;
+      this.syncCurrentPageText();
+    }
   }
 
   @Builder
@@ -10118,6 +9945,27 @@ struct ReadBookPage {
     } else {
       return;
     }
+    // 朗读进行中：阅读进度取正在朗读的句子锚点，而不是当前页状态。后台宿主（侧滑返回
+    // 书架后的旧阅读页实例）卸载后自动翻页动画停摆，currentPageIndex 停留在退出页；
+    // 用它保存会让“书架听书一段时间→关闭浮标→重进阅读页”回退到旧页（页数未更新）。
+    // 句级偏移与页恢复（findPageIndexByOffset）兼容，落点即最后朗读句所在页。
+    if (this.isTtsSpeaking && !this.isTtsPaused) {
+      const ttsChapterRaw = this.book.getVariable('ttsReadChapterIndex');
+      const ttsOffsetRaw = this.book.getVariable('ttsReadOffsetStart');
+      const ttsChapter = Number(ttsChapterRaw);
+      const ttsOffset = Number(ttsOffsetRaw);
+      if (ttsChapterRaw && ttsOffsetRaw && Number.isFinite(ttsChapter) &&
+        Math.round(ttsChapter) === chapterIndex && Number.isFinite(ttsOffset) && ttsOffset >= 0) {
+        const anchorOffset = Math.round(ttsOffset);
+        const anchorPageIndex = this.normalizeReaderSpreadPageIndex(this.findPageIndexByOffset(anchorOffset));
+        if (anchorPageIndex >= 0 && anchorPageIndex < this.contentPages.length) {
+          pageIndex = anchorPageIndex;
+          lastReadPageText = this.getShelfLastReadPageText(pageIndex);
+          lastReadPageImage = this.getShelfLastReadPageImage(pageIndex);
+        }
+        characterOffset = anchorOffset;
+      }
+    }
     if (!Book.hasStartedReading(this.book) && chapterIndex <= 0 && pageIndex <= 0) {
       if (engine.book?.bookUrl === this.book.bookUrl) {
         engine.curIdx = chapterIndex;
@@ -14344,7 +14192,6 @@ struct ReadBookPage {
   stopTtsReading(userCancelled: boolean = true): void {
     this.cancelManualPageTurnTtsResume();
     this.clearTtsContinuationWatchdog();
-    this.showTtsQuickPlayer = false;
     this.showGlobalTtsCatalog = false;
     this.flushTtsReadPosition();
     this.clearTtsSleepTimer();
@@ -14387,7 +14234,6 @@ struct ReadBookPage {
   stopTtsReaderForChapterSwitch(): void {
     this.cancelManualPageTurnTtsResume();
     this.clearTtsContinuationWatchdog();
-    this.showTtsQuickPlayer = false;
     this.showGlobalTtsCatalog = false;
     this.flushTtsReadPosition();
     this.ttsAutoContinue = false;
@@ -14762,7 +14608,6 @@ struct ReadBookPage {
   finishTtsReading(): void {
     this.cancelManualPageTurnTtsResume();
     this.clearTtsContinuationWatchdog();
-    this.showTtsQuickPlayer = false;
     this.showGlobalTtsCatalog = false;
     this.flushTtsReadPosition();
     this.clearTtsSleepTimer();
@@ -15141,6 +14986,12 @@ struct ReadBookPage {
   }
 
   clearTtsHighlight(): void {
+    // 停止/收尾路径都先清 isTtsSpeaking/ttsAutoContinue 再调用；朗读进行中走到这里
+    // 说明镜像拆除等旁路与起播竞态（接管 stopOther 窗口），是需要立即暴露的异常。
+    if (this.isTtsSpeaking && this.ttsAutoContinue) {
+      console.warn(`[TTS] highlight cleared while speaking: token=${this.ttsReadToken},` +
+        `startOffset=${this.ttsTextStartOffset},mirrored=${this.mirroredTtsFocusActive}`);
+    }
     if (!this.ttsDisplayText && this.ttsHighlightStart < 0 && this.ttsHighlightEnd < 0 &&
       this.ttsTextStartOffset === 0 && this.readerV2TtsSourceStart < 0) {
       return;
@@ -16481,7 +16332,14 @@ struct ReadBookPage {
     const absoluteStart = this.readerV2TtsSourceOffset(chunk.start);
     // Cloud/custom audio may finish a cancelled prefetch after the replacement session has
     // already advanced. Never allow an older focus cue to move the visible reader backwards.
-    if (this.ttsLastAppliedSourceOffset >= 0 && absoluteStart < this.ttsLastAppliedSourceOffset) return;
+    if (this.ttsLastAppliedSourceOffset >= 0 && absoluteStart < this.ttsLastAppliedSourceOffset) {
+      if (this.isTtsSpeaking && this.ttsAutoContinue) {
+        console.warn(`[TTS] chunk dropped below last applied offset: absolute=${absoluteStart},` +
+          `lastApplied=${this.ttsLastAppliedSourceOffset},speechTextNull=${!this.readerV2ActiveSpeechText},` +
+          `startOffset=${this.ttsTextStartOffset}`);
+      }
+      return;
+    }
     this.ttsLastAppliedSourceOffset = absoluteStart;
     const firstFocusInSession = !this.ttsLastFocusChunk;
     this.ttsLastFocusChunk = chunk;
@@ -16976,6 +16834,26 @@ struct ReadBookPage {
     if (this.ttsSessionTakeoverInProgress || this.ttsSessionTakeoverAttempted) return;
     if (this.mirroredTtsManualTurnPending || this.isPageTurning) return;
     if (this.globalTtsPaused || !this.isMirroringActiveTtsForCurrentBook()) return;
+    const liveChapterIndex = this.activeMirroredTtsChapterIndex();
+    const liveOffsetStart = Math.max(0, Math.round(this.globalTtsOffsetStart));
+    // 句边界接管：首次只武装并镜像跟随在播句；锚点推进到下一句时才真正接管，
+    // 避免当前句被旧宿主与本页先后各播一遍。
+    if (this.ttsTakeoverArmedOffsetStart < 0) {
+      this.ttsTakeoverArmedChapterIndex = liveChapterIndex;
+      this.ttsTakeoverArmedOffsetStart = liveOffsetStart;
+      this.syncMirroredTtsFocus().catch((error: Error) => {
+        console.warn('同步后台朗读镜像焦点失败:', error);
+      });
+      return;
+    }
+    if (liveChapterIndex === this.ttsTakeoverArmedChapterIndex &&
+      liveOffsetStart === this.ttsTakeoverArmedOffsetStart) {
+      // 仍在武装时的同一句：继续镜像等待句边界。
+      this.syncMirroredTtsFocus().catch((error: Error) => {
+        console.warn('同步后台朗读镜像焦点失败:', error);
+      });
+      return;
+    }
     if (!this.book || this.contentPages.length === 0) {
       // 分页未就绪：单飞有界轮询等待，超时回退镜像跟随。
       if (this.ttsSessionTakeoverStartedAt === 0) {
@@ -17012,12 +16890,19 @@ struct ReadBookPage {
         }
       }
       if (this.globalTtsPaused || !this.isMirroringActiveTtsForCurrentBook()) return;
-      // startTtsReadingFromCurrentPosition 内部会 stopOther 停掉后台宿主并重新挂载悬浮会话；
-      // preserveExistingFocus 保留镜像期间已渲染的高亮，起播后由引擎逐句刷新。
-      await this.startTtsReadingFromCurrentPosition(false, false, -1, anchorOffsetStart, true);
+      // 必须在起播前先摘除镜像标志：startTtsReadingFromCurrentPosition 内部 stopOther 会让旧宿主
+      // 触发 globalTtsActive=false → onGlobalTtsActiveChanged → clearMirroredTtsFocus →
+      // clearTtsHighlight，把 getTtsReadingText 刚写入的 ttsTextStartOffset/readerV2ActiveSpeechText
+      // 清零。清零后所有 chunk 经 readerV2TtsSourceOffset 映射到 ttsLastAppliedSourceOffset 之前，
+      // 在 applyTtsChunkFocus 入口被静默丢弃——表现为“有声无高亮、不翻页”，章末 resume=0 从头重播。
+      // 摘除标志后 clearMirroredTtsFocus 直接跳过，镜像期间渲染的高亮由 preserveExistingFocus 保留、
+      // 起播后由引擎逐句刷新。
       this.mirroredTtsFocusActive = false;
       this.mirroredTtsAppliedChapterIndex = -1;
       this.mirroredTtsAppliedOffsetStart = -1;
+      // startTtsReadingFromCurrentPosition 内部会 stopOther 停掉后台宿主并重新挂载悬浮会话；
+      // preserveExistingFocus 保留镜像期间已渲染的高亮，起播后由引擎逐句刷新。
+      await this.startTtsReadingFromCurrentPosition(false, false, -1, anchorOffsetStart, true);
     } finally {
       this.ttsSessionTakeoverInProgress = false;
       this.ttsSessionTakeoverStartedAt = 0;

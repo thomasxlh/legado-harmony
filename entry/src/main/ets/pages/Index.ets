@@ -43,7 +43,7 @@ import { ThemeIds } from '../theme/ThemeModels';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { CloudSyncService } from '../utils/CloudSyncService';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
-import { ReaderTtsPlayerPanel } from '../components/ReaderTtsPlayerPanel';
+import { TtsGlobalCapsule } from '../components/TtsGlobalCapsule';
 import { TtsCatalogSheet, CatalogTitleDataSource } from '../components/TtsCatalogSheet';
 import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { WebBookService } from '../core/book/WebBookService';
@@ -113,23 +113,15 @@ struct Index {
   @StorageLink('globalSearchPendingNonce') @Watch('onGlobalSearchRequested') globalSearchPendingNonce: number = 0;
   @StorageLink('bookSourceExploreRefreshNonce') @Watch('onBookSourceExploreRefreshRequested')
   bookSourceExploreRefreshNonce: number = 0;
-  @StorageLink('globalTtsActive') @Watch('onGlobalTtsActiveChanged') globalTtsActive: boolean = false;
-  @StorageLink('globalTtsPaused') globalTtsPaused: boolean = false;
+  @StorageLink('globalTtsActive') globalTtsActive: boolean = false;
   @StorageLink('globalTtsBookName') globalTtsBookName: string = '';
   @StorageLink('globalTtsCover') globalTtsCover: ResourceStr = '';
   @StorageLink('globalTtsChapterTitle') globalTtsChapterTitle: string = '';
-  @StorageLink('globalTtsMode') globalTtsMode: string = '';
-  @StorageLink('globalTtsChapterProgress') globalTtsChapterProgress: string = '';
-  @State showGlobalTtsPanel: boolean = false;
   @State showGlobalTtsCatalog: boolean = false;
   @StorageLink('globalTtsAudioCatalogReverseOrder') @Watch('onGlobalTtsCatalogOrderChanged')
   globalTtsCatalogReverseOrder: boolean = false;
   @State globalTtsViewportWidth: number = 360;
   @State globalTtsViewportHeight: number = 720;
-  @StorageLink('globalTtsCapsulePositionX') globalTtsCapsulePositionX: number = 16;
-  @StorageLink('globalTtsCapsulePositionY') globalTtsCapsulePositionY: number = -1;
-  private globalTtsDragOriginX: number = 0;
-  private globalTtsDragOriginY: number = 0;
   private globalTtsCatalogScroller: ListScroller = new ListScroller();
   private globalTtsCatalogSource: CatalogTitleDataSource = new CatalogTitleDataSource();
 
@@ -203,19 +195,9 @@ struct Index {
     this.syncHomeSystemBars();
   }
 
-  onGlobalTtsActiveChanged(): void {
-    if (!this.globalTtsActive) {
-      this.showGlobalTtsPanel = false;
-    }
-  }
-
   onBackPress(): boolean {
     if (this.showGlobalTtsCatalog) {
       this.closeGlobalTtsCatalog();
-      return true;
-    }
-    if (this.showGlobalTtsPanel) {
-      this.closeGlobalTtsPanel();
       return true;
     }
     if (this.currentIndex !== 0) {
@@ -229,19 +211,6 @@ struct Index {
       return true;
     }
     return false;
-  }
-
-  openGlobalTtsPanel(): void {
-    animateTo({ duration: 280, curve: Curve.Friction }, () => {
-      this.showGlobalTtsPanel = true;
-    });
-  }
-
-  closeGlobalTtsPanel(): void {
-    this.showGlobalTtsCatalog = false;
-    animateTo({ duration: 190, curve: Curve.EaseIn }, () => {
-      this.showGlobalTtsPanel = false;
-    });
   }
 
   openGlobalTtsReaderPage(): void {
@@ -356,28 +325,6 @@ struct Index {
     }, 0);
   }
 
-  globalTtsCapsuleTransition(): TransitionEffect {
-    const appear = TransitionEffect.scale({ x: 0.84, y: 0.84, centerX: '50%', centerY: '50%' })
-      .combine(TransitionEffect.opacity(0))
-      .animation({ duration: 240, curve: Curve.Friction });
-    const disappear = TransitionEffect.scale({ x: 0.9, y: 0.9, centerX: '50%', centerY: '50%' })
-      .combine(TransitionEffect.opacity(0))
-      .animation({ duration: 170, curve: Curve.EaseIn });
-    return TransitionEffect.asymmetric(appear, disappear);
-  }
-
-  globalTtsPanelTransition(): TransitionEffect {
-    const appear = TransitionEffect.translate({ y: 52 })
-      .combine(TransitionEffect.scale({ x: 0.985, y: 0.985, centerX: '50%', centerY: '100%' }))
-      .combine(TransitionEffect.opacity(0))
-      .animation({ duration: 300, curve: Curve.Friction });
-    const disappear = TransitionEffect.translate({ y: 28 })
-      .combine(TransitionEffect.scale({ x: 0.99, y: 0.99, centerX: '50%', centerY: '100%' }))
-      .combine(TransitionEffect.opacity(0))
-      .animation({ duration: 190, curve: Curve.EaseIn });
-    return TransitionEffect.asymmetric(appear, disappear);
-  }
-
   async openPendingShortcut(): Promise<void> {
     if (!RecentReadShortcut.isPending()) {
       return;
@@ -409,26 +356,10 @@ struct Index {
       } else {
         this.compatTabs()
       }
-      if (this.globalTtsActive && !this.showGlobalTtsPanel) {
+      if (this.globalTtsActive) {
         this.globalTtsMiniPlayer()
       }
-      if (this.globalTtsActive && this.showGlobalTtsPanel) {
-        ReaderTtsPlayerPanel({
-          darkMode: this.appDarkMode,
-          accentColor: this.tabBarActiveColor(),
-          primaryTextColor: ThemeRuntime.primaryTextColor(this.appDarkMode),
-          subTextColor: ThemeRuntime.subTextColor(this.appDarkMode),
-          panelColor: ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'),
-          topInset: this.statusBarHeight,
-          bottomInset: this.navBarHeight,
-          viewportHeight: this.globalTtsViewportHeight,
-          onClose: () => this.closeGlobalTtsPanel(),
-          onOpenCatalog: () => this.openGlobalTtsCatalog(),
-          showOpenReader: true,
-          onOpenReader: () => this.openGlobalTtsReaderPage()
-        })
-      }
-      if (this.globalTtsActive && this.showGlobalTtsPanel && this.showGlobalTtsCatalog) {
+      if (this.globalTtsActive && this.showGlobalTtsCatalog) {
         this.globalTtsCatalogOverlay()
       }
       // 复杂书源脚本宿主池：多个隐藏 Web 节点让完整 JS 书源的脚本阶段并行执行。
@@ -449,96 +380,19 @@ struct Index {
 
   @Builder
   globalTtsMiniPlayer() {
-    Row({ space: 7 }) {
-      Row({ space: 7 }) {
-        Stack({ alignContent: Alignment.Center }) {
-          Circle().width(30).height(30).fill(this.tabBarActiveColor())
-          SymbolGlyph($r('sys.symbol.speaker_wave_3'))
-            .fontSize(15)
-            .fontColor(['#FFFFFF'])
-        }
-        Column({ space: 1 }) {
-          Text(this.globalTtsPaused ? '已暂停' : (this.globalTtsMode === 'audio' ? '听书中' : '朗读中'))
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
-          Text(this.globalTtsChapterProgress || (this.globalTtsMode === 'audio' ? '后台听书' : '后台朗读'))
-            .fontSize(11)
-            .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-      }
-      .layoutWeight(1)
-      .onClick(() => this.openGlobalTtsPanel())
-      SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
-        .id(`global_tts_capsule_playback_${this.globalTtsPaused}`)
-        .fontSize(17)
-        .fontColor([ThemeRuntime.primaryTextColor(this.appDarkMode)])
-        .width(28)
-        .height(34)
-        .onClick(() => ReaderTtsFloatingSession.toggle())
-      SymbolGlyph($r('sys.symbol.xmark'))
-        .fontSize(14)
-        .fontColor([ThemeRuntime.subTextColor(this.appDarkMode)])
-        .width(24)
-        .height(34)
-        .onClick(() => {
-          this.closeGlobalTtsPanel();
-          ReaderTtsFloatingSession.stop();
-        })
-    }
-    .width(184)
-    .height(46)
-    .padding({ left: 8, right: 5 })
-    .borderRadius(23)
-    .clip(true)
-    .backgroundColor(ThemeRuntime.cardColor(this.appDarkMode))
-    .border({ width: 0.5, color: this.appDarkMode ? '#30FFFFFF' : '#18000000' })
-    .shadow({ radius: 18, color: this.appDarkMode ? '#50000000' : '#26000000', offsetY: 6 })
-    .position({ x: 0, y: 0 })
-    .translate({
-      x: this.globalTtsCapsuleLeft(),
-      y: this.globalTtsCapsuleTop()
+    // 书架浮标：与阅读页完全一致的共享胶囊。文本点击直接展开目录（不再弹起
+    // 听书面板），书本按钮跳回朗读页。
+    TtsGlobalCapsule({
+      darkMode: this.appDarkMode,
+      accentColor: this.tabBarActiveColor(),
+      showOpenReader: true,
+      viewportWidth: this.globalTtsViewportWidth,
+      viewportHeight: this.globalTtsViewportHeight,
+      topInset: this.statusBarHeight,
+      bottomInset: this.navBarHeight,
+      onOpenCatalog: () => this.openGlobalTtsCatalog(),
+      onOpenReader: () => this.openGlobalTtsReaderPage()
     })
-    .parallelGesture(
-      PanGesture({ direction: PanDirection.All, distance: 8 })
-        .onActionStart(() => {
-          this.globalTtsDragOriginX = this.globalTtsCapsuleLeft();
-          this.globalTtsDragOriginY = this.globalTtsCapsuleTop();
-        })
-        .onActionUpdate((event: GestureEvent) => {
-          this.globalTtsCapsulePositionX = this.clampGlobalTtsPositionX(
-            this.globalTtsDragOriginX + event.offsetX);
-          this.globalTtsCapsulePositionY = this.clampGlobalTtsPositionY(
-            this.globalTtsDragOriginY + event.offsetY);
-        })
-    )
-    .transition(this.globalTtsCapsuleTransition())
-  }
-
-  globalTtsCapsuleLeft(): number {
-    return this.clampGlobalTtsPositionX(this.globalTtsCapsulePositionX);
-  }
-
-  globalTtsCapsuleTop(): number {
-    const defaultTop = this.globalTtsViewportHeight - this.navBarHeight - 118;
-    return this.clampGlobalTtsPositionY(this.globalTtsCapsulePositionY < 0 ?
-      defaultTop : this.globalTtsCapsulePositionY);
-  }
-
-  clampGlobalTtsPositionX(position: number): number {
-    const minLeft = 8;
-      const maxLeft = Math.max(minLeft, this.globalTtsViewportWidth - 184 - 8);
-    return Math.max(minLeft, Math.min(position, maxLeft));
-  }
-
-  clampGlobalTtsPositionY(position: number): number {
-    const minTop = this.statusBarHeight + 8;
-    const maxTop = Math.max(minTop, this.globalTtsViewportHeight - this.navBarHeight - 110);
-    return Math.max(minTop, Math.min(position, maxTop));
   }
 
   @Builder
