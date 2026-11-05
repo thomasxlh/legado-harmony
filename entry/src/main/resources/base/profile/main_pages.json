@@ -30,6 +30,7 @@
     "pages/ReaderFontSettings",
     "pages/WebDav",
     "pages/ReaderReplaceRules",
+    "pages/RuleSubscription",
     "pages/CoverGalleryManager",
     "pages/AppHelp",
     "pages/About",

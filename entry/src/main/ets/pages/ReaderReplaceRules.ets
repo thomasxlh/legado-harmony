@@ -48,6 +48,9 @@ struct ReaderReplaceRulesPage {
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State rules: ReaderReplaceRule[] = [];
   @State query: string = '';
+  // 搜索框的即时输入值；query 由防抖定时器写入，避免每敲一个字就重算整表过滤。
+  @State searchInput: string = '';
+  @State activeRuleGroups: string[] = [];
   @State editing: boolean = false;
   @State draft: ReaderReplaceRule = ReaderReplaceRuleStore.newRule();
   @State timeoutDraft: string = '3000';
@@ -87,6 +90,10 @@ struct ReaderReplaceRulesPage {
   private ruleFirstVisibleIndex: number = 0;
   private ruleLastVisibleIndex: number = 0;
   private ruleSelectionSuppressClickUntil: number = 0;
+  private ruleSearchTimer: number = -1;
+  private ruleDraftTimer: number = -1;
+  @State draftPreviewLabel: string = '';
+  @State draftPreviewDetail: string = '';
 
   aboutToAppear(): void {
     this.loadPreviewContext();
@@ -102,6 +109,11 @@ struct ReaderReplaceRulesPage {
   onPageHide(): void {
     this.stopRuleSelectionAutoScroll();
     this.persistRuleFormDraftNow();
+    if (this.ruleSearchTimer >= 0) {
+      clearTimeout(this.ruleSearchTimer);
+      this.ruleSearchTimer = -1;
+      this.query = this.searchInput;
+    }
   }
 
   onBackPress(): boolean {
@@ -410,6 +422,10 @@ struct ReaderReplaceRulesPage {
         this.ruleAddActionItem($r('sys.symbol.download'), '从文件导入', () => {
           this.showAddRuleDialog = false;
           this.importRulesFromFile();
+        })
+        this.ruleAddActionItem($r('sys.symbol.arrow_clockwise'), '规则订阅', () => {
+          this.showAddRuleDialog = false;
+          router.pushUrl({ url: 'pages/RuleSubscription' });
         }, false)
       }
       .width(188)
@@ -548,12 +564,56 @@ struct ReaderReplaceRulesPage {
   }
 
   @Builder
+  ruleGroupBar() {
+    Scroll() {
+      Row({ space: 8 }) {
+        this.ruleGroupChip('全部', '')
+        ForEach(this.ruleGroups(), (group: string) => {
+          this.ruleGroupChip(group, group)
+        }, (group: string) => group)
+      }
+      .padding({ left: 16, right: 16, bottom: 8 })
+      .constraintSize({ minWidth: '100%' })
+      .justifyContent(FlexAlign.Start)
+    }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .width('100%')
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+  }
+
+  @Builder
+  ruleGroupChip(label: string, group: string) {
+    Text(label)
+      .fontSize(13)
+      .fontColor(this.ruleGroupChipSelected(group) ? '#FFFFFF' : this.primaryTextColor())
+      .maxLines(1)
+      .padding({ left: 13, right: 13, top: 7, bottom: 7 })
+      .borderRadius(16)
+      .backgroundColor(this.ruleGroupChipSelected(group) ? this.accentColor() : this.cardColor())
+      .border({ width: this.ruleGroupChipSelected(group) ? 0 : 1, color: ThemeRuntime.glassBorderColor(this.appDarkMode) })
+      .onClick(() => {
+        if (group) {
+          this.toggleRuleGroup(group);
+        } else {
+          this.clearRuleGroupFilter();
+        }
+      })
+  }
+
+  /** 「全部」在手头没有任何分组被选中时高亮；其余分组按是否选中高亮。 */
+  ruleGroupChipSelected(group: string): boolean {
+    if (!group) return this.activeRuleGroupList().length === 0;
+    return this.isRuleGroupSelected(group);
+  }
+
+  @Builder
   managerView() {
     Column() {
       if (this.previewMode) {
         this.currentChapterPreviewCard()
       }
-      TextInput({ placeholder: '搜索规则名称或匹配内容', text: this.query })
+      TextInput({ placeholder: '搜索规则名称、匹配内容或分组（group:分组）', text: this.searchInput })
         .height(44)
         .fontSize(14)
         .fontColor(this.primaryTextColor())
@@ -562,7 +622,11 @@ struct ReaderReplaceRulesPage {
         .borderRadius(22)
         .padding({ left: 16, right: 16 })
         .margin({ left: 16, right: 16, top: 12, bottom: 10 })
-        .onChange((value: string) => this.query = value)
+        .onChange((value: string) => this.scheduleRuleSearch(value))
+
+      if (this.ruleGroups().length > 1) {
+        this.ruleGroupBar()
+      }
 
       if (this.selectionMode) {
         this.ruleSelectionHeader()
@@ -573,10 +637,11 @@ struct ReaderReplaceRulesPage {
           SymbolGlyph($r('sys.symbol.arrow_left_arrow_right'))
             .fontSize(36)
             .fontColor([this.subTextColor()])
-          Text(this.query ? '没有匹配的规则' : '暂无替换净化规则')
+          Text(this.searchInput || this.activeRuleGroupList().length > 0 ? '没有匹配的规则' : '暂无替换净化规则')
             .fontSize(15)
             .fontColor(this.secondaryTextColor())
-          Text(this.query ? '尝试更换搜索词' : '点击右下角添加规则')
+          Text(this.searchInput ? '尝试更换搜索词' :
+            (this.activeRuleGroupList().length > 0 ? '点击上方分组可取消筛选' : '点击右下角添加规则'))
             .fontSize(13)
             .fontColor(this.subTextColor())
         }
@@ -685,9 +750,19 @@ struct ReaderReplaceRulesPage {
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-        Text(this.ruleScopeSummary(rule))
-          .fontSize(12)
-          .fontColor(this.subTextColor())
+        Row({ space: 8 }) {
+          Text(this.ruleGroupOf(rule))
+            .fontSize(10)
+            .fontColor(this.accentColor())
+            .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+            .borderRadius(8)
+            .border({ width: 1, color: this.accentColor() })
+          Text(this.ruleScopeSummary(rule))
+            .fontSize(12)
+            .fontColor(this.subTextColor())
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
 
         if (this.previewMode) {
           Text(this.ruleEffectLabel(rule))
@@ -1001,6 +1076,13 @@ struct ReaderReplaceRulesPage {
           this.draft.name = value;
           this.refreshDraft();
         })
+        this.inputField('分组', this.draft.group, '默认', (value: string) => {
+          this.draft.group = value;
+          this.refreshDraft();
+        })
+        if (this.ruleGroups().length > 0) {
+          this.editorGroupChips()
+        }
         this.textAreaField('匹配规则', this.draft.pattern, '输入文本或正则表达式', (value: string) => {
           this.draft.pattern = value;
           this.refreshDraft();
@@ -1009,6 +1091,28 @@ struct ReaderReplaceRulesPage {
           this.draft.replacement = value;
           this.refreshDraft();
         })
+
+        if (this.draftPreviewLabel) {
+          Column({ space: 3 }) {
+            Text(this.draftPreviewLabel)
+              .fontSize(12)
+              .fontColor(this.draftPreviewDetail ? this.successColor() : this.subTextColor())
+              .width('100%')
+            if (this.draftPreviewDetail) {
+              Text(this.draftPreviewDetail)
+                .fontSize(11)
+                .fontColor(this.subTextColor())
+                .maxLines(3)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('100%')
+            }
+          }
+          .width('100%')
+          .padding(10)
+          .borderRadius(10)
+          .backgroundColor(this.inputColor())
+          .alignItems(HorizontalAlign.Start)
+        }
 
         Row({ space: 8 }) {
           this.titleOptionChip()
@@ -1053,6 +1157,32 @@ struct ReaderReplaceRulesPage {
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .layoutWeight(1)
     .width('100%')
+  }
+
+  /** 编辑页的分组快捷选择：点一下把已有分组填进「分组」输入框，省得手打。 */
+  @Builder
+  editorGroupChips() {
+    Scroll() {
+      Row({ space: 8 }) {
+        ForEach(this.ruleGroups(), (group: string) => {
+          Text(group)
+            .fontSize(12)
+            .fontColor(this.ruleGroupOf(this.draft) === group ? '#FFFFFF' : this.primaryTextColor())
+            .maxLines(1)
+            .padding({ left: 11, right: 11, top: 6, bottom: 6 })
+            .borderRadius(14)
+            .backgroundColor(this.ruleGroupOf(this.draft) === group ? this.accentColor() : this.inputColor())
+            .onClick(() => {
+              this.draft.group = group;
+              this.refreshDraft();
+            })
+        }, (group: string) => group)
+      }
+      .padding({ left: 2, right: 2 })
+    }
+    .width('100%')
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
   }
 
   @Builder
@@ -1276,12 +1406,81 @@ struct ReaderReplaceRulesPage {
   }
 
   filteredRules(): ReaderReplaceRule[] {
+    let result = this.rules;
+    // 所选分组可能因为规则被删/改名而消失，这里只认当前仍存在的分组，避免筛出空列表。
+    const activeGroups = this.activeRuleGroupList();
+    if (activeGroups.length > 0) {
+      result = result.filter((rule: ReaderReplaceRule) => activeGroups.includes(this.ruleGroupOf(rule)));
+    }
     const keyword = (this.query || '').trim().toLowerCase();
     if (!keyword) {
-      return this.rules;
+      return result;
     }
-    return this.rules.filter((rule: ReaderReplaceRule) =>
-      `${rule.name}\n${rule.pattern}`.toLowerCase().includes(keyword));
+    if (keyword.startsWith('group:')) {
+      const groupKeyword = keyword.substring(6).trim();
+      return result.filter((rule: ReaderReplaceRule) =>
+        this.ruleGroupOf(rule).toLowerCase().includes(groupKeyword));
+    }
+    return result.filter((rule: ReaderReplaceRule) =>
+      `${rule.name}\n${rule.pattern}\n${this.ruleGroupOf(rule)}`.toLowerCase().includes(keyword));
+  }
+
+  ruleGroupOf(rule: ReaderReplaceRule): string {
+    const group = `${rule.group || ''}`.trim();
+    return group || '默认';
+  }
+
+  /** 所有规则出现过的分组，按首次出现顺序去重。 */
+  ruleGroups(): string[] {
+    const groups: string[] = [];
+    for (const rule of this.rules) {
+      const group = this.ruleGroupOf(rule);
+      if (!groups.includes(group)) groups.push(group);
+    }
+    return groups;
+  }
+
+  isRuleGroupSelected(group: string): boolean {
+    return this.activeRuleGroupList().includes(group);
+  }
+
+  /** 已选中且当前仍存在的分组；规则被删光的分组自动失效。 */
+  activeRuleGroupList(): string[] {
+    if (this.activeRuleGroups.length === 0) return [];
+    const knownGroups = this.ruleGroups();
+    return this.activeRuleGroups.filter((group: string) => knownGroups.includes(group));
+  }
+
+  toggleRuleGroup(group: string): void {
+    const active = this.activeRuleGroupList();
+    if (active.includes(group)) {
+      this.activeRuleGroups = active.filter((item: string) => item !== group);
+    } else {
+      this.activeRuleGroups = active.concat([group]);
+    }
+  }
+
+  clearRuleGroupFilter(): void {
+    this.activeRuleGroups = [];
+  }
+
+  /** 搜索框防抖：敲字期间只更新 searchInput，200ms 静默后才真正过滤。 */
+  scheduleRuleSearch(value: string): void {
+    this.searchInput = value;
+    if (this.ruleSearchTimer >= 0) clearTimeout(this.ruleSearchTimer);
+    this.ruleSearchTimer = setTimeout(() => {
+      this.ruleSearchTimer = -1;
+      this.query = this.searchInput;
+    }, 200);
+  }
+
+  clearRuleSearch(): void {
+    if (this.ruleSearchTimer >= 0) {
+      clearTimeout(this.ruleSearchTimer);
+      this.ruleSearchTimer = -1;
+    }
+    this.searchInput = '';
+    this.query = '';
   }
 
   // List.lanes 的列数；底部避让 spacer 按列数复制，保证多列时占满一整行。
@@ -1399,11 +1598,19 @@ struct ReaderReplaceRulesPage {
   openNewRule(): void {
     FormDraftStore.removePersistent(getContext(this), 'replace_rule:edit');
     this.draft = ReaderReplaceRuleStore.newRule();
+    // 当前正在按分组筛选时，新建规则默认落到该分组，避免保存后从列表里消失。
+    const activeGroups = this.activeRuleGroupList();
+    if (activeGroups.length === 1) {
+      this.draft.group = activeGroups[0];
+    }
     this.draftApplyToTitle = this.draft.applyToTitle;
     this.draftApplyToContent = this.draft.applyToContent;
     this.draftIsRegex = this.draft.isRegex;
     this.timeoutDraft = '3000';
     this.editing = true;
+    this.draftPreviewLabel = '';
+    this.draftPreviewDetail = '';
+    this.refreshDraftPreview();
     this.saveRuleFormDraft();
   }
 
@@ -1415,17 +1622,79 @@ struct ReaderReplaceRulesPage {
     this.draftIsRegex = this.draft.isRegex;
     this.timeoutDraft = `${this.draft.timeoutMs}`;
     this.editing = true;
+    this.draftPreviewLabel = '';
+    this.draftPreviewDetail = '';
+    this.refreshDraftPreview();
     this.saveRuleFormDraft();
   }
 
   closeEditor(): void {
     this.editing = false;
+    if (this.ruleDraftTimer >= 0) {
+      clearTimeout(this.ruleDraftTimer);
+      this.ruleDraftTimer = -1;
+    }
+    this.draftPreviewLabel = '';
+    this.draftPreviewDetail = '';
     FormDraftStore.removePersistent(getContext(this), 'replace_rule:edit');
   }
 
   refreshDraft(): void {
     this.draft = ReaderReplaceRuleStore.cloneRule(this.draft);
     this.saveRuleFormDraft();
+    this.scheduleDraftPreview();
+  }
+
+  /** 编辑页草稿预览防抖：敲字期间不算正则，250ms 静默后才跑一次匹配。 */
+  scheduleDraftPreview(): void {
+    if (this.ruleDraftTimer >= 0) clearTimeout(this.ruleDraftTimer);
+    this.ruleDraftTimer = setTimeout(() => {
+      this.ruleDraftTimer = -1;
+      this.refreshDraftPreview();
+    }, 250);
+  }
+
+  refreshDraftPreview(): void {
+    if (!this.editing) return;
+    if (!this.previewTitle && !this.previewContent) {
+      this.draftPreviewLabel = '打开一本书的章节后再回来可实时预览效果';
+      this.draftPreviewDetail = '';
+      return;
+    }
+    const rule = this.draft;
+    if (!(rule.pattern || '').trim()) {
+      this.draftPreviewLabel = '填入匹配规则后这里会实时预览效果';
+      this.draftPreviewDetail = '';
+      return;
+    }
+    const check = ReaderReplaceRuleStore.checkRule(
+      rule, this.previewBook, this.previewTitle, this.previewContent);
+    this.draftPreviewLabel = check.label;
+    if (check.state !== 'effective' && check.state !== 'matched') {
+      this.draftPreviewDetail = '';
+      return;
+    }
+    const title = ReaderReplaceRuleStore.applyTitle(this.previewTitle, [rule], this.previewBook);
+    const content = ReaderReplaceRuleStore.applyContent(this.previewContent, [rule], this.previewBook);
+    const before = `${this.previewTitle}\n${this.previewContent}`.trim();
+    const after = `${title}\n${content}`.trim();
+    if (before === after) {
+      this.draftPreviewDetail = '规则命中但内容没有变化';
+      return;
+    }
+    this.draftPreviewDetail = `替换后：${this.draftPreviewExcerpt(after, before)}`;
+  }
+
+  /** 从替换后文本里摘出与原文差异处的上下文片段，便于肉眼确认。 */
+  draftPreviewExcerpt(after: string, before: string): string {
+    let diffIndex = 0;
+    const limit = Math.min(after.length, before.length);
+    while (diffIndex < limit && after.charAt(diffIndex) === before.charAt(diffIndex)) {
+      diffIndex++;
+    }
+    const start = Math.max(0, diffIndex - 20);
+    const excerpt = after.substring(start, Math.min(after.length, diffIndex + 60)).replace(/\s+/g, ' ').trim();
+    return excerpt || '（内容被完全删除）';
   }
 
   restoreRuleFormDraft(rawValue: string = ''): void {

@@ -138,6 +138,7 @@ export class AppDataBackupService {
     'custom_theme_schemes',
     'glass_settings',
     'reader_replace_rules',
+    'rule_subscriptions',
     'reader_settings',
     'search_explore_settings',
     'startup_cover_texts',

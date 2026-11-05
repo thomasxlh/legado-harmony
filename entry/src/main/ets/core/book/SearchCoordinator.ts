@@ -93,6 +93,8 @@ export interface SearchOptions {
   targetSources?: BookSource[];
   onSourceComplete?: (source: BookSource, result: SearchSourceResult) => Promise<void>;
   validationOnly?: boolean;
+  /** 校验模式下单个书源的请求预算（毫秒）。由书源校验配置的"超时"决定，未传时沿用 15000。 */
+  validationTimeoutMs?: number;
   leanResult?: boolean;
   excludeSourceUrls?: string[];
   maxResultsPerSource?: number;
@@ -424,8 +426,7 @@ export class SearchCoordinator {
         }
       }
       const responseLimit = options.validationOnly === true ?
-        MAX_VALIDATION_RESPONSE_BYTES : MAX_SEARCH_RESPONSE_BYTES;
-      const resultLimit = options.validationOnly === true ? 1 : this.normalizedLimit(options.maxResultsPerSource,
+        MAX_VALIDATION_RESPONSE_BYTES : MAX_SEARCH_RESPONSE_BYTES;      const resultLimit = options.validationOnly === true ? 1 : this.normalizedLimit(options.maxResultsPerSource,
         MAX_RESULTS_PER_SOURCE, 1, MAX_RESULTS_PER_SOURCE);
       if (this.cancelled) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
@@ -565,7 +566,8 @@ export class SearchCoordinator {
         fieldRequest.contextValues['backend'] = sourceBackendHost;
       }
       for (const key in encodedVariables) fieldRequest.contextValues[key] = encodedVariables[key];
-      fieldRequest.timeoutMs = options.validationOnly === true ? 15000 : 30000;
+      fieldRequest.timeoutMs = options.validationOnly === true ?
+        Math.max(5000, options.validationTimeoutMs || 15000) : 30000;
       fieldRequest.debugContext = debugContext || null;
       const fieldBatch = await RuleExecutionService.get().executeBatch(fieldRequest);
       if (fieldBatch.cancelled || this.cancelled) {

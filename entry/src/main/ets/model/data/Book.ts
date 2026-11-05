@@ -327,6 +327,13 @@ export class BookSource {
   weight: number = 0;
   concurrentRate: string = '';
   enabledCookieJar: boolean = true;
+  /**
+   * 列表查询由 SQL 预计算的「有发现页」标记：1 有、0 无、-1 未计算。
+   * exploreUrl 单条可达 250KB，列表页不能把它整批读进 JS 堆；-1 时回落到读 exploreUrl 原文（详情/编辑/导入路径）。
+   */
+  hasExploreFlag: number = -1;
+  /** 列表查询由 SQL 预计算的「需要登录」标记：1 需要、0 不需要、-1 未计算（回落规则文本判断）。 */
+  needsLoginFlag: number = -1;
 
   getSearchRule(): SearchRule {
     return this.searchRule;
