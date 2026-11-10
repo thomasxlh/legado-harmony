@@ -6,7 +6,7 @@
 ## 现状（为什么需要这张表）
 
 - `entry/src/main/ets/pages/ReadBook.ets`：**23246 行 / 约 1.0 MB**；单文件内仅 1 个 `@Entry @Component struct ReadBookPage` + 1 个 `ReadBookTtsBackgroundHost` 适配器类。
-- `@State` 约 157 个、`@Builder` 127 个、成员方法 1279 个；整个 `ets/` 目录 **0 个** `@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。
+- `@State` 约 157 个、`@Builder` 约 127 个、成员方法约 1168 个（P0 抽走 131 个叶子纯函数后）；整个 `ets/` 目录 **0 个** `@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。
 - 文件内唯一分区手段是本工具写入的 `//region` / `//endregion`（VS Code 与 IntelliJ/DevEco Studio 都能折叠）；每个区块头还带一行 `// [map] 契约:` 说明本区允许读写哪些状态。
 - 已存在的可复用范式：`reader/ReaderPureUtils.ets`（纯函数）、`reader/ReaderTtsBackgroundController.ets` + Host 接口、`components/TtsGlobalCapsule.ets`、`components/ReaderTtsPlayerPanel.ets`、`components/TtsCatalogSheet.ets`（已抽出的 @Component）。
 
@@ -116,6 +116,144 @@
 
 （共索引 78 个关键方法；未列出的多为 `@Builder` 或仅在表达式中出现。）
 
+## 已抽离的叶子纯函数（`reader/ReaderLeafFns.ets`）
+
+> 以下 131 个 `export function` 由脚本实时读取该模块生成，不读/不写任何 `@State`；改阅读页逻辑前先在此确认是否已有可用纯函数，避免重复实现。
+
+| # | 函数 | 所在行 |
+|---|------|-------:|
+| 1 | `countCachedChapters` | 27 |
+| 2 | `countCachedChaptersFrom` | 37 |
+| 3 | `syncRenderedChapterCacheDates` | 48 |
+| 4 | `supportsReaderImmersiveMaterial` | 61 |
+| 5 | `txtCharsetOptions` | 65 |
+| 6 | `currentReaderSource` | 82 |
+| 7 | `ttsOffsetSanitizedText` | 86 |
+| 8 | `isReaderImageOnlySource` | 101 |
+| 9 | `countReaderImageMarkers` | 107 |
+| 10 | `isReaderImageOnlyPage` | 121 |
+| 11 | `getReaderHeaderInfoBarHeight` | 125 |
+| 12 | `normalizeReaderBottomInfoBarHeight` | 136 |
+| 13 | `resolveCustomReaderFontFamily` | 147 |
+| 14 | `replaceReaderCustomFontPath` | 173 |
+| 15 | `fileNameFromPath` | 198 |
+| 16 | `formatBookmarkTime` | 202 |
+| 17 | `markTtsVoiceOptionInstalled` | 212 |
+| 18 | `isKnownTtsVoiceId` | 228 |
+| 19 | `ttsCustomVoiceKey` | 232 |
+| 20 | `ttsCustomVoiceTitle` | 236 |
+| 21 | `ttsVoiceKey` | 241 |
+| 22 | `ttsVoiceGenderText` | 245 |
+| 23 | `tocScrollbarPointerY` | 256 |
+| 24 | `getReaderExtendedBottomSafeInset` | 261 |
+| 25 | `getReaderBottomInfoBarContentGap` | 268 |
+| 26 | `readerFloatingBarEdgeInset` | 272 |
+| 27 | `readerTtsExpandedControlWidth` | 276 |
+| 28 | `normalizeTapZoneActions` | 280 |
+| 29 | `tapActionLabel` | 291 |
+| 30 | `tapZoneCellColor` | 305 |
+| 31 | `readerSettingsScrollBarRightInset` | 318 |
+| 32 | `readerTextAlignValues` | 323 |
+| 33 | `readerTypographyMin` | 327 |
+| 34 | `readerTypographyMax` | 332 |
+| 35 | `pageTurnModeTypes` | 341 |
+| 36 | `screenTimeoutValues` | 345 |
+| 37 | `screenOrientationValues` | 355 |
+| 38 | `readerEyeCalibrationPreviewTopVp` | 363 |
+| 39 | `readerEyeDwellValues` | 367 |
+| 40 | `ttsSpeechTextEnd` | 371 |
+| 41 | `indentReaderLine` | 375 |
+| 42 | `isReaderTrimChar` | 390 |
+| 43 | `isReaderPageStartTrimChar` | 396 |
+| 44 | `adjustReaderActionMarkerPageEnd` | 401 |
+| 45 | `findReaderActionEndingAt` | 429 |
+| 46 | `getReaderPaginationHeightTolerancePx` | 446 |
+| 47 | `toMeasurePx` | 450 |
+| 48 | `toMeasureNonNegativePx` | 458 |
+| 49 | `toMeasureFontOffsetPx` | 467 |
+| 50 | `chooseReaderPageBreak` | 476 |
+| 51 | `readerHeaderContentValues` | 493 |
+| 52 | `readerFooterLeftValues` | 497 |
+| 53 | `readerFooterProgressValues` | 501 |
+| 54 | `delay` | 505 |
+| 55 | `readerInlineSourceActionFontFamily` | 511 |
+| 56 | `readerCommentPanelDragHandleHeight` | 517 |
+| 57 | `readerSelectableTextKey` | 521 |
+| 58 | `getRegexFrameHorizontalPaddingForStyle` | 526 |
+| 59 | `getRegexFrameVerticalPaddingForStyle` | 537 |
+| 60 | `themeRegexEmphasisMode` | 546 |
+| 61 | `themeRegexBubbleStyleId` | 550 |
+| 62 | `hasOverlappedRegexSlice` | 554 |
+| 63 | `buildTextSliceKey` | 563 |
+| 64 | `syncReaderV2PaginationResult` | 570 |
+| 65 | `normalizePreloadChapterCount` | 601 |
+| 66 | `sourceUsesWebFetchRuntime` | 605 |
+| 67 | `parseReaderChapterRange` | 616 |
+| 68 | `sleep` | 643 |
+| 69 | `txtCharsetLabel` | 649 |
+| 70 | `cleanTtsPanelSlice` | 657 |
+| 71 | `getReaderPageHorizontalPadding` | 665 |
+| 72 | `getReaderPageVerticalPadding` | 669 |
+| 73 | `normalizeColor` | 673 |
+| 74 | `shouldPreferTtsVoiceOption` | 684 |
+| 75 | `ttsVoiceTitle` | 697 |
+| 76 | `normalizeTtsLanguage` | 707 |
+| 77 | `getReaderSafeAreaEdges` | 718 |
+| 78 | `readerPanelTransition` | 726 |
+| 79 | `readerSettingsContentTransition` | 738 |
+| 80 | `isReaderChapterLastPage` | 749 |
+| 81 | `readerSettingsContentRightPadding` | 755 |
+| 82 | `readerTypographyOptions` | 759 |
+| 83 | `readerTextAlignOptions` | 772 |
+| 84 | `pageTurnModeOptions` | 776 |
+| 85 | `pageTurnModeByIndex` | 784 |
+| 86 | `screenTimeoutOptions` | 789 |
+| 87 | `screenOrientationOptions` | 799 |
+| 88 | `readerSelectOptionValue` | 807 |
+| 89 | `readerPreloadChapterOptions` | 814 |
+| 90 | `readerEyeDwellOptions` | 822 |
+| 91 | `readerEyeDwellSelectedIndex` | 832 |
+| 92 | `readerEyeCalibrationMedian` | 846 |
+| 93 | `readerSoftLineJoiner` | 853 |
+| 94 | `shouldMergeReaderSoftLine` | 862 |
+| 95 | `isReaderEdgeTrimChar` | 886 |
+| 96 | `findMeasuredReaderInlineAction` | 890 |
+| 97 | `toMeasureFontPx` | 901 |
+| 98 | `readerHeaderContentOptions` | 909 |
+| 99 | `readerFooterLeftOptions` | 913 |
+| 100 | `readerFooterProgressOptions` | 917 |
+| 101 | `readerPageRenderIdentity` | 921 |
+| 102 | `readerSelectablePageTextKey` | 927 |
+| 103 | `readerParagraphCommentSettingState` | 932 |
+| 104 | `isReaderParagraphCommentAction` | 940 |
+| 105 | `isReaderCommentAction` | 945 |
+| 106 | `getReaderEpubImageUri` | 951 |
+| 107 | `cloneStyledSlice` | 962 |
+| 108 | `appendReaderV2PaginationBatch` | 975 |
+| 109 | `readerV2DisplayHighlightRects` | 985 |
+| 110 | `readerV2RegexBubbleShadow` | 1024 |
+| 111 | `readerV2FragmentLineMetrics` | 1034 |
+| 112 | `readerV2DisplayOffsetForPageSelection` | 1042 |
+| 113 | `readerV2FragmentIndexForSelectionOffset` | 1056 |
+| 114 | `regexDecorationStyle` | 1065 |
+| 115 | `readerSlideCompletionDuration` | 1073 |
+| 116 | `installedTtsVoiceKey` | 1091 |
+| 117 | `sameTtsLanguage` | 1096 |
+| 118 | `readerEyeCalibrationSpread` | 1100 |
+| 119 | `mergeSoftWrappedChapterLines` | 1107 |
+| 120 | `trimReaderContentText` | 1143 |
+| 121 | `readerParagraphCommentsEnabledForPagination` | 1156 |
+| 122 | `readerParagraphCommentPaginationIdentity` | 1162 |
+| 123 | `stripReaderParagraphCommentActions` | 1167 |
+| 124 | `isSameTtsVoiceOption` | 1192 |
+| 125 | `isSameTtsDisplayVoice` | 1203 |
+| 126 | `normalizeReaderText` | 1211 |
+| 127 | `normalizeChapterBody` | 1218 |
+| 128 | `stripDuplicatedChapterTitle` | 1225 |
+| 129 | `defaultTtsVoice` | 1237 |
+| 130 | `mergeWithDefaultTtsVoice` | 1248 |
+| 131 | `buildIndentedChapterBody` | 1262 |
+
 ## 共享状态警告（改代码前必读）
 
 1. **V1 状态不能跨文件**：`@State` 必须留在 `@Component` 内。把逻辑抽到普通类时，必须照抄 `ReaderTtsBackgroundController` 的 `Controller + Host 接口` 模式（Host 持有 struct 引用，逐方法委托），不能让新类直接持有 `@State`。
@@ -125,7 +263,7 @@
 
 ## 拆分蓝图（P0 → P3，每步小提交 + 真机回归，禁止大爆炸重写）
 
-- **P0（零风险，先做）**：顶层常量 + Host 适配器 → `ReaderConstants.ets` / `ReadBookTtsBackgroundHost.ets`；真纯函数（正文规范化里不依赖 `this` 的部分）并入 `reader/ReaderPureUtils.ets`。**已完成：顶层常量已抽到 `reader/ReaderConstants.ets`（P0 第一步）。**
+- **P0（零风险）**：顶层常量 → `reader/ReaderConstants.ets`（25 常量 + 1 缓存函数）；**131 个叶子纯函数**（含静态工厂 `defaultTtsVoice` 与正文规范化群）→ `reader/ReaderLeafFns.ets`，调用方用 `import * as LeafFns` 命名空间引用；自底向上 5 批抽取后重扫 `pure=8` 全为结构性排除，纯函数抽离已收敛到不动点。ReadBook.ets 从 24417 → 23246 行（-1171）。真 ArkTS 编译通过。
 - **P1**：127 个 `@Builder` 按面板提独立 `@Component`（`ttsMiniPlayer`、`ttsExpandedMediaControlsBar`、`ttsQuickSettingsPanel` 等）；分页测量引擎（`clearTtsHighlight` → `followTtsChunk` 区间）→ `ReaderPaginator` 类。
 - **P2**：TTS 朗读编排（`publishTtsFloatingSession` → `clearTtsHighlight` 区间）→ `TtsReadingCoordinator + Host`；逐句焦点/高亮/翻页（`followTtsChunk` → `styledReaderText` 区间）→ `TtsFocusController`。
 - **P3**：镜像会话 / V2 布局子系统 / 翻页动画各自独立。

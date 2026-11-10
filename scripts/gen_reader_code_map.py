@@ -221,8 +221,8 @@ w("## 现状（为什么需要这张表）")
 w("")
 w("- `entry/src/main/ets/pages/ReadBook.ets`：**%d 行 / 约 1.0 MB**；单文件内仅 "
   "1 个 `@Entry @Component struct ReadBookPage` + 1 个 `ReadBookTtsBackgroundHost` 适配器类。" % len(out))
-w("- `@State` 约 157 个、`@Builder` 127 个、成员方法 1279 个；整个 `ets/` 目录 **0 个** "
-  "`@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。")
+w("- `@State` 约 157 个、`@Builder` 约 127 个、成员方法约 1168 个（P0 抽走 131 个叶子纯函数后）；"
+  "整个 `ets/` 目录 **0 个** `@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。")
 w("- 文件内唯一分区手段是本工具写入的 `//region` / `//endregion`（VS Code 与 IntelliJ/DevEco Studio "
   "都能折叠）；每个区块头还带一行 `// [map] 契约:` 说明本区允许读写哪些状态。")
 w("- 已存在的可复用范式：`reader/ReaderPureUtils.ets`（纯函数）、"
@@ -265,6 +265,21 @@ for a in ANCHORS:
 w("")
 w("（共索引 %d 个关键方法；未列出的多为 `@Builder` 或仅在表达式中出现。）" % found)
 w("")
+w("## 已抽离的叶子纯函数（`reader/ReaderLeafFns.ets`）")
+w("")
+w("> 以下 %d 个 `export function` 由脚本实时读取该模块生成，不读/不写任何 `@State`；"
+  "改阅读页逻辑前先在此确认是否已有可用纯函数，避免重复实现。" % len(MOVED_EXPORTS))
+w("")
+w("| # | 函数 | 所在行 |")
+w("|---|------|-------:|")
+moved_defs = []
+for _i, _ln in enumerate(_moved_src.split("\n")):
+    _m = re.match(r"^export function ([\w$]+)\s*\(", _ln)
+    if _m:
+        moved_defs.append((_i + 1, _m.group(1)))
+for _n, (_ln, _name) in enumerate(moved_defs, 1):
+    w("| %d | `%s` | %d |" % (_n, _name, _ln))
+w("")
 w("## 共享状态警告（改代码前必读）")
 w("")
 w("1. **V1 状态不能跨文件**：`@State` 必须留在 `@Component` 内。把逻辑抽到普通类时，"
@@ -280,9 +295,10 @@ w("4. **长跑 TTS 跨章保活**：`finish()` 走 `keepAudioOutputOnFinish` 分
 w("")
 w("## 拆分蓝图（P0 → P3，每步小提交 + 真机回归，禁止大爆炸重写）")
 w("")
-w("- **P0（零风险，先做）**：顶层常量 + Host 适配器 → `ReaderConstants.ets` / `ReadBookTtsBackgroundHost.ets`；"
-  "真纯函数（正文规范化里不依赖 `this` 的部分）并入 `reader/ReaderPureUtils.ets`。"
-  "**已完成：顶层常量已抽到 `reader/ReaderConstants.ets`（P0 第一步）。**")
+w("- **P0（零风险）**：顶层常量 → `reader/ReaderConstants.ets`（25 常量 + 1 缓存函数）；"
+  "**131 个叶子纯函数**（含静态工厂 `defaultTtsVoice` 与正文规范化群）→ `reader/ReaderLeafFns.ets`，"
+  "调用方用 `import * as LeafFns` 命名空间引用；自底向上 5 批抽取后重扫 `pure=8` 全为结构性排除，"
+  "纯函数抽离已收敛到不动点。ReadBook.ets 从 24417 → %d 行（-%d）。真 ArkTS 编译通过。" % (len(out), 24417 - len(out)))
 w("- **P1**：127 个 `@Builder` 按面板提独立 `@Component`（`ttsMiniPlayer`、`ttsExpandedMediaControlsBar`、"
   "`ttsQuickSettingsPanel` 等）；分页测量引擎（`clearTtsHighlight` → `followTtsChunk` 区间）→ `ReaderPaginator` 类。")
 w("- **P2**：TTS 朗读编排（`publishTtsFloatingSession` → `clearTtsHighlight` 区间）→ `TtsReadingCoordinator + Host`；"
