@@ -1188,3 +1188,48 @@ export function stripReaderParagraphCommentActions(value: string): string {
   }
   return cursor > 0 ? `${result}${source.substring(cursor)}` : source;
 }
+
+export function isSameTtsVoiceOption(left: TtsVoiceOption, right: TtsVoiceOption): boolean {
+  if (left.id !== right.id || left.online !== right.online ||
+    !sameTtsLanguage(left.language || 'zh-CN', right.language || 'zh-CN')) {
+    return false;
+  }
+  if (isKnownTtsVoiceId(left.id)) {
+    return true;
+  }
+  return (left.style || '') === (right.style || '');
+}
+
+export function isSameTtsDisplayVoice(left: TtsVoiceOption, right: TtsVoiceOption): boolean {
+  if (ttsVoiceTitle(left) === ttsVoiceTitle(right)) {
+    return true;
+  }
+  return (left.name || '') === (right.name || '') && left.online === right.online &&
+    sameTtsLanguage(left.language || 'zh-CN', right.language || 'zh-CN');
+}
+
+export function normalizeReaderText(text: string): string {
+  return trimReaderContentText((text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\n{3,}/g, '\n\n'));
+}
+
+export function normalizeChapterBody(text: string): string {
+  return mergeSoftWrappedChapterLines(trimReaderContentText((text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')));
+}
+
+export function stripDuplicatedChapterTitle(body: string, title: string): string {
+  if (!body || !title) {
+    return body;
+  }
+  const lines = body.split('\n');
+  const firstLine = (lines[0] || '').replace(/^[　\s]+/g, '').trim();
+  if (firstLine !== title) {
+    return body;
+  }
+  return trimReaderContentText(lines.slice(1).join('\n').replace(/^\n+/, ''));
+}

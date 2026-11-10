@@ -246,11 +246,22 @@ w("")
 w("| 方法 | 行 |")
 w("|------|----|")
 found = 0
+# Methods extracted to reader/ReaderLeafFns.ets are still worth indexing, but
+# point the reader at their new home instead of silently dropping the row.
+MOVED_MODULE = "entry/src/main/ets/reader/ReaderLeafFns.ets"
+try:
+    _moved_src = open(MOVED_MODULE, encoding="utf-8").read()
+    MOVED_EXPORTS = set(re.findall(r"^export function ([\w$]+)\s*\(", _moved_src, re.M))
+except OSError:
+    MOVED_EXPORTS = set()
 for a in ANCHORS:
     dl = def_lines(a)
     if dl:
         found += 1
         w("| `%s` | %s |" % (a, " / ".join(str(x) for x in dl)))
+    elif a in MOVED_EXPORTS:
+        found += 1
+        w("| `%s` | → `reader/ReaderLeafFns.ets`（已抽离为纯函数） |" % a)
 w("")
 w("（共索引 %d 个关键方法；未列出的多为 `@Builder` 或仅在表达式中出现。）" % found)
 w("")

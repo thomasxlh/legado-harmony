@@ -7745,7 +7745,7 @@ struct ReadBookPage {
     const options: TtsVoiceOption[] = [ReadBookPage.defaultTtsVoice()];
     for (const voice of voices) {
       const existingIndex = options.findIndex((item: TtsVoiceOption) =>
-        this.isSameTtsVoiceOption(item, voice) || this.isSameTtsDisplayVoice(item, voice));
+        LeafFns.isSameTtsVoiceOption(item, voice) || LeafFns.isSameTtsDisplayVoice(item, voice));
       if (existingIndex < 0) {
         options.push(voice);
       } else if (LeafFns.shouldPreferTtsVoiceOption(voice, options[existingIndex])) {
@@ -7772,25 +7772,6 @@ struct ReadBookPage {
   isLocallyInstalledTtsVoice(voice: TtsVoiceOption): boolean {
     const key = LeafFns.installedTtsVoiceKey(voice);
     return !!key && this.ttsInstalledVoiceKeys.split('\n').includes(key);
-  }
-
-  isSameTtsVoiceOption(left: TtsVoiceOption, right: TtsVoiceOption): boolean {
-    if (left.id !== right.id || left.online !== right.online ||
-      !LeafFns.sameTtsLanguage(left.language || 'zh-CN', right.language || 'zh-CN')) {
-      return false;
-    }
-    if (LeafFns.isKnownTtsVoiceId(left.id)) {
-      return true;
-    }
-    return (left.style || '') === (right.style || '');
-  }
-
-  isSameTtsDisplayVoice(left: TtsVoiceOption, right: TtsVoiceOption): boolean {
-    if (LeafFns.ttsVoiceTitle(left) === LeafFns.ttsVoiceTitle(right)) {
-      return true;
-    }
-    return (left.name || '') === (right.name || '') && left.online === right.online &&
-      LeafFns.sameTtsLanguage(left.language || 'zh-CN', right.language || 'zh-CN');
   }
 
 
@@ -8012,7 +7993,7 @@ struct ReadBookPage {
       this.markTtsVoiceInstalled(voice);
       this.ttsVoices = this.applyInstalledTtsVoiceOverrides(this.ttsVoices);
       const downloaded = this.ttsVoices.find((item: TtsVoiceOption) =>
-        this.isSameTtsVoiceOption(item, voice) && item.available) || LeafFns.markTtsVoiceOptionInstalled(voice);
+        LeafFns.isSameTtsVoiceOption(item, voice) && item.available) || LeafFns.markTtsVoiceOptionInstalled(voice);
       this.applyTtsVoice(downloaded, true);
       HdsFeedback.showToast(`已启用 ${downloaded.name}`);
     } catch (error) {
@@ -14499,13 +14480,6 @@ struct ReadBookPage {
     return result;
   }
 
-  normalizeReaderText(text: string): string {
-    return LeafFns.trimReaderContentText((text || '')
-      .replace(/\r\n/g, '\n')
-      .replace(/\u00A0/g, ' ')
-      .replace(/\n{3,}/g, '\n\n'));
-  }
-
   getPagedSourceText(): string {
     return this.buildPagedSourceText(this.currentChapterIndex, this.content || '');
   }
@@ -14523,7 +14497,7 @@ struct ReadBookPage {
     const contentBody = titleAction && leadingAction ?
       effectiveContent.substring(leadingAction.end).replace(/^\s+/, '') :
       effectiveContent;
-    const sourceBody = this.stripDuplicatedChapterTitle(this.normalizeChapterBody(contentBody), title);
+    const sourceBody = LeafFns.stripDuplicatedChapterTitle(LeafFns.normalizeChapterBody(contentBody), title);
     const body = this.buildIndentedChapterBody(sourceBody);
     if (LocalBookService.hasEpubImageMarkers(body) &&
       !LocalBookService.stripEpubImageMarkers(body).trim()) {
@@ -14535,15 +14509,8 @@ struct ReadBookPage {
     return titleAction ? `${title}${titleAction}\n\n${body}` : `${title}\n\n${body}`;
   }
 
-  normalizeChapterBody(text: string): string {
-    return LeafFns.mergeSoftWrappedChapterLines(LeafFns.trimReaderContentText((text || '')
-      .replace(/\r\n/g, '\n')
-      .replace(/\u00A0/g, ' ')
-      .replace(/\n{3,}/g, '\n\n')));
-  }
-
   buildIndentedChapterBody(text: string): string {
-    const normalized = this.normalizeChapterBody(text);
+    const normalized = LeafFns.normalizeChapterBody(text);
     if (!normalized) {
       return '';
     }
@@ -14553,18 +14520,6 @@ struct ReadBookPage {
       .join('\n');
   }
 
-
-  stripDuplicatedChapterTitle(body: string, title: string): string {
-    if (!body || !title) {
-      return body;
-    }
-    const lines = body.split('\n');
-    const firstLine = (lines[0] || '').replace(/^[　\s]+/g, '').trim();
-    if (firstLine !== title) {
-      return body;
-    }
-    return LeafFns.trimReaderContentText(lines.slice(1).join('\n').replace(/^\n+/, ''));
-  }
 
 
   // "保留段首缩进"开启时分页/分块起点仍要跳过的字符：换行与零宽不可见字符。
