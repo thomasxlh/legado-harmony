@@ -23,6 +23,12 @@ export class TtsPcmAudioPlayer {
   private static readonly CLOCK_FALLBACK_DRAIN_GRACE_MS: number = 80;
   private static readonly TIMESTAMP_TAIL_DRAIN_GRACE_MS: number = 100;
   private static readonly RENDERER_DRAIN_MAX_WAIT_MS: number = 120;
+  // Long-running continuous reading never calls stop() between chapters, so a
+  // wedged chapter-end drain would otherwise stay silent forever. These bound
+  // the whole drain wait (A3 in docs/tts-long-running-bugs.md).
+  private static readonly DRAIN_WATCHDOG_TICK_MS: number = 500;
+  private static readonly DRAIN_WATCHDOG_GRACE_MS: number = 10000;
+  private static readonly DRAIN_WATCHDOG_INTERRUPT_MAX_MS: number = 300000;
   private readonly audioSessionOwner: string = `tts_pcm_${Date.now()}_${Math.random()}`;
   private renderer: audio.AudioRenderer | null = null;
   private currentSampleRate: audio.AudioSamplingRate = audio.AudioSamplingRate.SAMPLE_RATE_16000;
@@ -52,6 +58,13 @@ export class TtsPcmAudioPlayer {
   private interruptedChangeListener: (() => void) | null = null;
   private resumeWaiters: Array<() => void> = [];
   private playbackWaiters: Array<() => void> = [];
+  // A3 watchdog state: bounds the whole chapter-end drain wait.
+  private drainWatchdogTimerId: number = -1;
+  private drainWatchdogId: number = 0;
+  private drainWatchdogOwnerId: number = 0;
+  private drainWatchdogLastFrame: number = 0;
+  private drainWatchdogLastPendingBytes: number = 0;
+  private drainWatchdogNoProgressMs: number = 0;
 
   async play(data: ArrayBuffer, sampleRate: number): Promise<void> {
     await this.write(data, sampleRate);
@@ -151,6 +164,16 @@ export class TtsPcmAudioPlayer {
   }
 
   async drain(): Promise<void> {
+    const watchdogGeneration = this.playGeneration;
+    this.startDrainWatchdog(watchdogGeneration);
+    try {
+      await this.drainPlayback();
+    } finally {
+      this.stopDrainWatchdog();
+    }
+  }
+
+  private async drainPlayback(): Promise<void> {
     await this.writeChain;
     await this.waitUntilResumed();
     const renderer = this.renderer;
@@ -192,6 +215,71 @@ export class TtsPcmAudioPlayer {
       console.info(`[TTS] pcm content playback complete: contentEnd=${targetFrame},transportEnd=${this.queuedFrames}`);
       return;
     }
+  }
+
+  // A3: continuous reading keeps one renderer across chapters and never calls
+  // stop() at chapter boundaries. A wedged renderer (interrupt/underrun/route
+  // switch that never reports RUNNING again) can leave drain() pending forever,
+  // which freezes chapter handoff, the floating capsule and the highlight.
+  // This watchdog bounds the WHOLE drain wait by the remaining PCM duration
+  // plus a grace: healthy playback keeps advancing lastReachedFrame / draining
+  // pendingWriteBytes, so no-progress time stays at zero and normal speech is
+  // never cut short. On a true wedge it reuses stop() to tear everything down,
+  // which unblocks all four wait points and lets the next chapter start fresh.
+  private startDrainWatchdog(generation: number): void {
+    this.stopDrainWatchdog();
+    const ownerId = ++this.drainWatchdogId;
+    this.drainWatchdogOwnerId = ownerId;
+    this.drainWatchdogLastFrame = this.lastReachedFrame;
+    this.drainWatchdogLastPendingBytes = this.pendingWriteBytes;
+    this.drainWatchdogNoProgressMs = 0;
+    const sampleRate = Math.max(1, this.queuedSampleRate || Number(this.currentSampleRate) || 16000);
+    const tick = (): void => {
+      if (ownerId !== this.drainWatchdogOwnerId || generation !== this.playGeneration) {
+        return;
+      }
+      // An explicit user pause is a legitimate wait (resolved by resume/stop),
+      // not a wedge, so it must not accumulate toward the watchdog budget.
+      if (this.paused) {
+        this.drainWatchdogNoProgressMs = 0;
+        this.drainWatchdogTimerId = setTimeout(tick, TtsPcmAudioPlayer.DRAIN_WATCHDOG_TICK_MS);
+        return;
+      }
+      const reached = this.lastReachedFrame;
+      const pending = this.pendingWriteBytes;
+      if (reached > this.drainWatchdogLastFrame || pending < this.drainWatchdogLastPendingBytes) {
+        this.drainWatchdogLastFrame = reached;
+        this.drainWatchdogLastPendingBytes = pending;
+        this.drainWatchdogNoProgressMs = 0;
+      } else {
+        this.drainWatchdogNoProgressMs += TtsPcmAudioPlayer.DRAIN_WATCHDOG_TICK_MS;
+      }
+      const remainingFrames = Math.max(0, this.queuedContentEndFrame - reached);
+      const remainingMs = Math.ceil(remainingFrames * 1000 / sampleRate);
+      // A stale systemInterrupted flag (see A5: RESUME can be missed) deserves a
+      // longer grace, but even that must eventually be bounded so a long run
+      // cannot stay silent forever.
+      const budgetMs = this.systemInterrupted
+        ? TtsPcmAudioPlayer.DRAIN_WATCHDOG_INTERRUPT_MAX_MS
+        : remainingMs + TtsPcmAudioPlayer.DRAIN_WATCHDOG_GRACE_MS;
+      if (this.drainWatchdogNoProgressMs >= budgetMs) {
+        console.warn(`[TTS] pcm drain watchdog: no progress for ${this.drainWatchdogNoProgressMs}ms ` +
+          `(remaining=${remainingMs}ms,budget=${budgetMs}ms); resetting wedged renderer`);
+        this.stopDrainWatchdog();
+        this.stop();
+        return;
+      }
+      this.drainWatchdogTimerId = setTimeout(tick, TtsPcmAudioPlayer.DRAIN_WATCHDOG_TICK_MS);
+    };
+    this.drainWatchdogTimerId = setTimeout(tick, TtsPcmAudioPlayer.DRAIN_WATCHDOG_TICK_MS);
+  }
+
+  private stopDrainWatchdog(): void {
+    if (this.drainWatchdogTimerId >= 0) {
+      clearTimeout(this.drainWatchdogTimerId);
+      this.drainWatchdogTimerId = -1;
+    }
+    this.drainWatchdogOwnerId = 0;
   }
 
   private async settleRendererDrain(renderer: audio.AudioRenderer, generation: number): Promise<void> {
@@ -365,6 +453,7 @@ export class TtsPcmAudioPlayer {
   }
 
   stop(): void {
+    this.stopDrainWatchdog();
     this.playGeneration++;
     this.paused = false;
     this.systemInterrupted = false;
@@ -646,6 +735,19 @@ export class TtsPcmAudioPlayer {
     this.rendererLogicalFrameOrigin = 0;
     this.timestampFailureLogged = false;
     this.progressMode = 'CLOCK_FALLBACK';
+  }
+
+  // A2: continuous reading keeps one AudioRenderer across chapters and never
+  // calls stop() between them, so clearPlaybackTimeline() would never run and
+  // the cumulative absolute frame counters (queuedFrames/lastReachedFrame/
+  // playbackMarks/rendererFrameOrigin) would grow for the whole session. Clock
+  // fallback, background throttling and route switches then accumulate drift,
+  // so sentence highlights fire earlier/later than the audible speech. Rebase
+  // the timeline to zero at each drained chapter boundary WITHOUT tearing down
+  // the renderer or its audio-session owner. rendererFrameOrigin = -1 makes
+  // the next FRAME_TIMESTAMP update re-anchor to the current hardware frame.
+  resetPlaybackTimelineForChapterHandoff(): void {
+    this.clearPlaybackTimeline(this.renderer);
   }
 
   private clearPlaybackTimelineTimer(): void {

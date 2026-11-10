@@ -76,6 +76,8 @@ struct RuleSubscriptionPage {
   @State confirmMessage: string = '';
   @State pendingSources: BookSource[] = [];
   @State pendingSelectedUrls: string[] = [];
+  /** 单卡更新弹出的书源确认框对应的订阅；批量更新时为 null（状态已由各批次项落盘）。 */
+  private pendingConfirmSub: RuleSubscription | null = null;
   private editingDialogSession: SystemDialogSession = new SystemDialogSession();
   private confirmDialogSession: SystemDialogSession = new SystemDialogSession();
 
@@ -116,6 +118,22 @@ struct RuleSubscriptionPage {
 
   async saveSubscriptions(): Promise<void> {
     await RuleSubscriptionStore.save(getContext(this), this.subs);
+  }
+
+  /**
+   * ForEach 按 subscriptionKey 复用卡片组件，onClick 闭包里的 sub 可能是
+   * 列表 reload 前的旧引用；直接改它再 saveSubscriptions 只会持久化
+   * 新数组里未修改的克隆，状态写入凭空丢失。写状态前按 id 把同步结果
+   * 字段拷回当前列表元素（保留期间的用户编辑），订阅已被删除则跳过。
+   */
+  private mergeSyncStatusIntoList(sub: RuleSubscription): void {
+    const index = this.subs.findIndex((item: RuleSubscription) => item.id === sub.id);
+    if (index < 0) return;
+    const target = this.subs[index];
+    target.lastSyncTime = sub.lastSyncTime;
+    target.lastSyncCount = sub.lastSyncCount;
+    target.lastSyncError = sub.lastSyncError;
+    target.updateAt = sub.updateAt;
   }
 
   // ---------- 派生数据 ----------
@@ -196,10 +214,14 @@ struct RuleSubscriptionPage {
           }
           return;
         }
+        this.pendingConfirmSub = sub;
         this.openConfirmDialog(`更新「${sub.name}」`, result.message, result.pendingSources);
         return;
       }
       await this.applyResult(sub, result);
+    } catch (error) {
+      console.error('更新订阅失败:', error);
+      HdsFeedback.showToast('更新失败');
     } finally {
       this.syncingIds = this.syncingIds.filter((id: string) => id !== `${sub.id}`);
     }
@@ -231,9 +253,9 @@ struct RuleSubscriptionPage {
       }
       await Promise.all(tasks);
       await this.saveSubscriptions();
-      if (pendingSources.length > 0) {
-        this.openConfirmDialog('批量更新', `发现 ${pendingSources.length} 个书源有更新，是否导入？`, pendingSources);
-      } else if (pendingConvert.length > 0) {
+      // 转换确认（系统对话框，可 await）先走，结束后再弹书源确认框，两个确认串行不叠加。
+      // 此前 if/else-if 结构在书源有更新时会静默跳过替换规则的转换，订阅状态停留「尚未更新」。
+      if (pendingConvert.length > 0) {
         const confirmed = await this.confirmConvert(`检测到 ${pendingConvert.length} 个订阅使用安卓格式的净化规则`);
         if (confirmed) {
           for (const sub of pendingConvert) {
@@ -246,10 +268,16 @@ struct RuleSubscriptionPage {
             }
           }
         }
-      } else if (this.batchFailCount === 0) {
-        HdsFeedback.showToast(`已更新 ${this.batchDone} 个订阅`);
-      } else {
-        HdsFeedback.showToast(`更新完成：成功 ${this.batchDone - this.batchFailCount} 个，失败 ${this.batchFailCount} 个`);
+      }
+      if (pendingSources.length > 0) {
+        this.pendingConfirmSub = null;
+        this.openConfirmDialog('批量更新', `发现 ${pendingSources.length} 个书源有更新，是否导入？`, pendingSources);
+      } else if (pendingConvert.length === 0) {
+        if (this.batchFailCount === 0) {
+          HdsFeedback.showToast(`已更新 ${this.batchDone} 个订阅`);
+        } else {
+          HdsFeedback.showToast(`更新完成：成功 ${this.batchDone - this.batchFailCount} 个，失败 ${this.batchFailCount} 个`);
+        }
       }
     } finally {
       this.isBatchRunning = false;
@@ -274,6 +302,7 @@ struct RuleSubscriptionPage {
           sub.lastSyncCount = result.pendingSources.length;
           sub.lastSyncError = '';
           sub.updateAt = Date.now();
+          this.mergeSyncStatusIntoList(sub);
           this.batchDone++;
         }
         return;
@@ -283,6 +312,7 @@ struct RuleSubscriptionPage {
       this.batchFailCount++;
       sub.lastSyncTime = Date.now();
       sub.lastSyncError = this.errorText(e as Object);
+      this.mergeSyncStatusIntoList(sub);
     } finally {
       this.syncingIds = this.syncingIds.filter((id: string) => id !== `${sub.id}`);
       gate.release();
@@ -310,6 +340,7 @@ struct RuleSubscriptionPage {
     } else {
       sub.lastSyncError = result.message || '更新失败';
     }
+    this.mergeSyncStatusIntoList(sub);
     await this.saveSubscriptions();
     await this.reloadSubscriptions();
     if (result.status === RuleSubscriptionSyncStatus.Ok && result.message) {
@@ -342,6 +373,7 @@ struct RuleSubscriptionPage {
           } else {
             sub.lastSyncError = '';
           }
+          this.mergeSyncStatusIntoList(sub);
         } catch (_) {
         }
       }
@@ -517,6 +549,8 @@ struct RuleSubscriptionPage {
   }
 
   async applyPendingSources(): Promise<void> {
+    const pendingSub = this.pendingConfirmSub;
+    this.pendingConfirmSub = null;
     const selected = this.pendingSources.filter((source: BookSource) =>
       this.pendingSelectedUrls.includes(source.bookSourceUrl));
     this.showConfirmDialog = false;
@@ -536,6 +570,14 @@ struct RuleSubscriptionPage {
       if (applied.lockedCount > 0) parts.push(`${applied.lockedCount} 个已锁定未覆盖`);
       if (applied.failedCount > 0) parts.push(`${applied.failedCount} 个失败`);
       HdsFeedback.showToast(parts.join('，'));
+      if (pendingSub !== null) {
+        pendingSub.lastSyncTime = Date.now();
+        pendingSub.lastSyncCount = applied.importedSources.length;
+        pendingSub.lastSyncError = '';
+        pendingSub.updateAt = Date.now();
+        this.mergeSyncStatusIntoList(pendingSub);
+        await this.saveSubscriptions();
+      }
       await this.reloadSubscriptions();
     } catch (e) {
       console.error('导入订阅书源失败:', e);

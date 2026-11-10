@@ -223,13 +223,12 @@ export class RemoteAudioPlayback {
     if (generation !== this.generation || player !== this.player) return;
     const hint = event.hintType;
     if (hint === audio.InterruptHint.INTERRUPT_HINT_DUCK) {
-      if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE) {
-        try { player.setVolume(0.35); } catch (_) {}
-      }
+      // Keep the application stream gain invariant. FORCE ducking is applied and
+      // restored by the system mixer; a second app-side 0.35 gain can be left behind
+      // when UNDUCK is missed (long-running playback -> permanently quiet audio).
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_UNDUCK) {
-      try { player.setVolume(1); } catch (_) {}
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_PAUSE) {
@@ -241,10 +240,17 @@ export class RemoteAudioPlayback {
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_STOP) {
       this.interruptPaused = false;
+      // A shared PAUSE may already have paused the player; keep the public state
+      // consistent instead of leaving it stuck at 'playing' with frozen progress.
+      if (player.state === 'playing') {
+        player.pause().catch(() => {});
+        this.setState('paused');
+      } else if (player.state === 'paused' || player.state === 'prepared') {
+        this.setState('paused');
+      }
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
-      try { player.setVolume(1); } catch (_) {}
       if (this.interruptPaused && (player.state === 'paused' || player.state === 'prepared')) {
         this.interruptPaused = false;
         player.play().catch(() => {});

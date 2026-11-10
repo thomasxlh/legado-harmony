@@ -380,7 +380,12 @@ export class TtsAvAudioPlayer {
 
   private handleAudioInterrupt(player: media.AVPlayer, generation: number,
     event: audio.InterruptEvent): void {
-    if (generation !== this.playGeneration || player !== this.player) return;
+    // A focus RESUME can land while no chunk listener owns the current generation
+    // (gap between sentences) - never drop it, or the floating capsule would stay
+    // stuck on "interrupted" forever even though playback resumed normally.
+    const focusHint = event.hintType === audio.InterruptHint.INTERRUPT_HINT_STOP ||
+      event.hintType === audio.InterruptHint.INTERRUPT_HINT_RESUME;
+    if (player !== this.player || (!focusHint && generation !== this.playGeneration)) return;
     console.info(`[TTS] av audio interrupt: hint=${event.hintType},force=${event.forceType},` +
       `state=${player.state},generation=${generation}`);
     const hint = event.hintType;
@@ -406,10 +411,11 @@ export class TtsAvAudioPlayer {
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_STOP) {
       this.interruptPaused = false;
+      this.notifyInterruptedChange();
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
-      if (this.interruptPaused && !this.paused &&
+      if (generation === this.playGeneration && this.interruptPaused && !this.paused &&
         (player.state === 'paused' || player.state === 'prepared')) {
         this.interruptPaused = false;
         player.play().catch(() => {});

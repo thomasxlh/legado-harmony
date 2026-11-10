@@ -430,6 +430,10 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate('globalTtsOffsetEnd', -1);
     AppStorage.setOrCreate('globalTtsVoiceRevision', 0);
     AppStorage.setOrCreate('globalTtsAudioCatalogReverseOrder', false);
+    // A7: a new reading session must not inherit the previous session's dragged
+    // capsule coordinates (they live in AppStorage and otherwise persist forever).
+    AppStorage.setOrCreate('globalTtsCapsulePositionX', 16);
+    AppStorage.setOrCreate('globalTtsCapsulePositionY', -1);
     ReaderTtsFloatingSession.notifyChanged();
   }
 

@@ -130,7 +130,12 @@ export class SystemTtsReader {
   // so HarmonyOS sees this app's audioPlayback task as idle and freezes it.
   private ttsPcmPlayType: number = 0;
   private speakWatchdogId: number = -1;
-  private suppressEngineStopEvent: boolean = false;
+  // A4: scope engine-stop suppression to one read generation. A single global
+  // boolean plus untracked 500ms timers let a stale timer from a previous
+  // chapter swallow the current chapter's legitimate onStop (silent lockup) or
+  // clear suppression too early (spurious "unexpected onStop" recovery).
+  private suppressStopGeneration: number = -1;
+  private suppressStopTimerId: number = -1;
   private enginePerson: number = -1;
   private engineOnline: number = -1;
   private engineStyle: string = '';
@@ -395,6 +400,11 @@ export class SystemTtsReader {
       this.pcmPlayer.stop();
       reusingPcmOutput = false;
     } else if (reusingPcmOutput) {
+      // A2: the renderer is deliberately kept alive across chapters for a
+      // stable audio route, so stop()/clearPlaybackTimeline() never runs
+      // between chapters and the absolute frame counters would grow for the
+      // whole session. Rebase them to zero at this drained chapter boundary.
+      this.pcmPlayer.resetPlaybackTimelineForChapterHandoff();
       console.info(`[TTS] reusing pcm output across chapter handoff: ${this.pcmPlayer.debugState()}`);
     } else {
       this.outputRecycleRequested = false;
@@ -409,6 +419,9 @@ export class SystemTtsReader {
       this.releaseSystemAudioSession();
     }
     const generation = ++this.readGeneration;
+    // A4: a new read must never inherit a stale stop-suppression from the
+    // previous chapter's pause/recovery timer.
+    this.clearSuppressedEngineStop();
     this.paused = false;
     this.onFinished = options?.onFinished;
     this.onSpeechless = options?.onSpeechless;
@@ -540,7 +553,7 @@ export class SystemTtsReader {
         this.completeCurrentChunk(generation, utteranceId);
       },
       onStop: () => {
-        if (this.suppressEngineStopEvent) {
+        if (this.suppressStopGeneration === generation) {
           return;
         }
         if (this.readGeneration !== generation || !this.active) {
@@ -620,14 +633,10 @@ export class SystemTtsReader {
       this.currentFocusDuration = 0;
       this.currentFocusQueued = false;
       this.clearSpeakWatchdog();
+      this.suppressEngineStopForCurrentRead();
       try {
-        this.suppressEngineStopEvent = true;
         this.engine.stop();
       } catch (_) {
-      } finally {
-        setTimeout(() => {
-          this.suppressEngineStopEvent = false;
-        }, 500);
       }
     }
     return true;
@@ -670,6 +679,7 @@ export class SystemTtsReader {
   }
 
   stop(): void {
+    this.clearSuppressedEngineStop();
     this.cancelPendingPcmOutputRelease();
     this.readGeneration++;
     this.active = false;
@@ -1526,6 +1536,29 @@ export class SystemTtsReader {
     this.speakWatchdogId = -1;
   }
 
+  // A4: one tracked, generation-scoped suppression window replaces two
+  // untracked 500ms timers writing a shared boolean. Only the timer that owns
+  // the current suppression may clear it, and start()/stop() cancel it up front.
+  private suppressEngineStopForCurrentRead(): void {
+    this.clearSuppressedEngineStop();
+    const generation = this.readGeneration;
+    this.suppressStopGeneration = generation;
+    this.suppressStopTimerId = setTimeout(() => {
+      this.suppressStopTimerId = -1;
+      if (this.suppressStopGeneration === generation) {
+        this.suppressStopGeneration = -1;
+      }
+    }, 500);
+  }
+
+  private clearSuppressedEngineStop(): void {
+    if (this.suppressStopTimerId >= 0) {
+      clearTimeout(this.suppressStopTimerId);
+      this.suppressStopTimerId = -1;
+    }
+    this.suppressStopGeneration = -1;
+  }
+
   private async recoverStalledSpeak(generation: number, chunkIndex: number): Promise<void> {
     if (this.readGeneration !== generation || !this.active || this.currentFocusAudioWritten ||
       this.completionPending || this.currentFocusChunkIndex !== chunkIndex) {
@@ -1570,14 +1603,10 @@ export class SystemTtsReader {
       this.pcmOutputEpochStartedAt = 0;
       this.pcmPlayer.stop();
       if (this.engine) {
+        this.suppressEngineStopForCurrentRead();
         try {
-          this.suppressEngineStopEvent = true;
           this.engine.shutdown();
         } catch (_) {
-        } finally {
-          setTimeout(() => {
-            this.suppressEngineStopEvent = false;
-          }, 500);
         }
         this.engine = null;
       }

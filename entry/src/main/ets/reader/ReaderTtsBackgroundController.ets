@@ -420,6 +420,13 @@ export class ReaderTtsBackgroundController {
       if (state === avSession.PlaybackState.PLAYBACK_STATE_PLAY ||
         state === avSession.PlaybackState.PLAYBACK_STATE_BUFFERING) {
         await this.ttsAvSession.activate();
+        // A9: keepTtsBackgroundAlive() stops the 30s heartbeat during a pause/silent
+        // window and nothing re-armed it on resume (toggleTtsReading only updates the
+        // playback state). Re-arm idempotently so long-running background reading keeps
+        // refreshing the system media controls / lock-screen info.
+        if (this.ttsBackgroundDesired) {
+          this.startTtsBackgroundHeartbeat();
+        }
       }
     } catch (error) {
       console.warn(`[TTS-BG] update AVSession playback state failed: ${this.formatTtsBackgroundError(error as Object)}; ${this.ttsBackgroundDebugState()}`, error);

@@ -48,6 +48,15 @@ class HttpTtsCancelledError extends Error {
   }
 }
 
+// A1: a protection lease for a synthesized (but not yet played) cache file.
+// Prefetch/stop/generation-change can abandon an audio before playback, so a
+// plain counter would never be released. The retainedAt timestamp lets stale
+// leases expire, bounding both the map and the on-disk cache during a long run.
+interface CacheLease {
+  count: number;
+  retainedAt: number;
+}
+
 export class HttpTtsAudio {
   pcm: ArrayBuffer = new ArrayBuffer(0);
   sampleRate: number = 16000;
@@ -60,6 +69,13 @@ export class HttpTtsReader {
   private static readonly MAX_RETRY: number = 5;
   private static readonly CACHE_DIR_NAME: string = 'http_tts';
   private static readonly MAX_CACHE_FILES: number = 600;
+  // A1: an unplayed prefetch must not protect its cache file forever. A freshly
+  // written file is kept out of pruning by pruneCache(excludedPath) already;
+  // this TTL only reclaims leases that were abandoned before playback.
+  private static readonly CACHE_LEASE_TTL_MS: number = 10 * 60 * 1000;
+  private static readonly CACHE_LEASE_MAX_COUNT: number = 64;
+  // A8: throttle the per-sentence full-directory cache scan.
+  private static readonly CACHE_PRUNE_THROTTLE_MS: number = 60 * 1000;
   private static rateBuckets: Record<string, TtsRateBucket> = {};
   private static sharedRuntimes: Record<string, JsRuntime> = {};
 
@@ -68,7 +84,9 @@ export class HttpTtsReader {
   private generation: number = 0;
   private currentClients: http.HttpRequest[] = [];
   private loginPromptedAt: Record<string, number> = {};
-  private protectedCachePaths: Map<string, number> = new Map<string, number>();
+  private protectedCachePaths: Map<string, CacheLease> = new Map<string, CacheLease>();
+  private cacheLeaseSweepAt: number = 0;
+  private cachePruneAt: number = 0;
 
   async play(voice: HttpTTS, text: string, speed: number = 1): Promise<void> {
     const audio = await this.synthesize(voice, text, speed);
@@ -79,6 +97,7 @@ export class HttpTtsReader {
   async synthesize(voice: HttpTTS, text: string, speed: number = 1): Promise<HttpTtsAudio> {
     const generation = this.generation;
     const normalizedSpeed = this.normalizeSpeed(speed);
+    this.sweepCacheLeases();
     try {
       const audio = await this.synthesizeWithRetry(voice, text, normalizedSpeed, generation);
       this.assertGeneration(generation);
@@ -322,6 +341,13 @@ export class HttpTtsReader {
     headers['Connection'] = 'keep-alive';
     this.mergeHeaders(headers, this.parseHeaders(voice.header));
     this.mergeHeaders(headers, rawRule.headers);
+    // Some TTS providers (e.g. ai.baidu.com/aidemo) answer 403 unless the
+    // request carries a Referer. Default it to the endpoint's own origin so
+    // anti-hotlink checks pass; an explicit Referer from the source still wins.
+    if (!this.hasHeader(headers, 'Referer')) {
+      const referer = this.refererFromUrl(result.url);
+      if (referer) headers['Referer'] = referer;
+    }
     result.headers = headers;
     if (result.method === http.RequestMethod.POST || result.method === http.RequestMethod.PUT) {
       result.body = this.buildBody(rawRule.body, result.headers, result.charset);
@@ -797,16 +823,22 @@ export class HttpTtsReader {
   }
 
   private pruneCache(excludedPath: string = ''): void {
+    const now = Date.now();
+    if (now - this.cachePruneAt < HttpTtsReader.CACHE_PRUNE_THROTTLE_MS) return;
     const dir = this.cacheDir();
     if (!dir) return;
     try {
       const files = fs.listFileSync(dir).filter((name: string) => !!name);
       if (files.length <= HttpTtsReader.MAX_CACHE_FILES) return;
+      // A8: only pay for a full directory scan when the cache is actually over
+      // budget, then throttle it so a long continuous read does not rescan
+      // hundreds of files on every sentence (see docs/tts-long-running-bugs.md A8).
+      this.cachePruneAt = now;
       const removeCount = files.length - HttpTtsReader.MAX_CACHE_FILES;
       let removed = 0;
       for (let i = 0; i < files.length && removed < removeCount; i++) {
         const filePath = `${dir}/${files[i]}`;
-        if (filePath === excludedPath || (this.protectedCachePaths.get(filePath) || 0) > 0) continue;
+        if (filePath === excludedPath || (this.protectedCachePaths.get(filePath)?.count || 0) > 0) continue;
         try {
           fs.unlinkSync(filePath);
           removed++;
@@ -853,16 +885,55 @@ export class HttpTtsReader {
 
   private retainCacheFile(path: string): void {
     if (!path) return;
-    this.protectedCachePaths.set(path, (this.protectedCachePaths.get(path) || 0) + 1);
+    const now = Date.now();
+    const lease = this.protectedCachePaths.get(path);
+    // A stale lease from an abandoned (never played) prefetch is replaced, not
+    // incremented, so a long session cannot accumulate +1 per synthesis.
+    if (!lease || now - lease.retainedAt >= HttpTtsReader.CACHE_LEASE_TTL_MS) {
+      this.protectedCachePaths.set(path, { count: 1, retainedAt: now });
+    } else {
+      lease.count += 1;
+    }
+    // Hard cap: even if playback never releases, the map stays bounded. Evict
+    // other leases first; pruneCache will then be free to reclaim those files.
+    if (this.protectedCachePaths.size > HttpTtsReader.CACHE_LEASE_MAX_COUNT) {
+      const excess = this.protectedCachePaths.size - HttpTtsReader.CACHE_LEASE_MAX_COUNT;
+      const staleKeys: string[] = [];
+      this.protectedCachePaths.forEach((_lease: CacheLease, key: string): void => {
+        if (key !== path) staleKeys.push(key);
+      });
+      for (let i = 0; i < excess && i < staleKeys.length; i++) {
+        this.protectedCachePaths.delete(staleKeys[i]);
+      }
+    }
   }
 
   private releaseCacheFile(path: string): void {
     if (!path) return;
-    const count = this.protectedCachePaths.get(path) || 0;
-    if (count <= 1) {
+    const lease = this.protectedCachePaths.get(path);
+    if (!lease) return;
+    lease.count -= 1;
+    if (lease.count <= 0) {
       this.protectedCachePaths.delete(path);
-    } else {
-      this.protectedCachePaths.set(path, count - 1);
+    }
+  }
+
+  // A1: drop leases whose audio was abandoned before playback (prefetch cleared,
+  // generation change, stop). Without this the reference count only ever grew,
+  // pruneCache skipped those files forever and the cache/disk grew monotonically.
+  private sweepCacheLeases(): void {
+    const now = Date.now();
+    // Throttle: a synthesis is frequent; a full sweep once a second is plenty.
+    if (now - this.cacheLeaseSweepAt < 1000) return;
+    this.cacheLeaseSweepAt = now;
+    const expired: string[] = [];
+    this.protectedCachePaths.forEach((lease: CacheLease, path: string): void => {
+      if (now - lease.retainedAt >= HttpTtsReader.CACHE_LEASE_TTL_MS) {
+        expired.push(path);
+      }
+    });
+    for (let i = 0; i < expired.length; i++) {
+      this.protectedCachePaths.delete(expired[i]);
     }
   }
 
@@ -960,6 +1031,12 @@ export class HttpTtsReader {
 
   private hasHeader(headers: Record<string, string>, name: string): boolean {
     return !!this.findHeader(headers, name);
+  }
+
+  private refererFromUrl(url: string): string {
+    const match = (url || '').match(/^(https?:\/\/[^\/]+)/);
+    const origin = match ? match[1] : '';
+    return origin ? `${origin}/` : '';
   }
 
   private saveResponseCookies(url: string, headers: Record<string, string>): void {

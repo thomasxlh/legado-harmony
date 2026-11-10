@@ -1,3 +1,7 @@
+//region 头部: 导入 / 顶层常量 / 纯函数 / 后台TTS Host适配器
+// [map] 契约: 无 @State 依赖; 顶层常量已抽到 reader/ReaderConstants.ets; ReadBookTtsBackgroundHost 仅逐方法委托 page
+// [map] 文件地图与拆分蓝图: 见仓库根 CODE_MAP.md (改本文件前先读)
+// [map] 听书长时运行问题清单: docs/tts-long-running-bugs.md
 import { router, window, promptAction, MeasureOptions } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { common, ConfigurationConstant, WantAgent, wantAgent } from '@kit.AbilityKit';
@@ -115,72 +119,33 @@ import {
   parseAreaDimension,
   savedReaderProgressOffset
 } from '../reader/ReaderPureUtils';
-
-// Three-point fixation calibration: centre, then the bottom turn zone, then the top turn
-// zone. Sampling each zone with the gaze held still (instead of a moving dot the iris
-// estimator cannot follow) gives a far larger and steadier top/bottom separation.
-const READER_EYE_CALIBRATION_SETTLE_MS: number = 600;
-const READER_EYE_CALIBRATION_HOLD_MS: number = 1500;
-const READER_EYE_CALIBRATION_PHASE_MS: number =
-  READER_EYE_CALIBRATION_SETTLE_MS + READER_EYE_CALIBRATION_HOLD_MS;
-const READER_EYE_CALIBRATION_PHASE_COUNT: number = 3;
-const READER_EYE_CALIBRATION_TOTAL_MS: number =
-  READER_EYE_CALIBRATION_PHASE_MS * READER_EYE_CALIBRATION_PHASE_COUNT;
-const READER_EYE_CALIBRATION_TICK_MS: number = 60;
-const READER_EYE_CALIBRATION_MIN_PHASE_SAMPLES: number = 5;
-const READER_EYE_CALIBRATION_MIN_DELTA: number = 0.005;
-// AR Engine gaze values are already normalized, so a fixed centre/top/bottom mapping is all the zone mapper needs.
-const AR_EYE_CALIBRATION_RAW: string = '-1,0,1';
-// Used when no calibration has been stored: the iris channel with a plausible physical
-// span and a neutral centre. The runtime baseline then centres it per reader, so the
-// feature works without forcing a manual calibration first.
-const DEFAULT_EYE_CALIBRATION_RAW: string = 'v3,0,0,0,0.5,-0.04,0.04,0,1';
-// AR Engine face tracking never leaves PAUSED when its ARView is hosted through a
-// BuilderNode: faces are detected but getBlendShapes() always reports
-// "AnimojiBlendShape is nullptr". Until the view can live in a real window, the
-// runtime uses the camera pipeline and the AR code below stays dormant.
-const READER_EYE_TURN_AR_ENABLED: boolean = false;
-
-const TOC_WINDOW_PAGE_SIZE = 72;
-const TOC_SCROLLBAR_DRAG_UPDATE_INTERVAL_MS = 90;
-const FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS = 5000;
-const READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT = 4;
-const READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT = 2;
-const READER_PAGINATION_BATCH_DELAY_MS = 64;
-const READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS = 56;
-const READER_PAGINATION_BUSY_RETRY_DELAY_MS = 48;
-// 书源取文/目录链可能因书源脚本或 WebView 运行时挂起而永不返回；
-// 限时兜底把它转成可操作的失败态，避免阅读器永远停在“正在打开书籍…”遮罩上且无法交互。
-const READER_OPEN_FETCH_TIMEOUT_MS = 60000;
-const READER_CONTENT_FETCH_TIMEOUT_MS = 45000;
-// 章节衔接兜底：onFinished 之后朗读器已停、下一章迟迟没有接上（加载/续播链路卡死）时，
-// 超过该时长仍未恢复则自动结束朗读，避免悬浮面板停在“正在定位当前朗读内容”且无法操作。
-// 需大于章内续播最坏耗时（正文加载 45s 超时 + 回滚重载 45s + 引擎重建）。
-const TTS_CONTINUATION_WATCHDOG_MS = 150000;
-/** 加载超过该时长仍未完成时，在遮罩上浮出“不再等待”逃生口，慢书源可停止等待后换源/重试。 */
-const READER_LOADING_SLOW_HINT_MS = 5000;
-const READER_DOUBLE_PAGE_DIVIDER_WIDTH = 1;
-// 正文选中菜单里的自定义“替换”项 ID，用于与系统菜单项（复制/全选/翻译等）区分。
-const READER_REPLACE_MENU_ITEM_ID: string = 'reader_replace_rule';
-// Page-curl textures are transient animation rasters, not the settled正文 surface. Capturing a full 2080x3120
-// page and sampling it through every mesh triangle can block the ArkUI thread for several seconds on tablets.
-// A 0.42 raster remains sharp while moving on high-density screens and reduces texture fill by another 29%
-// compared with the previous half-resolution capture. This matters most on dialogue-heavy pages.
-const READER_PAGE_CURL_SNAPSHOT_SCALE = 0.42;
-const READER_PAGINATION_HEIGHT_SCALE_CACHE: Map<string, number> = new Map<string, number>();
-const READER_PAGINATION_HEIGHT_SCALE_CACHE_LIMIT: number = 64;
-
-function cacheReaderPaginationHeightScale(key: string, value: number): void {
-  if (!key) return;
-  if (READER_PAGINATION_HEIGHT_SCALE_CACHE.has(key)) READER_PAGINATION_HEIGHT_SCALE_CACHE.delete(key);
-  while (READER_PAGINATION_HEIGHT_SCALE_CACHE.size >= READER_PAGINATION_HEIGHT_SCALE_CACHE_LIMIT) {
-    const keys: string[] = Array.from(READER_PAGINATION_HEIGHT_SCALE_CACHE.keys());
-    const oldest: string = keys[0] || '';
-    if (!oldest) break;
-    READER_PAGINATION_HEIGHT_SCALE_CACHE.delete(oldest);
-  }
-  READER_PAGINATION_HEIGHT_SCALE_CACHE.set(key, value);
-}
+import {
+  READER_EYE_CALIBRATION_HOLD_MS,
+  READER_EYE_CALIBRATION_PHASE_COUNT,
+  READER_EYE_CALIBRATION_TICK_MS,
+  READER_EYE_CALIBRATION_MIN_PHASE_SAMPLES,
+  READER_EYE_CALIBRATION_MIN_DELTA,
+  AR_EYE_CALIBRATION_RAW,
+  DEFAULT_EYE_CALIBRATION_RAW,
+  READER_EYE_TURN_AR_ENABLED,
+  TOC_WINDOW_PAGE_SIZE,
+  TOC_SCROLLBAR_DRAG_UPDATE_INTERVAL_MS,
+  FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS,
+  READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT,
+  READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT,
+  READER_PAGINATION_BATCH_DELAY_MS,
+  READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS,
+  READER_PAGINATION_BUSY_RETRY_DELAY_MS,
+  READER_OPEN_FETCH_TIMEOUT_MS,
+  READER_CONTENT_FETCH_TIMEOUT_MS,
+  TTS_CONTINUATION_WATCHDOG_MS,
+  READER_LOADING_SLOW_HINT_MS,
+  READER_DOUBLE_PAGE_DIVIDER_WIDTH,
+  READER_REPLACE_MENU_ITEM_ID,
+  READER_PAGE_CURL_SNAPSHOT_SCALE,
+  READER_PAGINATION_HEIGHT_SCALE_CACHE,
+  cacheReaderPaginationHeightScale
+} from '../reader/ReaderConstants';
 
 /**
  * ReaderTtsBackgroundHost 适配器：ArkTS struct 不允许 implements 接口，
@@ -350,6 +315,9 @@ class ReadBookTtsBackgroundHost implements ReaderTtsBackgroundHost {
   }
 }
 
+//endregion
+//region struct 声明与状态字段 (@State / @StorageLink / 私有字段)
+// [map] 契约: 仅声明状态, 不含逻辑; ArkUI V1 下 @State 必须留在本 @Component 内, 逻辑外移须走 Controller+Host
 @Entry
 @Component
 struct ReadBookPage {
@@ -996,6 +964,9 @@ struct ReadBookPage {
   private readerEyeCalibrationStartupAt: number = 0;
   private readerEyeCalibrationLandscape: boolean = false;
   private readerEyePermissionRequestSerial: number = 0;
+//endregion
+//region 生命周期 / 全局监听 / @Watch 回调
+// [map] 契约: 读写 会话/进度/可见性/焦点 状态; 装配后台控制器、注册(并应注销)全局监听与 @Watch
 
   async aboutToAppear() {
     // 后台/媒体控制器必须先于一切回调注册装配完成（aboutToAppear 是 async，避免 await 后才初始化）。
@@ -1080,6 +1051,10 @@ struct ReadBookPage {
       // Give a real foreground resume a fresh host so ArkUI cannot replay that old subtree after the controller has
       // already been rebound to the current page. Ordinary page turns still reuse one native node.
       this.readerV2SurfaceGeneration++;
+      // 后台朗读期间页码/高亮已继续推进。先按最新朗读焦点同步一次（内部实时校验会话/内容代际，
+      // 不满足时保持原状），再重发页面表面——否则先按冻结的 currentPageIndex 强制重建一帧陈旧
+      // 页面，随后的 0ms 定时器又跳到真实页码，既闪一帧不一致内容，又让回前台首帧做两次全量重建。
+      this.syncTtsFocusAfterResume();
       this.republishCurrentReaderPageAfterBackground();
     }
     this.applyReaderScreenOrientation();
@@ -1327,6 +1302,9 @@ struct ReadBookPage {
     this.suspendReaderPaginationWork();
     this.releaseReaderScreenTimeout();
   }
+//endregion
+//region 书籍加载 / 全文缓存 / 后台长时任务 / 屏幕超时 / 加载遮罩
+// [map] 契约: 读写 book/chapters/content/缓存/遮罩 状态; 持有后台长时任务与多个成对 timer
 
   async openPendingShortcut(): Promise<void> {
     if (!RecentReadShortcut.isPending()) {
@@ -3042,6 +3020,9 @@ struct ReadBookPage {
       PageTransitionEnter({ type: RouteType.Push, duration: 0 })
     }
   }
+//endregion
+//region build / 主内容层 / 悬浮菜单 / 目录·书签·换源·缓存面板
+// [map] 契约: 读 主题/排版/章节; 纯渲染 + 面板显隐; 交互只转发到方法, 不写业务状态
 
   build() {
     Stack() {
@@ -5020,6 +5001,9 @@ struct ReadBookPage {
     .height(Math.min(560, Math.max(420, this.pageViewHeight - 72)))
     .padding({ left: 18, right: 18, top: 18, bottom: 18 })
   }
+//endregion
+//region 排版·字符集·替换规则设置 / TTS快捷入口·mini播放器·目录 / 书签 / 正文预处理
+// [map] 契约: 读写 设置/目录/书签/TTS浮标显示态; 含 ttsMiniPlayer 等大量 @Builder
 
 
   openLayoutElementSettings(): void {
@@ -6017,6 +6001,9 @@ struct ReadBookPage {
       });
     }
   }
+//endregion
+//region 页眉页脚 / 漫画·连续滚动 / 页面度量 / 主题·字体 / 书签 / TTS音色·语速 / 目录搜索
+// [map] 契约: 读 排版/主题/字体/章节; 写 字体注册、书签、音色语速、目录滚动条
 
   cleanChapterTitle(title: string): string {
     const original = (title || '').trim();
@@ -8994,6 +8981,9 @@ struct ReadBookPage {
     return Math.max(8, footerHeight + this.getReaderBottomInfoBarBottomInset() +
       this.getReaderBottomInfoBarContentGap());
   }
+//endregion
+//region 尺寸计算 / 排版变更监听 / 媒体控制条·睡眠定时器 / 触摸·翻页手势
+// [map] 契约: 读写 面板尺寸/排版代际/媒体控制/触摸 状态; 定时器成对清理
 
   getReaderPaginationBottomInfoBarHeight(): number {
     // Chapter/page metadata is painted as an overlay. Its complete footprint is already included in
@@ -11027,6 +11017,9 @@ struct ReadBookPage {
     this.showMenu = true;
     return true;
   }
+//endregion
+//region 点击区域 / 设置面板 / 音色下拉 / 主题自定义 / 交互·眼动·预载设置
+// [map] 契约: 写 各类设置项持久化; 修改后触发重排 / 重载 / 重新分页
 
   getTapZoneIndex(x: number, y: number, width: number, height: number): number {
     const column = Math.max(0, Math.min(2, Math.floor(Math.max(0, x) / Math.max(1, width / 3))));
@@ -13856,6 +13849,9 @@ struct ReadBookPage {
     });
     this.saveReadConfig();
   }
+//endregion
+//region TTS 浮标会话 / 朗读编排(起播·续播·换章·看门狗) / 后台委托 / 封面 / 高亮清理
+// [map] 契约: 核心长链路: ttsReadToken / ttsFocusGeneration / ttsChapterSwitching; 与浮标会话、AVSession 双向同步
 
   publishTtsFloatingSession(): void {
     ReaderTtsFloatingSession.attach(
@@ -14315,16 +14311,19 @@ struct ReadBookPage {
     }
   }
 
-  scheduleTtsResumeAfterManualPageTurn(): void {
+  scheduleTtsResumeAfterManualPageTurn(attempt: number = 0): void {
     if (!this.ttsManualPageTurnResumePending) return;
     this.deferManualPageTurnTtsResume();
     const serial = this.ttsManualPageTurnResumeSerial;
     this.ttsManualPageTurnResumeTimerId = setTimeout(() => {
       this.ttsManualPageTurnResumeTimerId = -1;
       if (serial !== this.ttsManualPageTurnResumeSerial || !this.ttsManualPageTurnResumePending) return;
-      if (this.isPageTurning || this.queuedPageTurnCount > 0 || this.queuedPageTurnDirection !== 0 ||
-        !this.isReaderPageTurnPositionReadyForTts()) {
-        this.scheduleTtsResumeAfterManualPageTurn();
+      // A6: bound the 48ms retry chain (100 attempts ~= 4.8s). If the page never
+      // settles, fall through to the normal resume path instead of silently wedging
+      // continuous reading forever with no audio and a stuck highlight.
+      if ((this.isPageTurning || this.queuedPageTurnCount > 0 || this.queuedPageTurnDirection !== 0 ||
+        !this.isReaderPageTurnPositionReadyForTts()) && attempt < 100) {
+        this.scheduleTtsResumeAfterManualPageTurn(attempt + 1);
         return;
       }
       if (this.isTtsPaused) {
@@ -14984,6 +14983,9 @@ struct ReadBookPage {
       `${this.bookshelfCoverMode}`;
     return cleaned[Math.abs(hashTtsText(seed)) % cleaned.length];
   }
+//endregion
+//region 焦点会话 / 正文规范化纯函数群 / 分页测量引擎
+// [map] 契约: 含大量可纯化的正文处理(findMeasuredPageEnd 等); 分页测量读排版状态
 
   clearTtsHighlight(): void {
     // 停止/收尾路径都先清 isTtsSpeaking/ttsAutoContinue 再调用；朗读进行中走到这里
@@ -16302,6 +16304,9 @@ struct ReadBookPage {
     }
     return safeBest;
   }
+//endregion
+//region 逐句焦点·高亮·进度持久化 / 镜像会话 / TTS翻页 / 动画表面
+// [map] 契约: 每句触发 followTtsChunk→高亮重绘→persistTtsReadPosition→浮标 revision++; 镜像会话接管线
 
   followTtsChunk(chunk: TtsChunk, token: number, generation: number,
     chapterIndex: number, sourceIdentity: string): void {
@@ -16427,13 +16432,15 @@ struct ReadBookPage {
 
   syncTtsFocusAfterResumeLater(delayMs: number): void {
     const serial = ++this.ttsResumeSyncSerial;
-    const focusGeneration = this.ttsFocusGeneration;
-    const readToken = this.ttsReadToken;
     setTimeout(() => {
       if (serial < this.ttsResumeSyncSerial - 1) {
         return;
       }
-      if (focusGeneration !== this.ttsFocusGeneration || readToken !== this.ttsReadToken) return;
+      // 后台停留期间跨章等会话换代会 bump ttsFocusGeneration/ttsReadToken。恢复同步读取的是执行
+      // 瞬间的最新状态（syncTtsFocusAfterResume 内部逐项实时校验会话/内容/分页代际与手动翻页
+      // 暂停态），不能因调度瞬间与执行瞬间的代际差异整体丢弃——否则回前台后 0/180ms 两次同步
+      // 全部静默失效，页面与高亮停留在冻结位置，残留的 ttsAutoTurningPage/isPageTurning 无人
+      // 清理（回前台后翻页卡顿感、高亮与声音不一致的来源）。
       this.syncTtsFocusAfterResume();
     }, delayMs);
   }
@@ -17744,6 +17751,9 @@ struct ReadBookPage {
       bottom: this.getReaderPageVerticalPadding(text, bottomPadding)
     })
   }
+//endregion
+//region 样式化正文 / 段评·源动作·文本选择 / 正则高亮 / V2布局·分页·选区·高亮
+// [map] 契约: 读 高亮偏移/正则规则/主题; V2 分页与选区是独立大子系统, 建议优先外移
 
   @Builder
   styledReaderText(text: string, bottomPadding: number, chapterIndex: number = this.currentChapterIndex,
@@ -21709,6 +21719,9 @@ struct ReadBookPage {
     }
     router.back();
   }
+//endregion
+//region 分页缓存 / 翻页·预载·自动翻页 / 翻页动画·卷曲 / 换章
+// [map] 契约: 写 currentPageIndex / 翻页动画状态 / 预载; 与 TTS 翻页、镜像手动翻页交织
 
   paginateReaderSourceText(source: string, chapterIndex: number = this.currentChapterIndex): ReaderPaginationResult {
     const text = source || '';
@@ -23848,8 +23861,8 @@ struct ReadBookPage {
   }
 
   requestReaderPageCurlCapture(): void {
-    if (!this.usesReaderPageCurlCanvas() || this.pageSlideDirection === 0 ||
-      !this.shouldRenderSlidingPageTurn()) {
+    if (!this.readerPageVisible || !this.usesReaderPageCurlCanvas() ||
+      this.pageSlideDirection === 0 || !this.shouldRenderSlidingPageTurn()) {
       return;
     }
     const key = this.readerPageCurlKey();
@@ -24007,6 +24020,13 @@ struct ReadBookPage {
   }
 
   async completeSimulationPageTurnMotion(direction: number): Promise<void> {
+    // 后台/锁屏连续朗读时页面不可见：仿真快照既无可见意义也常拿不到（RenderService 已暂停），
+    // 原实现仍空转 ensureReaderPageCurlReady 最长约 1.9s，拖慢后台每次自动翻页；回前台时
+    // 积压成快速追赶的连续翻页，表现为高亮跳变与翻页卡顿。不可见时直接跳过仿真动画，
+    // 由调用方立即提交目标页。
+    if (!this.readerPageVisible) {
+      return;
+    }
     const ready = await this.ensureReaderPageCurlReady();
     if (!ready) {
       // Snapshot services can be temporarily unavailable after foregrounding or during a rapid turn chain.
@@ -24402,3 +24422,4 @@ struct ReadBookPage {
     this.saveReadingProgress();
   }
 }
+//endregion
