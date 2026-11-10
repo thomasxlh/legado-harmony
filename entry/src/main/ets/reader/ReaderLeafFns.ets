@@ -1087,3 +1087,104 @@ export function readerSlideCompletionDuration(remaining: number, distance: numbe
   }
   return Math.max(90, Math.min(durationCap, Math.round(160 * remainingRatio)));
 }
+
+export function installedTtsVoiceKey(voice: TtsVoiceOption): string {
+  const style = isKnownTtsVoiceId(voice.id) ? '' : (voice.style || '');
+  return `${voice.id}_${voice.online}_${normalizeTtsLanguage(voice.language || 'zh-CN')}_${style}`;
+}
+
+export function sameTtsLanguage(left: string, right: string): boolean {
+  return normalizeTtsLanguage(left) === normalizeTtsLanguage(right);
+}
+
+export function readerEyeCalibrationSpread(values: number[]): number {
+  if (values.length === 0) return 0;
+  const median = readerEyeCalibrationMedian(values);
+  return readerEyeCalibrationMedian(
+    values.map((value: number): number => Math.abs(value - median)));
+}
+
+export function mergeSoftWrappedChapterLines(text: string): string {
+  if (!text || text.indexOf('\n') < 0) {
+    return text;
+  }
+  const rawLines = text.split('\n');
+  const result: string[] = [];
+  let current = '';
+  for (const rawLine of rawLines) {
+    const line = rawLine.trim();
+    if (!line) {
+      if (current) {
+        result.push(current);
+        current = '';
+      }
+      if (result.length > 0 && result[result.length - 1] !== '') {
+        result.push('');
+      }
+      continue;
+    }
+    if (!current) {
+      current = line;
+      continue;
+    }
+    if (shouldMergeReaderSoftLine(current, rawLine)) {
+      current += readerSoftLineJoiner(current, line) + line;
+    } else {
+      result.push(current);
+      current = line;
+    }
+  }
+  if (current) {
+    result.push(current);
+  }
+  return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+export function trimReaderContentText(text: string): string {
+  const source = text || '';
+  let start = 0;
+  let end = source.length;
+  while (start < end && isReaderEdgeTrimChar(source.charAt(start))) {
+    start++;
+  }
+  while (end > start && isReaderEdgeTrimChar(source.charAt(end - 1))) {
+    end--;
+  }
+  return source.substring(start, end);
+}
+
+export function readerParagraphCommentsEnabledForPagination(): boolean {
+  // An absent setting means the source has no user-facing switch (or uses comments by default), so retain
+  // markers. Only an explicit disabled value is allowed to remove source content.
+  return readerParagraphCommentSettingState() >= 0;
+}
+
+export function readerParagraphCommentPaginationIdentity(): string {
+  const state = readerParagraphCommentSettingState();
+  return state > 0 ? 'comment_on' : (state < 0 ? 'comment_off' : 'comment_auto');
+}
+
+export function stripReaderParagraphCommentActions(value: string): string {
+  const source = value || '';
+  if (!ReaderActionMarker.has(source)) return source;
+  let cursor = 0;
+  let result = '';
+  while (cursor < source.length) {
+    let markerStart = -1;
+    for (const prefix of [ReaderActionMarker.PREFIX, ReaderActionMarker.LEGACY_PREFIX,
+      ReaderActionMarker.ORIGINAL_PREFIX]) {
+      const index = source.indexOf(prefix, cursor);
+      if (index >= 0 && (markerStart < 0 || index < markerStart)) markerStart = index;
+    }
+    if (markerStart < 0) break;
+    const suffixStart = source.indexOf(ReaderActionMarker.SUFFIX, markerStart);
+    if (suffixStart < 0) break;
+    const markerEnd = suffixStart + ReaderActionMarker.SUFFIX.length;
+    const marker = source.substring(markerStart, markerEnd);
+    const action = ReaderActionMarker.parse(marker);
+    result += source.substring(cursor, markerStart);
+    if (!action || !isReaderParagraphCommentAction(action)) result += marker;
+    cursor = markerEnd;
+  }
+  return cursor > 0 ? `${result}${source.substring(cursor)}` : source;
+}

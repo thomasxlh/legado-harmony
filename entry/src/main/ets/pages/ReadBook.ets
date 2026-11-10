@@ -7679,7 +7679,7 @@ struct ReadBookPage {
 
   normalizeDefaultTtsVoice(): void {
     if (this.ttsOnline === 0 && this.ttsPerson === 0 && !this.ttsStyle &&
-      this.sameTtsLanguage(this.ttsLanguage || 'zh-CN', 'zh-CN')) {
+      LeafFns.sameTtsLanguage(this.ttsLanguage || 'zh-CN', 'zh-CN')) {
       this.ttsOnline = 1;
       this.saveTtsSettings();
     }
@@ -7770,18 +7770,13 @@ struct ReadBookPage {
 
 
   isLocallyInstalledTtsVoice(voice: TtsVoiceOption): boolean {
-    const key = this.installedTtsVoiceKey(voice);
+    const key = LeafFns.installedTtsVoiceKey(voice);
     return !!key && this.ttsInstalledVoiceKeys.split('\n').includes(key);
-  }
-
-  installedTtsVoiceKey(voice: TtsVoiceOption): string {
-    const style = LeafFns.isKnownTtsVoiceId(voice.id) ? '' : (voice.style || '');
-    return `${voice.id}_${voice.online}_${LeafFns.normalizeTtsLanguage(voice.language || 'zh-CN')}_${style}`;
   }
 
   isSameTtsVoiceOption(left: TtsVoiceOption, right: TtsVoiceOption): boolean {
     if (left.id !== right.id || left.online !== right.online ||
-      !this.sameTtsLanguage(left.language || 'zh-CN', right.language || 'zh-CN')) {
+      !LeafFns.sameTtsLanguage(left.language || 'zh-CN', right.language || 'zh-CN')) {
       return false;
     }
     if (LeafFns.isKnownTtsVoiceId(left.id)) {
@@ -7795,7 +7790,7 @@ struct ReadBookPage {
       return true;
     }
     return (left.name || '') === (right.name || '') && left.online === right.online &&
-      this.sameTtsLanguage(left.language || 'zh-CN', right.language || 'zh-CN');
+      LeafFns.sameTtsLanguage(left.language || 'zh-CN', right.language || 'zh-CN');
   }
 
 
@@ -7930,7 +7925,7 @@ struct ReadBookPage {
     }
     return voice.id === this.ttsPerson && voice.online === this.ttsOnline &&
       (voice.style || '') === (this.ttsStyle || '') &&
-      this.sameTtsLanguage(voice.language || 'zh-CN', this.ttsLanguage || 'zh-CN');
+      LeafFns.sameTtsLanguage(voice.language || 'zh-CN', this.ttsLanguage || 'zh-CN');
   }
 
   applyCustomTtsVoice(voice: HttpTTS, restartSpeaking: boolean): void {
@@ -7968,10 +7963,6 @@ struct ReadBookPage {
 
 
 
-
-  sameTtsLanguage(left: string, right: string): boolean {
-    return LeafFns.normalizeTtsLanguage(left) === LeafFns.normalizeTtsLanguage(right);
-  }
 
   tocGlobalIndex(localIndex: number): number {
     if (this.isTocSearchActive()) {
@@ -8033,7 +8024,7 @@ struct ReadBookPage {
   }
 
   markTtsVoiceInstalled(voice: TtsVoiceOption): void {
-    const key = this.installedTtsVoiceKey(voice);
+    const key = LeafFns.installedTtsVoiceKey(voice);
     if (!key || this.isLocallyInstalledTtsVoice(voice)) {
       return;
     }
@@ -13095,13 +13086,6 @@ struct ReadBookPage {
   }
 
   /** Median absolute deviation: a robust spread used to reject an unsteady fixation. */
-  private readerEyeCalibrationSpread(values: number[]): number {
-    if (values.length === 0) return 0;
-    const median = LeafFns.readerEyeCalibrationMedian(values);
-    return LeafFns.readerEyeCalibrationMedian(
-      values.map((value: number): number => Math.abs(value - median)));
-  }
-
   /**
    * Builds the calibration from the three held fixations: centre, bottom zone, top zone.
    * The sign of the deltas comes straight from the measurements, so the gesture direction
@@ -13135,9 +13119,9 @@ struct ReadBookPage {
     // crossing and the bottom/reading level the positive end; the turn then fires when the
     // gaze leaves that level upwards.
     const travel = bottomRatio - topRatio;
-    const centerSpread = this.readerEyeCalibrationSpread(centerRatios);
-    const bottomSpread = this.readerEyeCalibrationSpread(bottomRatios);
-    const topSpread = this.readerEyeCalibrationSpread(topRatios);
+    const centerSpread = LeafFns.readerEyeCalibrationSpread(centerRatios);
+    const bottomSpread = LeafFns.readerEyeCalibrationSpread(bottomRatios);
+    const topSpread = LeafFns.readerEyeCalibrationSpread(topRatios);
     console.warn(`[EyeTurnProbe] calibration top=${topRatio.toFixed(4)} bottom=${bottomRatio.toFixed(4)} ` +
       `travel=${travel.toFixed(4)} center=${LeafFns.readerEyeCalibrationMedian(centerRatios).toFixed(4)} ` +
       `spread=${centerSpread.toFixed(4)}/${bottomSpread.toFixed(4)}/${topSpread.toFixed(4)} ` +
@@ -14516,7 +14500,7 @@ struct ReadBookPage {
   }
 
   normalizeReaderText(text: string): string {
-    return this.trimReaderContentText((text || '')
+    return LeafFns.trimReaderContentText((text || '')
       .replace(/\r\n/g, '\n')
       .replace(/\u00A0/g, ' ')
       .replace(/\n{3,}/g, '\n\n'));
@@ -14531,8 +14515,8 @@ struct ReadBookPage {
     // Paragraph comments change both measured line width and paragraph grouping. Build pagination from the
     // effective source state: when the source switch is explicitly off, remove only comment actions while
     // retaining images, videos and unrelated source-provided actions.
-    const effectiveContent = this.readerParagraphCommentsEnabledForPagination() ?
-      (content || '') : this.stripReaderParagraphCommentActions(content || '');
+    const effectiveContent = LeafFns.readerParagraphCommentsEnabledForPagination() ?
+      (content || '') : LeafFns.stripReaderParagraphCommentActions(content || '');
     const leadingAction = ReaderActionMarker.findFirst(effectiveContent);
     const titleAction = leadingAction && leadingAction.start === 0 && leadingAction.data.title === '章评' ?
       leadingAction.marker : '';
@@ -14552,46 +14536,10 @@ struct ReadBookPage {
   }
 
   normalizeChapterBody(text: string): string {
-    return this.mergeSoftWrappedChapterLines(this.trimReaderContentText((text || '')
+    return LeafFns.mergeSoftWrappedChapterLines(LeafFns.trimReaderContentText((text || '')
       .replace(/\r\n/g, '\n')
       .replace(/\u00A0/g, ' ')
       .replace(/\n{3,}/g, '\n\n')));
-  }
-
-  mergeSoftWrappedChapterLines(text: string): string {
-    if (!text || text.indexOf('\n') < 0) {
-      return text;
-    }
-    const rawLines = text.split('\n');
-    const result: string[] = [];
-    let current = '';
-    for (const rawLine of rawLines) {
-      const line = rawLine.trim();
-      if (!line) {
-        if (current) {
-          result.push(current);
-          current = '';
-        }
-        if (result.length > 0 && result[result.length - 1] !== '') {
-          result.push('');
-        }
-        continue;
-      }
-      if (!current) {
-        current = line;
-        continue;
-      }
-      if (LeafFns.shouldMergeReaderSoftLine(current, rawLine)) {
-        current += LeafFns.readerSoftLineJoiner(current, line) + line;
-      } else {
-        result.push(current);
-        current = line;
-      }
-    }
-    if (current) {
-      result.push(current);
-    }
-    return result.join('\n').replace(/\n{3,}/g, '\n\n').trim();
   }
 
   buildIndentedChapterBody(text: string): string {
@@ -14615,7 +14563,7 @@ struct ReadBookPage {
     if (firstLine !== title) {
       return body;
     }
-    return this.trimReaderContentText(lines.slice(1).join('\n').replace(/^\n+/, ''));
+    return LeafFns.trimReaderContentText(lines.slice(1).join('\n').replace(/^\n+/, ''));
   }
 
 
@@ -14626,19 +14574,6 @@ struct ReadBookPage {
   // 保留空格类缩进；默认行为维持全量裁剪。
   trimPageStartChar(value: string): boolean {
     return this.keepParagraphIndent ? LeafFns.isReaderPageStartTrimChar(value) : LeafFns.isReaderTrimChar(value);
-  }
-
-  trimReaderContentText(text: string): string {
-    const source = text || '';
-    let start = 0;
-    let end = source.length;
-    while (start < end && LeafFns.isReaderEdgeTrimChar(source.charAt(start))) {
-      start++;
-    }
-    while (end > start && LeafFns.isReaderEdgeTrimChar(source.charAt(end - 1))) {
-      end--;
-    }
-    return source.substring(start, end);
   }
 
   pushReaderPage(source: string, rawStart: number, rawEnd: number, pages: string[], starts: number[], ends: number[]): void {
@@ -15211,7 +15146,7 @@ struct ReadBookPage {
   }
 
   readerPaginationHeightCalibrationIdentity(): string {
-    return `${this.readerTypographyCacheIdentity()}_${this.readerParagraphCommentPaginationIdentity()}`;
+    return `${this.readerTypographyCacheIdentity()}_${LeafFns.readerParagraphCommentPaginationIdentity()}`;
   }
 
   readerParagraphMetrics(text: string, availableWidth: number,
@@ -18189,42 +18124,6 @@ struct ReadBookPage {
   }
 
 
-  readerParagraphCommentsEnabledForPagination(): boolean {
-    // An absent setting means the source has no user-facing switch (or uses comments by default), so retain
-    // markers. Only an explicit disabled value is allowed to remove source content.
-    return LeafFns.readerParagraphCommentSettingState() >= 0;
-  }
-
-  readerParagraphCommentPaginationIdentity(): string {
-    const state = LeafFns.readerParagraphCommentSettingState();
-    return state > 0 ? 'comment_on' : (state < 0 ? 'comment_off' : 'comment_auto');
-  }
-
-  stripReaderParagraphCommentActions(value: string): string {
-    const source = value || '';
-    if (!ReaderActionMarker.has(source)) return source;
-    let cursor = 0;
-    let result = '';
-    while (cursor < source.length) {
-      let markerStart = -1;
-      for (const prefix of [ReaderActionMarker.PREFIX, ReaderActionMarker.LEGACY_PREFIX,
-        ReaderActionMarker.ORIGINAL_PREFIX]) {
-        const index = source.indexOf(prefix, cursor);
-        if (index >= 0 && (markerStart < 0 || index < markerStart)) markerStart = index;
-      }
-      if (markerStart < 0) break;
-      const suffixStart = source.indexOf(ReaderActionMarker.SUFFIX, markerStart);
-      if (suffixStart < 0) break;
-      const markerEnd = suffixStart + ReaderActionMarker.SUFFIX.length;
-      const marker = source.substring(markerStart, markerEnd);
-      const action = ReaderActionMarker.parse(marker);
-      result += source.substring(cursor, markerStart);
-      if (!action || !LeafFns.isReaderParagraphCommentAction(action)) result += marker;
-      cursor = markerEnd;
-    }
-    return cursor > 0 ? `${result}${source.substring(cursor)}` : source;
-  }
-
   async openReaderSourceScriptAction(source: BookSource, action: ReaderActionData, marker: string): Promise<void> {
     const code = ReaderActionMarker.sourceScript(action.url);
     if (!code || !this.book) {
@@ -19640,7 +19539,7 @@ struct ReadBookPage {
     input.commentHitSlopYPx = LeafFns.toMeasurePx(this.readerSourceActionHitSlopY);
     input.commentsEnabled = true;
     input.regexEnabled = this.readerRegexFontEnabled;
-    input.styleIdentity = `${this.readerTypographyCacheIdentity()}_${this.readerParagraphCommentPaginationIdentity()}_` +
+    input.styleIdentity = `${this.readerTypographyCacheIdentity()}_${LeafFns.readerParagraphCommentPaginationIdentity()}_` +
       `${this.getBackgroundColor()}_${this.getTextColor()}`;
     return ReaderV2LayoutSnapshot.create(input);
   }
@@ -20879,7 +20778,7 @@ struct ReadBookPage {
       `${this.readerFooterEnabled}_${this.readerFooterLeftMode}_${this.readerFooterProgressMode}_` +
       `${this.readerFooterShowProgressBar}_` +
       `${this.readerExtendToStatusBar}_${this.isLandscapeDoublePageActive()}_${this.readerTypographyCacheIdentity()}_` +
-      `${this.readerParagraphCommentPaginationIdentity()}_` +
+      `${LeafFns.readerParagraphCommentPaginationIdentity()}_` +
       `${source.length}_${hashText(source)}`;
   }
 
@@ -21266,7 +21165,7 @@ struct ReadBookPage {
     const targetChapterIndex = sourceChapterIndex + 1;
     const sessionBookUrl = this.book?.bookUrl || this.bookUrl;
     const activeKey = `${sessionBookUrl}_${sourceChapterIndex}_${targetChapterIndex}_` +
-      `${this.readerTypographyCacheIdentity()}_${this.readerParagraphCommentPaginationIdentity()}`;
+      `${this.readerTypographyCacheIdentity()}_${LeafFns.readerParagraphCommentPaginationIdentity()}`;
     if (this.adjacentPaginationPreloadActiveSerial === this.adjacentPaginationPreloadSerial &&
       this.adjacentPaginationPreloadActiveKey === activeKey) return;
     const serial = ++this.adjacentPaginationPreloadSerial;
@@ -21363,7 +21262,7 @@ struct ReadBookPage {
     if (!this.readerPreloadEnabled && !ReadBookEngine.get().hasCachedContent(targetChapterIndex)) return;
     const sessionBookUrl = this.book?.bookUrl || this.bookUrl;
     const activeKey = `${sessionBookUrl}_${sourceChapterIndex}_${targetChapterIndex}_` +
-      `${this.readerTypographyCacheIdentity()}_${this.readerParagraphCommentPaginationIdentity()}`;
+      `${this.readerTypographyCacheIdentity()}_${LeafFns.readerParagraphCommentPaginationIdentity()}`;
     // Page 2/3 hooks can request the same previous chapter repeatedly. Restarting the retained V2 session on
     // every local turn prevented it from ever reaching the real last page before the user swiped backwards.
     if (this.previousPaginationPreloadActiveSerial === this.previousPaginationPreloadSerial &&
