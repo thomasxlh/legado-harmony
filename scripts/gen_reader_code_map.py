@@ -221,7 +221,8 @@ w("## 现状（为什么需要这张表）")
 w("")
 w("- `entry/src/main/ets/pages/ReadBook.ets`：**%d 行 / 约 1.0 MB**；单文件内仅 "
   "1 个 `@Entry @Component struct ReadBookPage` + 1 个 `ReadBookTtsBackgroundHost` 适配器类。" % len(out))
-w("- `@State` 约 157 个、`@Builder` 约 127 个、成员方法约 1168 个（P0 抽走 131 个叶子纯函数后）；"
+w("- 响应式字段（`@State` / `@StorageLink` / `@StorageProp`）见下方「响应式状态域地图」，由脚本实时扫描生成；"
+  "`@Builder` 约 127 个、成员方法约 1168 个（P0 抽走 131 个叶子纯函数后）；"
   "整个 `ets/` 目录 **0 个** `@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。")
 w("- 文件内唯一分区手段是本工具写入的 `//region` / `//endregion`（VS Code 与 IntelliJ/DevEco Studio "
   "都能折叠）；每个区块头还带一行 `// [map] 契约:` 说明本区允许读写哪些状态。")
@@ -253,6 +254,7 @@ try:
     _moved_src = open(MOVED_MODULE, encoding="utf-8").read()
     MOVED_EXPORTS = set(re.findall(r"^export function ([\w$]+)\s*\(", _moved_src, re.M))
 except OSError:
+    _moved_src = ""
     MOVED_EXPORTS = set()
 for a in ANCHORS:
     dl = def_lines(a)
@@ -279,6 +281,122 @@ for _i, _ln in enumerate(_moved_src.split("\n")):
         moved_defs.append((_i + 1, _m.group(1)))
 for _n, (_ln, _name) in enumerate(moved_defs, 1):
     w("| %d | `%s` | %d |" % (_n, _name, _ln))
+w("")
+
+# ---- Responsive-state domain map (scanned live from `out`, never stale) -----
+# Ordered (keyword, ...) rules; FIRST match wins. Keys are lower-cased field
+# names. Keeping the table here (near the source-of-truth scan) makes it cheap to
+# re-classify a newly added @State with a new prefix. This is a navigation aid,
+# not a spec: a few settings may land in a neighbouring domain.
+DOMAIN_RULES = [
+    ("TTS 朗读会话 / 浮标 / 逐句高亮", [
+        "globaltts", "isttsspeaking", "isttspaused", "ttspagedscrolloverride",
+        "ttsmediacontrolsexpanded", "ttsdisplaytext", "ttshighlight", "ttssleeptimer",
+        "mirroredttsfocus", "showglobalttscatalog", "readerv2ttspaintversion",
+        "readerv2selectionpaintversion"]),
+    ("TTS 音色 / 语速设置", [
+        "ttsperson", "ttsonline", "ttsstyle", "ttslanguage", "ttsspeed",
+        "ttsinstalledvoice", "ttscustomvoice", "ttsvoices", "ttsselectedvoice",
+        "ttsdownloadingvoice", "showttsvoicedropdown", "ttsvoicerowpressedkey"]),
+    ("目录 TOC", ["toc"]),
+    ("段评 / 评论面板", ["readercommentpanel"]),
+    ("自动翻页 / 屏幕 / 快捷设置", [
+        "autopageturn", "readerscreen", "readerextendtostatusbar", "readeruse",
+        "readerquickbookmark", "readertapzone", "readervolumeturn", "readerlandscape"]),
+    ("翻页动画 / 手势", [
+        "pagetransition", "pageslide", "pageturnin", "pageturnanimating",
+        "bookmarkpull", "readerpagecurlsnapshotready"]),
+    ("书签", ["bookmark"]),
+    ("分页 / V2 布局 / 选区", [
+        "contentpages", "currentpageindex", "currentpagetext", "displaypage",
+        "pagerenderversion", "chapterjumprendergeneration", "readerv2",
+        "pageview", "readerinitialpage", "readerbottominfobar",
+        "statusbarsafeheight", "storedstatusbarheight", "navbarheight",
+        "readerwebfetchruntimeneeded", "readertextselectionactive"]),
+    ("漫画模式", ["readercomic"]),
+    ("眼动翻页", ["readereye", "areyeturn"]),
+    ("字体 / 正则字体", ["font"]),
+    ("主题 / 夜间模式", [
+        "theme", "appdarkmode", "appthememode", "applightaccentcolor",
+        "appdarkaccentcolor", "applightbuttoncolor", "appdarkbuttoncolor"]),
+    ("封面 / 书架", ["bookshelf", "covergallery"]),
+    ("书籍 / 章节 / 缓存 / 换源", [
+        "book", "chapters", "content", "currentchapterindex", "verification",
+        "fulltextcach", "readercache", "showreadercachedialog",
+        "showreaderchaptercachedialog", "launchshortcutnonce",
+        "showchangesourcedialog", "loadstatus", "isloading",
+        "readerloadingslow", "readerreplacerules"]),
+    ("菜单 / 显隐 / 设置弹窗", [
+        "show", "menu", "settingspaneltab", "txtcharset", "showreaderactionmenu",
+        "showlayoutelementsettings", "readerdaynight", "readermenuchorside",
+        "hdsmaterialrenderbranch"]),
+    ("阅读排版与交互设置 (通用)", ["reader", "keepparagraphindent"]),
+]
+
+
+def classify_state(name):
+    low = name.lower()
+    for domain, keys in DOMAIN_RULES:
+        for k in keys:
+            if k in low:
+                return domain
+    return "其他 / 通用"
+
+
+STATE_ROWS = []
+for _ln, _text in enumerate(out, 1):
+    if not re.match(r"^  @(State|StorageLink|StorageProp)\b", _text):
+        continue
+    _deco = ("@StorageLink" if "@StorageLink" in _text else
+             "@StorageProp" if "@StorageProp" in _text else "@State")
+    _km = re.search(r"@Storage(?:Link|Prop)\(\s*'([^']+)'\s*\)", _text)
+    _key = _km.group(1) if _km else ""
+    _watches = re.findall(r"@Watch\(\s*'([^']+)'\s*\)", _text)
+    # One declaration wraps the field onto the next line; join the
+    # continuation line so the name/type/@Watch stay parseable.
+    _full = _text
+    if not re.search(r"([\w$]+)\s*:", _full):
+        _j = _ln  # 1-based line number in `out`
+        if _j < len(out):
+            _full += " " + out[_j].strip()
+    _nm = re.search(r"([\w$]+)\s*:", _full)
+    _name = _nm.group(1) if _nm else "?"
+    _after = _full[_nm.end():] if _nm else ""
+    _typ = _after.split("=")[0].split(";")[0].strip() or "?"
+    _priv = bool(re.search(r"\bprivate\s+" + re.escape(_name) + r"\s*:", _text))
+    STATE_ROWS.append((_ln, _deco, _key, _watches, _name, _typ, _priv,
+                       classify_state(_name)))
+
+_n_state = sum(1 for r in STATE_ROWS if r[1] == "@State")
+_n_link = sum(1 for r in STATE_ROWS if r[1] == "@StorageLink")
+_n_prop = sum(1 for r in STATE_ROWS if r[1] == "@StorageProp")
+_DCOUNT = {}
+for r in STATE_ROWS:
+    _DCOUNT[r[7]] = _DCOUNT.get(r[7], 0) + 1
+
+w("## 响应式状态域地图（@State / @StorageLink / @StorageProp）")
+w("")
+w("> 由脚本实时扫描 `ReadBook.ets`（行号已含 `//region` 标记）生成；共 %d 个响应式字段"
+  "（`@State` %d / `@StorageLink` %d / `@StorageProp` %d）。"
+  "「域」由生成器内的 `DOMAIN_RULES` 关键字规则首匹配启发式判定，可按需调整；"
+  "抽取任何逻辑前先按域定位其读写邻居，并用 `ops_grep` 复核触达的 @State 集合。"
+  % (len(STATE_ROWS), _n_state, _n_link, _n_prop))
+w("")
+w("| 域 | 字段数 |")
+w("|----|-------:|")
+for _d in sorted(_DCOUNT, key=lambda x: (-_DCOUNT[x], x)):
+    w("| %s | %d |" % (_d, _DCOUNT[_d]))
+w("")
+w("| 行 | 域 | 装饰器 | 存储键 | @Watch | 字段 | 类型 | private |")
+w("|---:|----|--------|--------|---------|------|------|---------|")
+for (_ln, _deco, _key, _watches, _name, _typ, _priv, _domain) in STATE_ROWS:
+    w("| %d | %s | `%s` | %s | %s | `%s` | %s | %s |" % (
+        _ln, _domain, _deco,
+        ("`%s`" % _key) if _key else "—",
+        ", ".join("`%s`" % x for x in _watches) if _watches else "—",
+        _name,
+        "`%s`" % _typ.replace("|", "\\|"),
+        "是" if _priv else "—"))
 w("")
 w("## 共享状态警告（改代码前必读）")
 w("")
