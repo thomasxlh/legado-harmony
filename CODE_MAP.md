@@ -5,7 +5,7 @@
 
 ## 现状（为什么需要这张表）
 
-- `entry/src/main/ets/pages/ReadBook.ets`：**23282 行 / 约 1.0 MB**；单文件内仅 1 个 `@Entry @Component struct ReadBookPage` + 1 个 `ReadBookTtsBackgroundHost` 适配器类。
+- `entry/src/main/ets/pages/ReadBook.ets`：**23246 行 / 约 1.0 MB**；单文件内仅 1 个 `@Entry @Component struct ReadBookPage` + 1 个 `ReadBookTtsBackgroundHost` 适配器类。
 - `@State` 约 157 个、`@Builder` 127 个、成员方法 1279 个；整个 `ets/` 目录 **0 个** `@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。
 - 文件内唯一分区手段是本工具写入的 `//region` / `//endregion`（VS Code 与 IntelliJ/DevEco Studio 都能折叠）；每个区块头还带一行 `// [map] 契约:` 说明本区允许读写哪些状态。
 - 已存在的可复用范式：`reader/ReaderPureUtils.ets`（纯函数）、`reader/ReaderTtsBackgroundController.ets` + Host 接口、`components/TtsGlobalCapsule.ets`、`components/ReaderTtsPlayerPanel.ets`、`components/TtsCatalogSheet.ets`（已抽出的 @Component）。
@@ -20,14 +20,14 @@
 | 4 | 书籍加载 / 全文缓存 / 后台长时任务 / 屏幕超时 / 加载遮罩 | 1307 | 2949 | 读写 book/chapters/content/缓存/遮罩 状态; 持有后台长时任务与多个成对 timer |
 | 5 | build / 主内容层 / 悬浮菜单 / 目录·书签·换源·缓存面板 | 2950 | 4927 | 读 主题/排版/章节; 纯渲染 + 面板显隐; 交互只转发到方法, 不写业务状态 |
 | 6 | 排版·字符集·替换规则设置 / TTS快捷入口·mini播放器·目录 / 书签 / 正文预处理 | 4928 | 5878 | 读写 设置/目录/书签/TTS浮标显示态; 含 ttsMiniPlayer 等大量 @Builder |
-| 7 | 页眉页脚 / 漫画·连续滚动 / 页面度量 / 主题·字体 / 书签 / TTS音色·语速 / 目录搜索 | 5879 | 8616 | 读 排版/主题/字体/章节; 写 字体注册、书签、音色语速、目录滚动条 |
-| 8 | 尺寸计算 / 排版变更监听 / 媒体控制条·睡眠定时器 / 触摸·翻页手势 | 8617 | 10617 | 读写 面板尺寸/排版代际/媒体控制/触摸 状态; 定时器成对清理 |
-| 9 | 点击区域 / 设置面板 / 音色下拉 / 主题自定义 / 交互·眼动·预载设置 | 10618 | 13265 | 写 各类设置项持久化; 修改后触发重排 / 重载 / 重新分页 |
-| 10 | TTS 浮标会话 / 朗读编排(起播·续播·换章·看门狗) / 后台委托 / 封面 / 高亮清理 | 13266 | 14396 | 核心长链路: ttsReadToken / ttsFocusGeneration / ttsChapterSwitching; 与浮标会话、AVSession 双向同步 |
-| 11 | 焦点会话 / 正文规范化纯函数群 / 分页测量引擎 | 14397 | 15476 | 含大量可纯化的正文处理(findMeasuredPageEnd 等); 分页测量读排版状态 |
-| 12 | 逐句焦点·高亮·进度持久化 / 镜像会话 / TTS翻页 / 动画表面 | 15477 | 16894 | 每句触发 followTtsChunk→高亮重绘→persistTtsReadPosition→浮标 revision++; 镜像会话接管线 |
-| 13 | 样式化正文 / 段评·源动作·文本选择 / 正则高亮 / V2布局·分页·选区·高亮 | 16895 | 20608 | 读 高亮偏移/正则规则/主题; V2 分页与选区是独立大子系统, 建议优先外移 |
-| 14 | 分页缓存 / 翻页·预载·自动翻页 / 翻页动画·卷曲 / 换章 | 20609 | 23282 | 写 currentPageIndex / 翻页动画状态 / 预载; 与 TTS 翻页、镜像手动翻页交织 |
+| 7 | 页眉页脚 / 漫画·连续滚动 / 页面度量 / 主题·字体 / 书签 / TTS音色·语速 / 目录搜索 | 5879 | 8591 | 读 排版/主题/字体/章节; 写 字体注册、书签、音色语速、目录滚动条 |
+| 8 | 尺寸计算 / 排版变更监听 / 媒体控制条·睡眠定时器 / 触摸·翻页手势 | 8592 | 10592 | 读写 面板尺寸/排版代际/媒体控制/触摸 状态; 定时器成对清理 |
+| 9 | 点击区域 / 设置面板 / 音色下拉 / 主题自定义 / 交互·眼动·预载设置 | 10593 | 13240 | 写 各类设置项持久化; 修改后触发重排 / 重载 / 重新分页 |
+| 10 | TTS 浮标会话 / 朗读编排(起播·续播·换章·看门狗) / 后台委托 / 封面 / 高亮清理 | 13241 | 14371 | 核心长链路: ttsReadToken / ttsFocusGeneration / ttsChapterSwitching; 与浮标会话、AVSession 双向同步 |
+| 11 | 焦点会话 / 正文规范化纯函数群 / 分页测量引擎 | 14372 | 15440 | 含大量可纯化的正文处理(findMeasuredPageEnd 等); 分页测量读排版状态 |
+| 12 | 逐句焦点·高亮·进度持久化 / 镜像会话 / TTS翻页 / 动画表面 | 15441 | 16858 | 每句触发 followTtsChunk→高亮重绘→persistTtsReadPosition→浮标 revision++; 镜像会话接管线 |
+| 13 | 样式化正文 / 段评·源动作·文本选择 / 正则高亮 / V2布局·分页·选区·高亮 | 16859 | 20572 | 读 高亮偏移/正则规则/主题; V2 分页与选区是独立大子系统, 建议优先外移 |
+| 14 | 分页缓存 / 翻页·预载·自动翻页 / 翻页动画·卷曲 / 换章 | 20573 | 23246 | 写 currentPageIndex / 翻页动画状态 / 预载; 与 TTS 翻页、镜像手动翻页交织 |
 
 ## 关键入口方法索引
 
@@ -43,76 +43,76 @@
 | `build` | 2953 |
 | `loadBook` | 1385 |
 | `loadContent` | 305 / 1702 |
-| `saveReadingProgress` | 310 / 9497 |
+| `saveReadingProgress` | 310 / 9472 |
 | `enterReaderImmersive` | 1324 |
 | `ttsMiniPlayer` | 5499 |
 | `globalTtsMiniPlayer` | 5520 |
-| `ttsExpandedMediaControlsBar` | 9778 |
-| `ttsQuickSettingsPanel` | 11451 |
-| `ttsVoiceDropdownPanel` | 11561 |
-| `settingsPanel` | 10814 |
-| `publishTtsFloatingSession` | 13269 |
-| `publishTtsFloatingVoices` | 13306 |
-| `updateTtsFloatingSession` | 13319 |
-| `stopTtsFloatingSession` | 13347 |
-| `toggleTtsReading` | 270 / 13354 |
-| `startTtsReadingFromCurrentPosition` | 274 / 13425 |
-| `stopTtsReading` | 281 / 13598 |
-| `continueTtsReading` | 13798 |
-| `isTtsReadingAtExpectedEnd` | 13844 |
-| `armTtsContinuationWatchdog` | 13925 |
-| `clearTtsContinuationWatchdog` | 301 / 13939 |
-| `advanceTtsReadingToNextChapter` | 13947 |
-| `finishTtsReading` | 14017 |
-| `prepareTtsForManualPageTurn` | 293 / 13686 |
-| `scheduleTtsResumeAfterManualPageTurn` | 297 / 13724 |
-| `playPositionFromFloatingSession` | 14214 |
-| `startTtsBackgroundRunning` | 14077 |
-| `stopTtsBackgroundRunning` | 14081 |
-| `updateTtsAvSessionPlaybackState` | 14093 |
-| `clearTtsHighlight` | 14400 |
-| `publishTtsHighlightRenderChange` | 14422 |
-| `currentTtsSourceIdentity` | 14432 |
-| `invalidateTtsFocusSession` | 14437 |
-| `isCurrentTtsFocusSession` | 14445 |
-| `getTtsReadingText` | 14453 |
-| `getTtsFocusBreakOffsets` | 14471 |
+| `ttsExpandedMediaControlsBar` | 9753 |
+| `ttsQuickSettingsPanel` | 11426 |
+| `ttsVoiceDropdownPanel` | 11536 |
+| `settingsPanel` | 10789 |
+| `publishTtsFloatingSession` | 13244 |
+| `publishTtsFloatingVoices` | 13281 |
+| `updateTtsFloatingSession` | 13294 |
+| `stopTtsFloatingSession` | 13322 |
+| `toggleTtsReading` | 270 / 13329 |
+| `startTtsReadingFromCurrentPosition` | 274 / 13400 |
+| `stopTtsReading` | 281 / 13573 |
+| `continueTtsReading` | 13773 |
+| `isTtsReadingAtExpectedEnd` | 13819 |
+| `armTtsContinuationWatchdog` | 13900 |
+| `clearTtsContinuationWatchdog` | 301 / 13914 |
+| `advanceTtsReadingToNextChapter` | 13922 |
+| `finishTtsReading` | 13992 |
+| `prepareTtsForManualPageTurn` | 293 / 13661 |
+| `scheduleTtsResumeAfterManualPageTurn` | 297 / 13699 |
+| `playPositionFromFloatingSession` | 14189 |
+| `startTtsBackgroundRunning` | 14052 |
+| `stopTtsBackgroundRunning` | 14056 |
+| `updateTtsAvSessionPlaybackState` | 14068 |
+| `clearTtsHighlight` | 14375 |
+| `publishTtsHighlightRenderChange` | 14397 |
+| `currentTtsSourceIdentity` | 14407 |
+| `invalidateTtsFocusSession` | 14412 |
+| `isCurrentTtsFocusSession` | 14420 |
+| `getTtsReadingText` | 14428 |
+| `getTtsFocusBreakOffsets` | 14446 |
 | `normalizeReaderText` | → `reader/ReaderLeafFns.ets`（已抽离为纯函数） |
-| `getPagedSourceText` | 14483 |
-| `buildPagedSourceText` | 14487 |
-| `findMeasuredPageEnd` | 14595 |
-| `refineMeasuredPageEnd` | 14742 |
-| `followTtsChunk` | 15483 |
-| `noteTtsFocusLatency` | 15497 |
-| `applyTtsChunkFocus` | 15508 |
-| `syncTtsFocusAfterResume` | 15611 |
-| `updateTtsChunkHighlight` | 15677 |
-| `republishTtsFocusAfterPageTurn` | 15740 |
-| `scheduleTtsFocusSyncAfterPagination` | 15767 |
-| `persistTtsReadPosition` | 15820 |
-| `restorePersistedTtsFocus` | 15861 |
-| `syncMirroredTtsFocus` | 15905 |
-| `clearMirroredTtsFocus` | 15982 |
-| `takeOverMirroredTtsSession` | 15991 |
-| `animateTtsToPage` | 16074 |
-| `applyTtsPageTarget` | 16169 |
-| `applyTtsPageTurn` | 16235 |
-| `styledReaderText` | 16899 |
-| `splitSlicesByTtsHighlight` | 18916 |
-| `hasActiveTtsHighlight` | 19366 |
-| `shouldUseReaderLayoutV2` | 19451 |
-| `buildReaderV2Snapshot` | 19456 |
-| `refreshReaderV2TtsOverlay` | 20565 |
-| `paginateReaderSourceText` | 20612 |
-| `turnNext` | 21404 |
-| `turnPrev` | 21413 |
-| `applyPageTurn` | 21780 |
-| `runPageTurnAnimation` | 21893 |
-| `prepareMirroredTtsManualPageTurn` | 21993 |
-| `cancelMirroredTtsManualPageTurn` | 22043 |
-| `drawReaderPageCurl` | 22696 |
-| `loadNextChapter` | 23253 |
-| `loadPrevChapter` | 23267 |
+| `getPagedSourceText` | 14458 |
+| `buildPagedSourceText` | 14462 |
+| `findMeasuredPageEnd` | 14559 |
+| `refineMeasuredPageEnd` | 14706 |
+| `followTtsChunk` | 15447 |
+| `noteTtsFocusLatency` | 15461 |
+| `applyTtsChunkFocus` | 15472 |
+| `syncTtsFocusAfterResume` | 15575 |
+| `updateTtsChunkHighlight` | 15641 |
+| `republishTtsFocusAfterPageTurn` | 15704 |
+| `scheduleTtsFocusSyncAfterPagination` | 15731 |
+| `persistTtsReadPosition` | 15784 |
+| `restorePersistedTtsFocus` | 15825 |
+| `syncMirroredTtsFocus` | 15869 |
+| `clearMirroredTtsFocus` | 15946 |
+| `takeOverMirroredTtsSession` | 15955 |
+| `animateTtsToPage` | 16038 |
+| `applyTtsPageTarget` | 16133 |
+| `applyTtsPageTurn` | 16199 |
+| `styledReaderText` | 16863 |
+| `splitSlicesByTtsHighlight` | 18880 |
+| `hasActiveTtsHighlight` | 19330 |
+| `shouldUseReaderLayoutV2` | 19415 |
+| `buildReaderV2Snapshot` | 19420 |
+| `refreshReaderV2TtsOverlay` | 20529 |
+| `paginateReaderSourceText` | 20576 |
+| `turnNext` | 21368 |
+| `turnPrev` | 21377 |
+| `applyPageTurn` | 21744 |
+| `runPageTurnAnimation` | 21857 |
+| `prepareMirroredTtsManualPageTurn` | 21957 |
+| `cancelMirroredTtsManualPageTurn` | 22007 |
+| `drawReaderPageCurl` | 22660 |
+| `loadNextChapter` | 23217 |
+| `loadPrevChapter` | 23231 |
 
 （共索引 78 个关键方法；未列出的多为 `@Builder` 或仅在表达式中出现。）
 

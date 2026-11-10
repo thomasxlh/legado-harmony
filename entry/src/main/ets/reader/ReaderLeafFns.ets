@@ -1233,3 +1233,39 @@ export function stripDuplicatedChapterTitle(body: string, title: string): string
   }
   return trimReaderContentText(lines.slice(1).join('\n').replace(/^\n+/, ''));
 }
+
+export function defaultTtsVoice(): TtsVoiceOption {
+  const option = new TtsVoiceOption();
+  option.id = 0;
+  option.name = '默认音色';
+  option.online = 1;
+  option.status = 'default';
+  option.language = 'zh-CN';
+  option.available = true;
+  return option;
+}
+
+export function mergeWithDefaultTtsVoice(voices: TtsVoiceOption[]): TtsVoiceOption[] {
+  const options: TtsVoiceOption[] = [defaultTtsVoice()];
+  for (const voice of voices) {
+    const existingIndex = options.findIndex((item: TtsVoiceOption) =>
+      isSameTtsVoiceOption(item, voice) || isSameTtsDisplayVoice(item, voice));
+    if (existingIndex < 0) {
+      options.push(voice);
+    } else if (shouldPreferTtsVoiceOption(voice, options[existingIndex])) {
+      options[existingIndex] = voice;
+    }
+  }
+  return options;
+}
+
+export function buildIndentedChapterBody(text: string): string {
+  const normalized = normalizeChapterBody(text);
+  if (!normalized) {
+    return '';
+  }
+  return normalized
+    .split('\n')
+    .map((line: string) => indentReaderLine(line))
+    .join('\n');
+}

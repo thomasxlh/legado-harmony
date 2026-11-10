@@ -855,7 +855,7 @@ struct ReadBookPage {
   @StorageLink('ttsCustomVoices') @Watch('onTtsCustomVoicesChanged') ttsCustomVoices: string = '';
   @StorageLink('launchShortcutNonce') @Watch('onLaunchShortcutChanged') launchShortcutNonce: number = 0;
   @StorageLink('fullTextCacheCancelNonce') @Watch('onFullTextCacheCancelNonceChanged') fullTextCacheCancelNonce: number = 0;
-  @State ttsVoices: TtsVoiceOption[] = [ReadBookPage.defaultTtsVoice()];
+  @State ttsVoices: TtsVoiceOption[] = [LeafFns.defaultTtsVoice()];
   @State ttsCustomVoiceOptions: HttpTTS[] = [];
   @State ttsSelectedVoiceKey: string = '';
   @State ttsVoicesLoading: boolean = false;
@@ -7637,17 +7637,6 @@ struct ReadBookPage {
     this.showMenu = true;
   }
 
-  static defaultTtsVoice(): TtsVoiceOption {
-    const option = new TtsVoiceOption();
-    option.id = 0;
-    option.name = '默认音色';
-    option.online = 1;
-    option.status = 'default';
-    option.language = 'zh-CN';
-    option.available = true;
-    return option;
-  }
-
   async loadTtsSettingsAndVoices(): Promise<void> {
     try {
       const settings = await TtsSettingsStore.load(getContext(this));
@@ -7713,7 +7702,7 @@ struct ReadBookPage {
     this.ttsVoicesLoading = true;
     try {
       const voices = await SystemTtsReader.listAvailableVoices();
-      this.ttsVoices = this.applyInstalledTtsVoiceOverrides(this.mergeWithDefaultTtsVoice(voices));
+      this.ttsVoices = this.applyInstalledTtsVoiceOverrides(LeafFns.mergeWithDefaultTtsVoice(voices));
       const currentCustomVoice = this.findCurrentCustomTtsVoice();
       if (currentCustomVoice) {
         this.ttsSelectedVoiceKey = LeafFns.ttsCustomVoiceKey(currentCustomVoice);
@@ -7726,7 +7715,7 @@ struct ReadBookPage {
         this.applyTtsVoice(this.firstAvailableTtsVoice(), false);
       }
     } catch (e) {
-      this.ttsVoices = [ReadBookPage.defaultTtsVoice()];
+      this.ttsVoices = [LeafFns.defaultTtsVoice()];
       this.ttsPerson = 0;
       this.ttsOnline = 1;
       this.ttsStyle = '';
@@ -7741,23 +7730,9 @@ struct ReadBookPage {
     }
   }
 
-  mergeWithDefaultTtsVoice(voices: TtsVoiceOption[]): TtsVoiceOption[] {
-    const options: TtsVoiceOption[] = [ReadBookPage.defaultTtsVoice()];
-    for (const voice of voices) {
-      const existingIndex = options.findIndex((item: TtsVoiceOption) =>
-        LeafFns.isSameTtsVoiceOption(item, voice) || LeafFns.isSameTtsDisplayVoice(item, voice));
-      if (existingIndex < 0) {
-        options.push(voice);
-      } else if (LeafFns.shouldPreferTtsVoiceOption(voice, options[existingIndex])) {
-        options[existingIndex] = voice;
-      }
-    }
-    return options;
-  }
-
   firstAvailableTtsVoice(): TtsVoiceOption {
     return this.ttsVoices.find((voice: TtsVoiceOption) => voice.available) || this.ttsVoices[0] ||
-      ReadBookPage.defaultTtsVoice();
+      LeafFns.defaultTtsVoice();
   }
 
   applyInstalledTtsVoiceOverrides(voices: TtsVoiceOption[]): TtsVoiceOption[] {
@@ -14498,7 +14473,7 @@ struct ReadBookPage {
       effectiveContent.substring(leadingAction.end).replace(/^\s+/, '') :
       effectiveContent;
     const sourceBody = LeafFns.stripDuplicatedChapterTitle(LeafFns.normalizeChapterBody(contentBody), title);
-    const body = this.buildIndentedChapterBody(sourceBody);
+    const body = LeafFns.buildIndentedChapterBody(sourceBody);
     if (LocalBookService.hasEpubImageMarkers(body) &&
       !LocalBookService.stripEpubImageMarkers(body).trim()) {
       return body;
@@ -14507,17 +14482,6 @@ struct ReadBookPage {
       return body;
     }
     return titleAction ? `${title}${titleAction}\n\n${body}` : `${title}\n\n${body}`;
-  }
-
-  buildIndentedChapterBody(text: string): string {
-    const normalized = LeafFns.normalizeChapterBody(text);
-    if (!normalized) {
-      return '';
-    }
-    return normalized
-      .split('\n')
-      .map((line: string) => LeafFns.indentReaderLine(line))
-      .join('\n');
   }
 
 
