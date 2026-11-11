@@ -84,6 +84,8 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
+import { ReaderBookmarkPullHint, ReaderComicPaginationPanel, ReaderLoadingPanel, ReaderSourceActionButton,
+  ReaderTtsTimerControl } from '../components/ReaderStatusItems';
 import {
   ReaderSelectSettingItem,
   ReaderTtsVoiceOption,
@@ -1776,72 +1778,6 @@ export struct ReadBookPage {
   }
 
   @Builder
-  readerLoadingPanel() {
-    Column() {
-      LoadingProgress()
-        .width(40)
-        .height(40)
-        .color(this.accentColor())
-      Text(this.getReaderLoadingText())
-        .fontSize(14)
-        .fontColor(this.isReaderThemeDark() ? '#AEB4BE' : '#777777')
-        .margin({ top: 10 })
-      if (this.readerLoadingSlow) {
-        Text('等待时间较长？可停止等待后换源或重试')
-          .fontSize(12)
-          .fontColor(this.isReaderThemeDark() ? '#858B94' : '#999999')
-          .margin({ top: 18 })
-        Button('不再等待')
-          .fontSize(13)
-          .fontColor('#FFFFFF')
-          .backgroundColor(this.accentColor())
-          .borderRadius(16)
-          .height(32)
-          .padding({ left: 18, right: 18 })
-          .margin({ top: 10 })
-          .onClick(() => this.cancelReaderLoading())
-      }
-    }
-    .width('100%')
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.getBackgroundColor())
-  }
-
-  @Builder
-  readerComicPaginationPanel() {
-    Column({ space: 10 }) {
-      LoadingProgress()
-        .width(44)
-        .height(44)
-        .color(this.accentColor())
-      Text('正在解析漫画')
-        .fontSize(16)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.getTextColor())
-      Text(`已解析 ${this.readerComicPaginationParsedPages} / ${this.readerComicPaginationTotalPages} 页`)
-        .fontSize(13)
-        .fontColor(this.isReaderThemeDark() ? '#AEB4BE' : '#777777')
-      Progress({
-        value: this.readerComicPaginationParsedPages,
-        total: Math.max(1, this.readerComicPaginationTotalPages),
-        type: ProgressType.Linear
-      })
-        .width(196)
-        .height(4)
-        .color(this.accentColor())
-        .backgroundColor(this.isReaderThemeDark() ? '#3A3D43' : '#DDD8D0')
-      Text('解析完成后自动开始阅读')
-        .fontSize(12)
-        .fontColor(this.isReaderThemeDark() ? '#858B94' : '#999999')
-    }
-    .width('100%')
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.getBackgroundColor())
-  }
-
-  @Builder
   readerComicScrollSurface() {
     Stack() {
       List({ space: 0, scroller: this.readerComicScroller }) {
@@ -2182,7 +2118,14 @@ export struct ReadBookPage {
 
       Column() {
         if (!this.shouldRenderPrimaryReaderContent()) {
-          this.readerLoadingPanel()
+          ReaderLoadingPanel({
+              accentColor: this.accentColor(),
+              panelColor: this.getBackgroundColor(),
+              loadingText: this.getReaderLoadingText(),
+              dark: this.isReaderThemeDark(),
+              slow: this.readerLoadingSlow,
+              onCancel: (): void => { this.cancelReaderLoading(); }
+            })
         } else if (this.isReaderContinuousScrollSurfaceActive()) {
           this.readerComicScrollSurface()
         } else {
@@ -2282,9 +2225,23 @@ export struct ReadBookPage {
       }
 
       if (this.readerComicPaginationParsing) {
-        this.readerComicPaginationPanel()
+        ReaderComicPaginationPanel({
+                accentColor: this.accentColor(),
+                panelColor: this.getBackgroundColor(),
+                textColor: this.getTextColor(),
+                dark: this.isReaderThemeDark(),
+                parsedPages: this.readerComicPaginationParsedPages,
+                totalPages: this.readerComicPaginationTotalPages
+              })
       } else if (this.shouldShowReaderLoadingOverlay()) {
-        this.readerLoadingPanel()
+        ReaderLoadingPanel({
+              accentColor: this.accentColor(),
+              panelColor: this.getBackgroundColor(),
+              loadingText: this.getReaderLoadingText(),
+              dark: this.isReaderThemeDark(),
+              slow: this.readerLoadingSlow,
+              onCancel: (): void => { this.cancelReaderLoading(); }
+            })
       }
 
       if (this.isReaderContinuousScrollSurfaceActive() && !this.isReaderNovelContinuousScrollModeActive() &&
@@ -2294,7 +2251,16 @@ export struct ReadBookPage {
       }
 
       if (this.bookmarkPullActive) {
-        this.readerBookmarkPullHint()
+        ReaderBookmarkPullHint({
+                  hintText: this.bookmarkPullHintText(),
+                  hintColor: this.bookmarkPullHintColor(),
+                  ready: this.bookmarkPullReady,
+                  panelColor: this.readerGlassPanelColor(),
+                  glassBorderColor: this.readerGlassBorderColor(),
+                  shadowColor: this.readerGlassShadowColor(),
+                  topSafePadding: this.getTopControlSafePadding(),
+                  pullOffsetY: this.bookmarkPullOffsetY
+                })
       }
 
       if (this.isCurrentPageBookmarked() && !this.showMenu && !this.showToc && !this.showSettings) {
@@ -5119,34 +5085,6 @@ export struct ReadBookPage {
     return ReaderChromeThemeOps.readerBookmarkMarkerTopOffset(this);
   }
 
-  @Builder
-  readerBookmarkPullHint() {
-    Row() {
-      Row({ space: 8 }) {
-        SymbolGlyph($r('sys.symbol.bookmark'))
-          .fontSize(19)
-          .fontColor([this.bookmarkPullHintColor()])
-        Text(this.bookmarkPullHintText())
-          .fontSize(14)
-          .fontWeight(this.bookmarkPullReady ? FontWeight.Bold : FontWeight.Medium)
-          .fontColor(this.bookmarkPullHintColor())
-      }
-      .height(40)
-      .padding({ left: 14, right: 14 })
-      .borderRadius(20)
-      .backgroundColor(this.readerGlassPanelColor())
-      .border({ width: ThemeRuntime.glassBorderWidth(), color: this.readerGlassBorderColor() })
-      .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.readerGlassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
-    }
-    .width('100%')
-    .height(40)
-    .justifyContent(FlexAlign.Center)
-    .position({ x: 0, y: 0 })
-    .translate({ y: this.getTopControlSafePadding() + 8 })
-    .opacity(Math.min(1, this.bookmarkPullOffsetY / 36))
-    .hitTestBehavior(HitTestMode.None)
-  }
-
   async addCurrentBookmark(): Promise<void> {
     return ReaderChromeThemeOps.addCurrentBookmark(this);
   }
@@ -6033,7 +5971,12 @@ export struct ReadBookPage {
         Column()
       }
       .height(48)
-      .tabBar(this.ttsMediaTimerControl())
+      .tabBar((): void => { ReaderTtsTimerControl({
+              timerMinutes: this.ttsSleepTimerMinutes,
+              remainingSeconds: this.ttsSleepTimerRemainingSeconds,
+              textColor: this.getTextColor(),
+              accentColor: this.accentColor()
+            }); })
 
       TabContent() {
         Column()
@@ -6108,7 +6051,12 @@ export struct ReadBookPage {
   ttsExpandedMediaControlsCompat() {
     Row() {
       Stack() {
-        this.ttsMediaTimerControl()
+        ReaderTtsTimerControl({
+              timerMinutes: this.ttsSleepTimerMinutes,
+              remainingSeconds: this.ttsSleepTimerRemainingSeconds,
+              textColor: this.getTextColor(),
+              accentColor: this.accentColor()
+            })
       }
       .layoutWeight(1)
       .onClick(() => this.handleTtsExpandedControl(0))
@@ -6154,33 +6102,6 @@ export struct ReadBookPage {
     .backdropBlur(22)
     .border({ width: 1, color: this.readerGlassBorderColor() })
     .shadow({ radius: 10, color: this.readerGlassShadowColor(), offsetX: 0, offsetY: 3 })
-  }
-
-  @Builder
-  ttsMediaTimerControl() {
-    Stack({ alignContent: Alignment.Center }) {
-      SymbolGlyph($r('sys.symbol.timer'))
-        .fontSize(22)
-        .fontColor([this.getTextColor()])
-
-      if (this.ttsSleepTimerMinutes > 0) {
-        Text(`${Math.max(1, Math.ceil(this.ttsSleepTimerRemainingSeconds / 60))}`)
-          .fontSize(11)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#FFFFFF')
-          .textAlign(TextAlign.Center)
-          .width(16)
-          .height(16)
-          .borderRadius(8)
-          .backgroundColor(this.accentColor())
-          .position({ x: 25, y: 2 })
-      }
-    }
-    .width('100%')
-    .height(48)
-    .accessibilityText(this.ttsSleepTimerMinutes > 0 ?
-      `朗读定时剩余 ${Math.max(1, Math.ceil(this.ttsSleepTimerRemainingSeconds / 60))} 分钟` : '设置朗读定时')
-    .translate({ y: -2 })
   }
 
 
@@ -9567,7 +9488,17 @@ export struct ReadBookPage {
       this.readerInlineSourceActionParagraph(paragraph, chapterIndex, ttsHighlightActive, ttsRenderVersion,
         contentRenderVersion, pageRenderIdentity, pageStart, documentSource, pageLineHeight)
     } else if (ReaderActionMarker.parse(paragraph.text)) {
-      this.readerSourceAction(paragraph.text)
+      ReaderSourceActionButton({
+        marker: paragraph.text,
+        label: (ReaderActionMarker.parse(paragraph.text)?.label || '打开'),
+        textColor: this.getTextColor(),
+        fontSize: this.readerFontSize,
+        onAreaChanged: (area: Area): void => { this.rememberReaderSourceActionArea(paragraph.text, area); },
+        onActivate: (): void => {
+          this.beginReaderInteractiveAction();
+          this.openReaderSourceAction(paragraph.text);
+        }
+      })
     } else if (this.shouldUseTitleStyle(paragraph.text, chapterIndex)) {
       Text('', { controller: this.readerSelectableTextController(
         LeafFns.readerSelectableTextKey('title', pageRenderIdentity, contentRenderVersion, ttsRenderVersion,
@@ -9659,44 +9590,6 @@ export struct ReadBookPage {
         .id(`reader_plain_${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, chapterIndex,
           contentRenderVersion, ttsRenderVersion, paragraph.text)}_${paragraph.key}`)
     }
-  }
-
-  @Builder
-  readerSourceAction(marker: string) {
-    Row({ space: 5 }) {
-      SymbolGlyph($r('sys.symbol.arrow_right_up_and_square'))
-        .fontSize(13)
-        .fontColor([this.getTextColor()])
-      Text(ReaderActionMarker.parse(marker)?.label || '打开')
-        .fontSize(Math.max(11, this.readerFontSize - 3))
-        .fontColor(this.getTextColor())
-        .maxLines(1)
-    }
-    .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-    .border({ width: 1, color: this.getTextColor() })
-    .borderRadius(14)
-    .opacity(0.72)
-    .hitTestBehavior(HitTestMode.Block)
-    .onAreaChange((_oldValue: Area, newValue: Area) => {
-      this.rememberReaderSourceActionArea(marker, newValue);
-    })
-    .onTouch((event: TouchEvent) => {
-      if (event.type === TouchType.Down || event.type === TouchType.Move || event.type === TouchType.Up) {
-        this.beginReaderInteractiveAction();
-      }
-    })
-    .onClick(() => {
-      this.beginReaderInteractiveAction();
-      this.openReaderSourceAction(marker);
-    })
-    .priorityGesture(
-      TapGesture().onAction(() => {
-        this.beginReaderInteractiveAction();
-        this.openReaderSourceAction(marker);
-      }),
-      GestureMask.IgnoreInternal
-    )
-    .monopolizeEvents(true)
   }
 
   hasInlineReaderSourceAction(text: string): boolean {
@@ -10546,25 +10439,6 @@ export struct ReadBookPage {
   }
 
   @Builder
-  readerV2RegexBubbleCapsForPage(chapterIndex: number, pageIndex: number, source: string) {
-    Stack({ alignContent: Alignment.TopStart }) {
-      ForEach(this.readerV2PageFragments(chapterIndex, pageIndex, source),
-        (fragment: ReaderV2PageFragment) => {
-          ForEach(fragment.regexBubbleSegments, (segment: ReaderV2RegexBubbleSegment) => {
-            this.readerV2RegexBubbleCaps(segment)
-          }, (segment: ReaderV2RegexBubbleSegment) =>
-            `reader_v2_bubble_caps_${segment.styleId}_${segment.rect.left}_${segment.rect.top}_` +
-            `${segment.rect.right}_${segment.rect.bottom}_${segment.leading ? 'l' : ''}${segment.trailing ? 'r' : ''}`)
-        }, (fragment: ReaderV2PageFragment) => `reader_v2_bubble_fragment_${fragment.blockId}_` +
-          `${fragment.displayStart}_${fragment.displayEnd}`)
-    }
-    .width('100%')
-    .height('100%')
-    .zIndex(1)
-    .hitTestBehavior(HitTestMode.None)
-  }
-
-  @Builder
   readerV2RegexBubbleCaps(segment: ReaderV2RegexBubbleSegment) {
     if (segment.leading && segment.leadingCapWidthPx > 0.5) {
       Image(ThemeAssetRegistry.regexBubbleCap(segment.styleId))
@@ -10589,6 +10463,25 @@ export struct ReadBookPage {
         })
         .hitTestBehavior(HitTestMode.None)
     }
+  }
+
+  @Builder
+  readerV2RegexBubbleCapsForPage(chapterIndex: number, pageIndex: number, source: string) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      ForEach(this.readerV2PageFragments(chapterIndex, pageIndex, source),
+        (fragment: ReaderV2PageFragment) => {
+          ForEach(fragment.regexBubbleSegments, (segment: ReaderV2RegexBubbleSegment) => {
+            this.readerV2RegexBubbleCaps(segment)
+          }, (segment: ReaderV2RegexBubbleSegment) =>
+            `reader_v2_bubble_caps_${segment.styleId}_${segment.rect.left}_${segment.rect.top}_` +
+            `${segment.rect.right}_${segment.rect.bottom}_${segment.leading ? 'l' : ''}${segment.trailing ? 'r' : ''}`)
+        }, (fragment: ReaderV2PageFragment) => `reader_v2_bubble_fragment_${fragment.blockId}_` +
+          `${fragment.displayStart}_${fragment.displayEnd}`)
+    }
+    .width('100%')
+    .height('100%')
+    .zIndex(1)
+    .hitTestBehavior(HitTestMode.None)
   }
 
   currentReaderV2TtsOverlayKeys(paintVersion: number): string[] {
