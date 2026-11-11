@@ -100,6 +100,7 @@ import {
   ReaderTtsVoicePanel,
   ReaderChapterCacheDialogContent,
   ReaderTypographyCombinedSettings,
+  ReaderTypographySettingsPanel,
 } from '../components/ReaderSettingsRows';
 import { ReaderActionMenuItem, ReaderCommentPanelDragOverlay, ReaderFloatingIconMenuItem, ReaderHdsMenuItem, ReaderReplaceRulesEntryItem, ReaderActionMenuPanel } from '../components/ReaderMenuItems';
 import {
@@ -5866,7 +5867,80 @@ TtsGlobalCapsule({
             .transition(LeafFns.readerSettingsContentTransition(1))
           } else {
             Column() {
-              this.readerTypographySettingsPanel()
+              ReaderTypographySettingsPanel({
+                typographySelection: this.readerTypographySelection,
+                typographySelectedLabel: this.readerTypographySelectedLabel(),
+                typographyValue: this.readerTypographyValue(this.readerTypographySelection),
+                typographyMin: LeafFns.readerTypographyMin(this.readerTypographySelection),
+                typographyMax: LeafFns.readerTypographyMax(this.readerTypographySelection),
+                typographyValueDraft: this.readerTypographyValueDraft,
+                typographyInputVisible: this.showReaderTypographyValueInput,
+                textAlignSelected: this.readerTextAlignSelectedIndex(),
+                headerEnabled: this.readerHeaderEnabled,
+                headerContentSelected: this.readerHeaderContentSelectedIndex(),
+                footerEnabled: this.readerFooterEnabled,
+                footerLeftSelected: this.readerFooterLeftSelectedIndex(),
+                footerProgressSelected: this.readerFooterProgressSelectedIndex(),
+                footerShowProgressBar: this.readerFooterShowProgressBar,
+                extendToStatusBar: this.readerExtendToStatusBar,
+                keepParagraphIndent: this.keepParagraphIndent,
+                textColor: this.getTextColor(),
+                subTextColor: this.getSubTextColor(),
+                accentColor: this.accentColor(),
+                iconColor: this.readerControlIconColor(),
+                switchColor: this.buttonColor(),
+                darkMode: this.isReaderThemeDark(),
+                panelColor: this.getBackgroundColor(),
+                onSelectTypography: (index: number): void => {
+                  this.showReaderTypographyValueInput = false;
+                  this.readerTypographySelection = Math.max(0, Math.min(index, 7));
+                },
+                onStepTypography: (delta: number): void => {
+                  this.stepReaderTypographyValue(this.readerTypographySelection, delta);
+                },
+                onTypographyDraftChange: (value: string): void => {
+                  this.readerTypographyValueDraft = value.replace(/[^0-9]/g, '').substring(0, 3);
+                },
+                onSubmitTypography: (): void => {
+                  this.applyReaderTypographyValueInput();
+                },
+                onOpenTypographyInput: (): void => {
+                  this.openReaderTypographyValueInput();
+                },
+                onSelectTextAlign: (index: number): void => {
+                  this.setReaderTextAlignByIndex(index);
+                },
+                onToggleHeader: (enabled: boolean): void => {
+                  this.readerHeaderEnabled = enabled;
+                },
+                onSelectHeaderContent: (index: number): void => {
+                  const values = LeafFns.readerHeaderContentValues();
+                  this.readerHeaderContentMode = index >= 0 && index < values.length ? values[index] : 'chapter';
+                },
+                onToggleFooter: (enabled: boolean): void => {
+                  this.readerFooterEnabled = enabled;
+                },
+                onSelectFooterLeft: (index: number): void => {
+                  const values = LeafFns.readerFooterLeftValues();
+                  this.readerFooterLeftMode = index >= 0 && index < values.length ? values[index] : 'chapter';
+                },
+                onSelectFooterProgress: (index: number): void => {
+                  const values = LeafFns.readerFooterProgressValues();
+                  this.readerFooterProgressMode = index >= 0 && index < values.length ? values[index] : 'page';
+                },
+                onToggleFooterProgressBar: (enabled: boolean): void => {
+                  this.readerFooterShowProgressBar = enabled;
+                },
+                onOpenFontSettings: (): void => {
+                  router.pushUrl({ url: 'pages/ReaderFontSettings' });
+                },
+                onToggleExtendToStatusBar: (enabled: boolean): void => {
+                  this.setReaderExtendToStatusBar(enabled);
+                },
+                onToggleKeepParagraphIndent: (enabled: boolean): void => {
+                  this.setKeepParagraphIndent(enabled);
+                }
+              })
             }
             .width('100%')
             .transition(LeafFns.readerSettingsContentTransition(1))
@@ -5899,111 +5973,6 @@ TtsGlobalCapsule({
     return ReaderSettingsOps.settingsPanelTitle(this);
   }
 
-
-  @Builder
-  readerTypographySettingsPanel() {
-    Column({ space: 4 }) {
-      // 正文排版作为面板首项，统一调整字号、字距、行距、段距及四侧边距。
-      ReaderTypographyCombinedSettings({
-        selection: this.readerTypographySelection,
-        selectedLabel: this.readerTypographySelectedLabel(),
-        value: this.readerTypographyValue(this.readerTypographySelection),
-        minValue: LeafFns.readerTypographyMin(this.readerTypographySelection),
-        maxValue: LeafFns.readerTypographyMax(this.readerTypographySelection),
-        valueDraft: this.readerTypographyValueDraft,
-        inputVisible: this.showReaderTypographyValueInput,
-        textColor: this.getTextColor(),
-        subTextColor: this.getSubTextColor(),
-        accentColor: this.accentColor(),
-        iconColor: this.readerControlIconColor(),
-        darkMode: this.isReaderThemeDark(),
-        panelColor: this.readerSolidPanelColor(),
-        onSelect: (index: number): void => {
-          this.showReaderTypographyValueInput = false;
-          this.readerTypographySelection = Math.max(0, Math.min(index, 7));
-        },
-        onStep: (delta: number): void => {
-          this.stepReaderTypographyValue(this.readerTypographySelection, delta);
-        },
-        onDraftChange: (value: string): void => {
-          this.readerTypographyValueDraft = value.replace(/[^0-9]/g, '').substring(0, 3);
-        },
-        onSubmit: (): void => {
-          this.applyReaderTypographyValueInput();
-        },
-        onOpenInput: (): void => {
-          this.openReaderTypographyValueInput();
-        }
-      })
-      ReaderSelectSettingItem({
-        title: '正文对齐方式',
-        description: '设置正文段落的水平对齐方式',
-        options: LeafFns.readerTextAlignOptions(),
-        selected: this.readerTextAlignSelectedIndex(),
-        controlId: 'reader_text_align_select',
-        textColor: this.getTextColor(),
-        subTextColor: this.getSubTextColor(),
-        accentColor: this.accentColor(),
-        darkMode: this.isReaderThemeDark(),
-        panelColor: this.getBackgroundColor(),
-        onSelect: (index: number) => {
-          this.setReaderTextAlignByIndex(index);
-        }
-      })
-      ReaderHeaderFooterSettingsPanel({
-        headerEnabled: this.readerHeaderEnabled,
-        headerContentSelected: this.readerHeaderContentSelectedIndex(),
-        footerEnabled: this.readerFooterEnabled,
-        footerLeftSelected: this.readerFooterLeftSelectedIndex(),
-        footerProgressSelected: this.readerFooterProgressSelectedIndex(),
-        footerShowProgressBar: this.readerFooterShowProgressBar,
-        textColor: this.getTextColor(),
-        subTextColor: this.getSubTextColor(),
-        switchColor: this.buttonColor(),
-        accentColor: this.accentColor(),
-        darkMode: this.isReaderThemeDark(),
-        panelColor: this.getBackgroundColor(),
-        onToggleHeader: (enabled: boolean): void => {
-          this.readerHeaderEnabled = enabled;
-        },
-        onSelectHeaderContent: (index: number): void => {
-          const values = LeafFns.readerHeaderContentValues();
-          this.readerHeaderContentMode = index >= 0 && index < values.length ? values[index] : 'chapter';
-        },
-        onToggleFooter: (enabled: boolean): void => {
-          this.readerFooterEnabled = enabled;
-        },
-        onSelectFooterLeft: (index: number): void => {
-          const values = LeafFns.readerFooterLeftValues();
-          this.readerFooterLeftMode = index >= 0 && index < values.length ? values[index] : 'chapter';
-        },
-        onSelectFooterProgress: (index: number): void => {
-          const values = LeafFns.readerFooterProgressValues();
-          this.readerFooterProgressMode = index >= 0 && index < values.length ? values[index] : 'page';
-        },
-        onToggleFooterProgressBar: (enabled: boolean): void => {
-          this.readerFooterShowProgressBar = enabled;
-        }
-      })
-      ReaderFontEntryItem({
-        textColor: this.getTextColor(),
-        subTextColor: this.getSubTextColor(),
-        onOpen: (): void => {
-          router.pushUrl({ url: 'pages/ReaderFontSettings' });
-        }
-      })
-
-      ReaderSwitchSettingItem({ title: '正文扩展至状态栏', description: '开启后正文同时延伸到顶部状态栏和底部系统安全区', isOn: this.readerExtendToStatusBar, onChange: (checked: boolean) => {
-          this.setReaderExtendToStatusBar(checked);
-        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
-
-      ReaderSwitchSettingItem({ title: '保留段首缩进', description: '章节开头与页首保留原文的全角空格缩进', isOn: this.keepParagraphIndent, onChange: (checked: boolean) => {
-          this.setKeepParagraphIndent(checked);
-        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
-
-    }
-    .width('100%')
-  }
 
   readerTypographySelectedLabel(): string {
     return ReaderSettingsOps.readerTypographySelectedLabel(this);

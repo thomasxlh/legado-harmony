@@ -8,6 +8,7 @@ import { TtsVoiceOption } from '../utils/SystemTtsReader';
 import { HttpTTS, BookChapter } from '../model/data/Book';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { ReaderSliderStepButton } from './ReaderOverlayItems';
+import { ReaderFontEntryItem } from './ReaderStaticItems';
 
 /**
  * 阅读设置面板里的「行」组件。
@@ -1101,5 +1102,182 @@ export struct ReaderTypographyCombinedSettings {
     // Keep the selector on the same content baseline as the settings below.
     .padding({ left: 0, right: 0, top: 12, bottom: 12 })
     .alignItems(VerticalAlign.Center)
+  }
+}
+
+
+/**
+ * 排版设置面板：字号/字距/行距/段距组合行 + 对齐方式 + 页眉页脚 + 字体入口 + 两个开关。
+ *
+ * 原先 104 行 @Builder、读 31 个页面状态。提取后所有值走 @Prop、所有写走回调，
+ * 页面仍负责把选择结果落到 @State 与配置存储。
+ */
+@Component
+export struct ReaderTypographySettingsPanel {
+  @Prop typographySelection: number = 0;
+  @Prop typographySelectedLabel: string = '';
+  @Prop typographyValue: number = 16;
+  @Prop typographyMin: number = 12;
+  @Prop typographyMax: number = 40;
+  @Prop typographyValueDraft: string = '';
+  @Prop typographyInputVisible: boolean = false;
+  @Prop textAlignSelected: number = 0;
+  @Prop headerEnabled: boolean = false;
+  @Prop headerContentSelected: number = 0;
+  @Prop footerEnabled: boolean = false;
+  @Prop footerLeftSelected: number = 0;
+  @Prop footerProgressSelected: number = 0;
+  @Prop footerShowProgressBar: boolean = true;
+  @Prop extendToStatusBar: boolean = false;
+  @Prop keepParagraphIndent: boolean = true;
+  @Prop textColor: string = '#18191C';
+  @Prop subTextColor: string = '#8A8A8A';
+  @Prop accentColor: string = '#3B82F6';
+  @Prop iconColor: string = '#18191C';
+  @Prop switchColor: string = '#3B82F6';
+  @Prop darkMode: boolean = false;
+  @Prop panelColor: string = '#FFFFFF';
+  onSelectTypography: (index: number) => void = (index: number): void => {
+  };
+  onStepTypography: (delta: number) => void = (delta: number): void => {
+  };
+  onTypographyDraftChange: (value: string) => void = (value: string): void => {
+  };
+  onSubmitTypography: () => void = (): void => {
+  };
+  onOpenTypographyInput: () => void = (): void => {
+  };
+  onSelectTextAlign: (index: number) => void = (index: number): void => {
+  };
+  onToggleHeader: (enabled: boolean) => void = (enabled: boolean): void => {
+  };
+  onSelectHeaderContent: (index: number) => void = (index: number): void => {
+  };
+  onToggleFooter: (enabled: boolean) => void = (enabled: boolean): void => {
+  };
+  onSelectFooterLeft: (index: number) => void = (index: number): void => {
+  };
+  onSelectFooterProgress: (index: number) => void = (index: number): void => {
+  };
+  onToggleFooterProgressBar: (enabled: boolean) => void = (enabled: boolean): void => {
+  };
+  onOpenFontSettings: () => void = (): void => {
+  };
+  onToggleExtendToStatusBar: (enabled: boolean) => void = (enabled: boolean): void => {
+  };
+  onToggleKeepParagraphIndent: (enabled: boolean) => void = (enabled: boolean): void => {
+  };
+
+  build() {
+    Column({ space: 4 }) {
+      // 正文排版作为面板首项，统一调整字号、字距、行距、段距及四侧边距。
+      ReaderTypographyCombinedSettings({
+        selection: this.typographySelection,
+        selectedLabel: this.typographySelectedLabel,
+        value: this.typographyValue,
+        minValue: this.typographyMin,
+        maxValue: this.typographyMax,
+        valueDraft: this.typographyValueDraft,
+        inputVisible: this.typographyInputVisible,
+        textColor: this.textColor,
+        subTextColor: this.subTextColor,
+        accentColor: this.accentColor,
+        iconColor: this.iconColor,
+        darkMode: this.darkMode,
+        panelColor: this.panelColor,
+        onSelect: (index: number): void => {
+          this.onSelectTypography(index);
+        },
+        onStep: (delta: number): void => {
+          this.onStepTypography(delta);
+        },
+        onDraftChange: (value: string): void => {
+          this.onTypographyDraftChange(value);
+        },
+        onSubmit: (): void => {
+          this.onSubmitTypography();
+        },
+        onOpenInput: (): void => {
+          this.onOpenTypographyInput();
+        }
+      })
+      ReaderSelectSettingItem({
+        title: '正文对齐方式',
+        description: '设置正文段落的水平对齐方式',
+        options: LeafFns.readerTextAlignOptions(),
+        selected: this.textAlignSelected,
+        controlId: 'reader_text_align_select',
+        textColor: this.textColor,
+        subTextColor: this.subTextColor,
+        accentColor: this.accentColor,
+        darkMode: this.darkMode,
+        panelColor: this.panelColor,
+        onSelect: (index: number): void => {
+          this.onSelectTextAlign(index);
+        }
+      })
+      ReaderHeaderFooterSettingsPanel({
+        headerEnabled: this.headerEnabled,
+        headerContentSelected: this.headerContentSelected,
+        footerEnabled: this.footerEnabled,
+        footerLeftSelected: this.footerLeftSelected,
+        footerProgressSelected: this.footerProgressSelected,
+        footerShowProgressBar: this.footerShowProgressBar,
+        textColor: this.textColor,
+        subTextColor: this.subTextColor,
+        switchColor: this.switchColor,
+        accentColor: this.accentColor,
+        darkMode: this.darkMode,
+        panelColor: this.panelColor,
+        onToggleHeader: (enabled: boolean): void => {
+          this.onToggleHeader(enabled);
+        },
+        onSelectHeaderContent: (index: number): void => {
+          this.onSelectHeaderContent(index);
+        },
+        onToggleFooter: (enabled: boolean): void => {
+          this.onToggleFooter(enabled);
+        },
+        onSelectFooterLeft: (index: number): void => {
+          this.onSelectFooterLeft(index);
+        },
+        onSelectFooterProgress: (index: number): void => {
+          this.onSelectFooterProgress(index);
+        },
+        onToggleFooterProgressBar: (enabled: boolean): void => {
+          this.onToggleFooterProgressBar(enabled);
+        }
+      })
+      ReaderFontEntryItem({
+        textColor: this.textColor,
+        subTextColor: this.subTextColor,
+        onOpen: (): void => {
+          this.onOpenFontSettings();
+        }
+      })
+      ReaderSwitchSettingItem({
+        title: '正文扩展至状态栏',
+        description: '开启后正文同时延伸到顶部状态栏和底部系统安全区',
+        isOn: this.extendToStatusBar,
+        onChange: (checked: boolean): void => {
+          this.onToggleExtendToStatusBar(checked);
+        },
+        textColor: this.textColor,
+        subTextColor: this.subTextColor,
+        switchColor: this.switchColor
+      })
+      ReaderSwitchSettingItem({
+        title: '保留段首缩进',
+        description: '章节开头与页首保留原文的全角空格缩进',
+        isOn: this.keepParagraphIndent,
+        onChange: (checked: boolean): void => {
+          this.onToggleKeepParagraphIndent(checked);
+        },
+        textColor: this.textColor,
+        subTextColor: this.subTextColor,
+        switchColor: this.switchColor
+      })
+    }
+    .width('100%')
   }
 }
