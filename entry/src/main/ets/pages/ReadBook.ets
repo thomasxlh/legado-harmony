@@ -1248,17 +1248,9 @@ export struct ReadBookPage {
     return true;
   }
 
-  async reloadReaderSettingsAfterPageShow(): Promise<void> {
-    return ReaderLifecycleOps.reloadReaderSettingsAfterPageShow(this);
-  }
-
-  async reloadSourceInteractionsAfterPageShow(): Promise<void> {
-    return ReaderLifecycleOps.reloadSourceInteractionsAfterPageShow(this);
-  }
-
-  reregisterReaderFontAfterShow(delayMs: number): void {
-    ReaderLifecycleOps.reregisterReaderFontAfterShow(this, delayMs);
-  }
+  async reloadReaderSettingsAfterPageShow(): Promise<void> { return ReaderLifecycleOps.reloadReaderSettingsAfterPageShow(this); }
+  async reloadSourceInteractionsAfterPageShow(): Promise<void> { return ReaderLifecycleOps.reloadSourceInteractionsAfterPageShow(this); }
+  reregisterReaderFontAfterShow(delayMs: number): void { ReaderLifecycleOps.reregisterReaderFontAfterShow(this, delayMs); }
 
   aboutToDisappear() {
     AppStorage.setOrCreate<boolean>('shelfReaderDirectTransition', false);
@@ -1350,29 +1342,16 @@ export struct ReadBookPage {
 //region 书籍加载 / 全文缓存 / 后台长时任务 / 屏幕超时 / 加载遮罩
 // [map] 契约: 读写 book/chapters/content/缓存/遮罩 状态; 持有后台长时任务与多个成对 timer
 
-  async openPendingShortcut(): Promise<void> {
-    return ReaderLoadCacheOps.openPendingShortcut(this);
-  }
-
-  enterReaderImmersive() {
-    ReaderLoadCacheOps.enterReaderImmersive(this);
-  }
-
-  exitReaderImmersive() {
-    ReaderLoadCacheOps.exitReaderImmersive(this);
-  }
-
-  updateStatusBarSafeHeight(mainWindow: window.Window): void {
-    ReaderLoadCacheOps.updateStatusBarSafeHeight(this, mainWindow);
-  }
+  async openPendingShortcut(): Promise<void> { return ReaderLoadCacheOps.openPendingShortcut(this); }
+  enterReaderImmersive() { ReaderLoadCacheOps.enterReaderImmersive(this); }
+  exitReaderImmersive() { ReaderLoadCacheOps.exitReaderImmersive(this); }
+  updateStatusBarSafeHeight(mainWindow: window.Window): void { ReaderLoadCacheOps.updateStatusBarSafeHeight(this, mainWindow); }
 
   onStoredStatusBarHeightChanged(): void {
     this.applyReaderStatusBarSafeHeight(this.storedStatusBarHeight);
   }
 
-  applyReaderStatusBarSafeHeight(height: number): void {
-    ReaderLoadCacheOps.applyReaderStatusBarSafeHeight(this, height);
-  }
+  applyReaderStatusBarSafeHeight(height: number): void { ReaderLoadCacheOps.applyReaderStatusBarSafeHeight(this, height); }
 
   async loadBook() {
     const loadSerial = ++this.bookLoadSerial;
@@ -1519,9 +1498,7 @@ export struct ReadBookPage {
     }
   }
 
-  async prepareReaderWebFetchRuntime(source: BookSource | null): Promise<void> {
-    return ReaderLoadCacheOps.prepareReaderWebFetchRuntime(this, source);
-  }
+  async prepareReaderWebFetchRuntime(source: BookSource | null): Promise<void> { return ReaderLoadCacheOps.prepareReaderWebFetchRuntime(this, source); }
 
   async retryFetchChapters() {
     try {
@@ -1548,22 +1525,15 @@ export struct ReadBookPage {
     }
   }
 
-  initialReaderViewportSize(): ReaderViewportSize {
-    return ReaderLoadCacheOps.initialReaderViewportSize(this);
-  }
-
-  resetReaderStateForBookLoad(): void {
-    ReaderLoadCacheOps.resetReaderStateForBookLoad(this);
-  }
+  initialReaderViewportSize(): ReaderViewportSize { return ReaderLoadCacheOps.initialReaderViewportSize(this); }
+  resetReaderStateForBookLoad(): void { ReaderLoadCacheOps.resetReaderStateForBookLoad(this); }
 
   async loadContent(silent: boolean = false, targetChapterIndex: number = this.currentChapterIndex,
     preferImmediatePagination: boolean = false): Promise<boolean> {
     return ReaderLoadCacheOps.loadContent(this, silent, targetChapterIndex, preferImmediatePagination);
   }
 
-  async refreshCurrentChapter(): Promise<void> {
-    return ReaderLoadCacheOps.refreshCurrentChapter(this);
-  }
+  async refreshCurrentChapter(): Promise<void> { return ReaderLoadCacheOps.refreshCurrentChapter(this); }
 
   onFullTextCacheCancelNonceChanged(): void {
     const nonce = this.fullTextCacheCancelNonce || 0;
@@ -1579,9 +1549,7 @@ export struct ReadBookPage {
     }
   }
 
-  readerCachePanelStatus(): string {
-    return ReaderLoadCacheOps.readerCachePanelStatus(this);
-  }
+  readerCachePanelStatus(): string { return ReaderLoadCacheOps.readerCachePanelStatus(this); }
 
   openReaderCacheDialog(): void {
     if (!this.book || LocalBookService.isLocalBook(this.book)) {
@@ -1623,126 +1591,42 @@ export struct ReadBookPage {
     });
   }
 
-  closeReaderCacheDialog(): void {
-    ReaderLoadCacheOps.closeReaderCacheDialog(this);
-  }
-
-  async refreshReaderCacheChapters(): Promise<void> {
-    return ReaderLoadCacheOps.refreshReaderCacheChapters(this);
-  }
-
-  readerCachedChapterTextColor(): string {
-    return ReaderLoadCacheOps.readerCachedChapterTextColor(this);
-  }
-
-  async cacheReaderSingleChapter(index: number): Promise<void> {
-    return ReaderLoadCacheOps.cacheReaderSingleChapter(this, index);
-  }
-
-  async cacheReaderChapterRange(): Promise<void> {
-    return ReaderLoadCacheOps.cacheReaderChapterRange(this);
-  }
-
-  async cacheReaderChapterIndexes(indexes: number[]): Promise<void> {
-    return ReaderLoadCacheOps.cacheReaderChapterIndexes(this, indexes);
-  }
-
-  cancelReaderChapterRangeCache(): void {
-    ReaderLoadCacheOps.cancelReaderChapterRangeCache(this);
-  }
-
-  async clearReaderCachedChapters(): Promise<void> {
-    return ReaderLoadCacheOps.clearReaderCachedChapters(this);
-  }
-
-  startFullTextCache(startIndex: number = 0): void {
-    ReaderLoadCacheOps.startFullTextCache(this, startIndex);
-  }
+  closeReaderCacheDialog(): void { ReaderLoadCacheOps.closeReaderCacheDialog(this); }
+  async refreshReaderCacheChapters(): Promise<void> { return ReaderLoadCacheOps.refreshReaderCacheChapters(this); }
+  readerCachedChapterTextColor(): string { return ReaderLoadCacheOps.readerCachedChapterTextColor(this); }
+  async cacheReaderSingleChapter(index: number): Promise<void> { return ReaderLoadCacheOps.cacheReaderSingleChapter(this, index); }
+  async cacheReaderChapterRange(): Promise<void> { return ReaderLoadCacheOps.cacheReaderChapterRange(this); }
+  async cacheReaderChapterIndexes(indexes: number[]): Promise<void> { return ReaderLoadCacheOps.cacheReaderChapterIndexes(this, indexes); }
+  cancelReaderChapterRangeCache(): void { ReaderLoadCacheOps.cancelReaderChapterRangeCache(this); }
+  async clearReaderCachedChapters(): Promise<void> { return ReaderLoadCacheOps.clearReaderCachedChapters(this); }
+  startFullTextCache(startIndex: number = 0): void { ReaderLoadCacheOps.startFullTextCache(this, startIndex); }
 
   /** Dialog-initiated cancellation; routes through the coordinator like a notification-bar cancel. */
-  cancelFullTextCache(): void {
-    ReaderLoadCacheOps.cancelFullTextCache(this);
-  }
-
-  fullTextCacheScopeLabel(): string {
-    return ReaderLoadCacheOps.fullTextCacheScopeLabel(this);
-  }
-
-  async runFullTextCache(taskId: number): Promise<void> {
-    return ReaderLoadCacheOps.runFullTextCache(this, taskId);
-  }
-
-  beginStoppingFullTextCache(nonce: number, showHint: boolean): void {
-    ReaderLoadCacheOps.beginStoppingFullTextCache(this, nonce, showHint);
-  }
-
-  releaseFullTextCacheCancelRegistration(): void {
-    ReaderLoadCacheOps.releaseFullTextCacheCancelRegistration(this);
-  }
-
-  shouldCancelFullTextCache(): boolean {
-    return ReaderLoadCacheOps.shouldCancelFullTextCache(this);
-  }
-
-  clearReaderScreenTimeoutTimer(): void {
-    ReaderLoadCacheOps.clearReaderScreenTimeoutTimer(this);
-  }
-
-  applyReaderScreenTimeout(): void {
-    ReaderLoadCacheOps.applyReaderScreenTimeout(this);
-  }
-
-  refreshReaderScreenTimeout(): void {
-    ReaderLoadCacheOps.refreshReaderScreenTimeout(this);
-  }
-
-  releaseReaderScreenTimeout(): void {
-    ReaderLoadCacheOps.releaseReaderScreenTimeout(this);
-  }
-
-  setReaderWindowKeepScreenOn(enabled: boolean, serial: number): void {
-    ReaderLoadCacheOps.setReaderWindowKeepScreenOn(this, enabled, serial);
-  }
-
-  async cacheFullTextChapter(engine: ReadBookEngine, chapterIndex: number, taskId: number): Promise<boolean> {
-    return ReaderLoadCacheOps.cacheFullTextChapter(this, engine, chapterIndex, taskId);
-  }
+  cancelFullTextCache(): void { ReaderLoadCacheOps.cancelFullTextCache(this); }
+  fullTextCacheScopeLabel(): string { return ReaderLoadCacheOps.fullTextCacheScopeLabel(this); }
+  async runFullTextCache(taskId: number): Promise<void> { return ReaderLoadCacheOps.runFullTextCache(this, taskId); }
+  beginStoppingFullTextCache(nonce: number, showHint: boolean): void { ReaderLoadCacheOps.beginStoppingFullTextCache(this, nonce, showHint); }
+  releaseFullTextCacheCancelRegistration(): void { ReaderLoadCacheOps.releaseFullTextCacheCancelRegistration(this); }
+  shouldCancelFullTextCache(): boolean { return ReaderLoadCacheOps.shouldCancelFullTextCache(this); }
+  clearReaderScreenTimeoutTimer(): void { ReaderLoadCacheOps.clearReaderScreenTimeoutTimer(this); }
+  applyReaderScreenTimeout(): void { ReaderLoadCacheOps.applyReaderScreenTimeout(this); }
+  refreshReaderScreenTimeout(): void { ReaderLoadCacheOps.refreshReaderScreenTimeout(this); }
+  releaseReaderScreenTimeout(): void { ReaderLoadCacheOps.releaseReaderScreenTimeout(this); }
+  setReaderWindowKeepScreenOn(enabled: boolean, serial: number): void { ReaderLoadCacheOps.setReaderWindowKeepScreenOn(this, enabled, serial); }
+  async cacheFullTextChapter(engine: ReadBookEngine, chapterIndex: number, taskId: number): Promise<boolean> { return ReaderLoadCacheOps.cacheFullTextChapter(this, engine, chapterIndex, taskId); }
 
 
 
   /** Copies fresh cacheDate values from the caching engine's chapters into a rendered list. */
 
-  fullTextCacheProgressText(): string {
-    return ReaderLoadCacheOps.fullTextCacheProgressText(this);
-  }
-
-  async publishFullTextCacheProgress(force: boolean): Promise<void> {
-    return ReaderLoadCacheOps.publishFullTextCacheProgress(this, force);
-  }
-
-  async publishFullTextCacheNotification(text: string, additionalText: string, ongoing: boolean): Promise<void> {
-    return ReaderLoadCacheOps.publishFullTextCacheNotification(this, text, additionalText, ongoing);
-  }
-
-  async requestFullTextCacheNotificationEnabled(): Promise<void> {
-    return ReaderLoadCacheOps.requestFullTextCacheNotificationEnabled(this);
-  }
-
-  async getFullTextCacheCancelWantAgent(): Promise<WantAgent> {
-    return ReaderLoadCacheOps.getFullTextCacheCancelWantAgent(this);
-  }
-
-  async startFullTextCacheBackgroundRunning(): Promise<void> {
-    return ReaderLoadCacheOps.startFullTextCacheBackgroundRunning(this);
-  }
-
-  async stopFullTextCacheBackgroundRunning(): Promise<void> {
-    return ReaderLoadCacheOps.stopFullTextCacheBackgroundRunning(this);
-  }
-
-  async createFullTextCacheOpenWantAgent(): Promise<WantAgent> {
-    return ReaderLoadCacheOps.createFullTextCacheOpenWantAgent(this);
-  }
+  fullTextCacheProgressText(): string { return ReaderLoadCacheOps.fullTextCacheProgressText(this); }
+  async publishFullTextCacheProgress(force: boolean): Promise<void> { return ReaderLoadCacheOps.publishFullTextCacheProgress(this, force); }
+  async publishFullTextCacheNotification(text: string, additionalText: string, ongoing: boolean): Promise<void> { return ReaderLoadCacheOps.publishFullTextCacheNotification(this, text, additionalText, ongoing); }
+  async requestFullTextCacheNotificationEnabled(): Promise<void> { return ReaderLoadCacheOps.requestFullTextCacheNotificationEnabled(this); }
+  async getFullTextCacheCancelWantAgent(): Promise<WantAgent> { return ReaderLoadCacheOps.getFullTextCacheCancelWantAgent(this); }
+  async startFullTextCacheBackgroundRunning(): Promise<void> { return ReaderLoadCacheOps.startFullTextCacheBackgroundRunning(this); }
+  async stopFullTextCacheBackgroundRunning(): Promise<void> { return ReaderLoadCacheOps.stopFullTextCacheBackgroundRunning(this); }
+  async createFullTextCacheOpenWantAgent(): Promise<WantAgent> { return ReaderLoadCacheOps.createFullTextCacheOpenWantAgent(this); }
 
   /** 网络取链限时兜底：挂起时 Promise 永不返回，超时返回 null，由调用方转成可操作的失败态。 */
   async withReaderFetchTimeout<T>(task: Promise<T>, timeoutMs: number): Promise<T | null> {
@@ -1759,29 +1643,12 @@ export struct ReadBookPage {
     }
   }
 
-  finishReaderInitialOpening(): void {
-    ReaderLoadCacheOps.finishReaderInitialOpening(this);
-  }
-
-  shouldRenderPrimaryReaderContent(): boolean {
-    return ReaderLoadCacheOps.shouldRenderPrimaryReaderContent(this);
-  }
-
-  isPagedReaderAwaitingPagination(): boolean {
-    return ReaderLoadCacheOps.isPagedReaderAwaitingPagination(this);
-  }
-
-  shouldShowReaderLoadingOverlay(): boolean {
-    return ReaderLoadCacheOps.shouldShowReaderLoadingOverlay(this);
-  }
-
-  shouldBlockReaderInteraction(): boolean {
-    return ReaderLoadCacheOps.shouldBlockReaderInteraction(this);
-  }
-
-  getReaderLoadingText(): string {
-    return ReaderLoadCacheOps.getReaderLoadingText(this);
-  }
+  finishReaderInitialOpening(): void { ReaderLoadCacheOps.finishReaderInitialOpening(this); }
+  shouldRenderPrimaryReaderContent(): boolean { return ReaderLoadCacheOps.shouldRenderPrimaryReaderContent(this); }
+  isPagedReaderAwaitingPagination(): boolean { return ReaderLoadCacheOps.isPagedReaderAwaitingPagination(this); }
+  shouldShowReaderLoadingOverlay(): boolean { return ReaderLoadCacheOps.shouldShowReaderLoadingOverlay(this); }
+  shouldBlockReaderInteraction(): boolean { return ReaderLoadCacheOps.shouldBlockReaderInteraction(this); }
+  getReaderLoadingText(): string { return ReaderLoadCacheOps.getReaderLoadingText(this); }
 
   onReaderLoadingChanged(): void {
     if (this.isLoading) {
@@ -1791,18 +1658,11 @@ export struct ReadBookPage {
     }
   }
 
-  scheduleReaderLoadingSlowHint(): void {
-    ReaderLoadCacheOps.scheduleReaderLoadingSlowHint(this);
-  }
-
-  cancelReaderLoadingSlowHint(): void {
-    ReaderLoadCacheOps.cancelReaderLoadingSlowHint(this);
-  }
+  scheduleReaderLoadingSlowHint(): void { ReaderLoadCacheOps.scheduleReaderLoadingSlowHint(this); }
+  cancelReaderLoadingSlowHint(): void { ReaderLoadCacheOps.cancelReaderLoadingSlowHint(this); }
 
   /** 逃生口：作废在飞的打开/取文流程，把“无限等待”转成可操作的失败态（可刷新本章/换源/重试）。 */
-  cancelReaderLoading(): void {
-    ReaderLoadCacheOps.cancelReaderLoading(this);
-  }
+  cancelReaderLoading(): void { ReaderLoadCacheOps.cancelReaderLoading(this); }
 
   @Builder
   readerComicScrollSurface() {
@@ -1990,9 +1850,7 @@ export struct ReadBookPage {
     )
   }
 
-  readerComicBoundaryHintTopPadding(): number {
-    return ReaderLoadCacheOps.readerComicBoundaryHintTopPadding(this);
-  }
+  readerComicBoundaryHintTopPadding(): number { return ReaderLoadCacheOps.readerComicBoundaryHintTopPadding(this); }
 
   pageTransition() {
     if (this.openedWithShelfAnimation || AppStorage.get<boolean>('shelfReaderDirectTransition') === true) {
@@ -3138,33 +2996,13 @@ TtsGlobalCapsule({
     .height(56)
   }
 
-  handleReaderHdsAction(index: number, fromToc: boolean, fromSettings: boolean = false): void {
-    ReaderMenuBuildOps.handleReaderHdsAction(this, index, fromToc, fromSettings);
-  }
-
-  readerDayNightIcon(): Resource {
-    return ReaderMenuBuildOps.readerDayNightIcon(this);
-  }
-
-  toggleReaderDayNightMode(): void {
-    ReaderMenuBuildOps.toggleReaderDayNightMode(this);
-  }
-
-  setReaderAutoMode(): void {
-    ReaderMenuBuildOps.setReaderAutoMode(this);
-  }
-
-  handleReaderDayNightClick(): void {
-    ReaderMenuBuildOps.handleReaderDayNightClick(this);
-  }
-
-  handleReaderDayNightLongPress(): void {
-    ReaderMenuBuildOps.handleReaderDayNightLongPress(this);
-  }
-
-  applyReaderThemeMode(nextMode: string): void {
-    ReaderMenuBuildOps.applyReaderThemeMode(this, nextMode);
-  }
+  handleReaderHdsAction(index: number, fromToc: boolean, fromSettings: boolean = false): void { ReaderMenuBuildOps.handleReaderHdsAction(this, index, fromToc, fromSettings); }
+  readerDayNightIcon(): Resource { return ReaderMenuBuildOps.readerDayNightIcon(this); }
+  toggleReaderDayNightMode(): void { ReaderMenuBuildOps.toggleReaderDayNightMode(this); }
+  setReaderAutoMode(): void { ReaderMenuBuildOps.setReaderAutoMode(this); }
+  handleReaderDayNightClick(): void { ReaderMenuBuildOps.handleReaderDayNightClick(this); }
+  handleReaderDayNightLongPress(): void { ReaderMenuBuildOps.handleReaderDayNightLongPress(this); }
+  applyReaderThemeMode(nextMode: string): void { ReaderMenuBuildOps.applyReaderThemeMode(this, nextMode); }
 
   @Builder
   readerFloatingTocPanel() {
@@ -3571,9 +3409,7 @@ TtsGlobalCapsule({
     }
   }
 
-  bookmarkSwipeActions(bookmark: Bookmark): HdsSwipeActionOptions {
-    return ReaderMenuBuildOps.bookmarkSwipeActions(this, bookmark);
-  }
+  bookmarkSwipeActions(bookmark: Bookmark): HdsSwipeActionOptions { return ReaderMenuBuildOps.bookmarkSwipeActions(this, bookmark); }
 
 
   onSystemDialogFlagChanged(): void {
@@ -3603,9 +3439,7 @@ TtsGlobalCapsule({
     });
   }
 
-  async openChangeSourceDialog(): Promise<void> {
-    return ReaderMenuBuildOps.openChangeSourceDialog(this);
-  }
+  async openChangeSourceDialog(): Promise<void> { return ReaderMenuBuildOps.openChangeSourceDialog(this); }
 
   @Builder
   readerCacheDialogContent() {
@@ -3679,18 +3513,9 @@ TtsGlobalCapsule({
 // [map] 契约: 读写 设置/目录/书签/TTS浮标显示态; 含 ttsMiniPlayer 等大量 @Builder
 
 
-  openLayoutElementSettings(): void {
-    ReaderTextPrepOps.openLayoutElementSettings(this);
-  }
-
-  canSelectTxtCharset(): boolean {
-    return ReaderTextPrepOps.canSelectTxtCharset(this);
-  }
-
-
-  txtCharsetMenuLabel(): string {
-    return ReaderTextPrepOps.txtCharsetMenuLabel(this);
-  }
+  openLayoutElementSettings(): void { ReaderTextPrepOps.openLayoutElementSettings(this); }
+  canSelectTxtCharset(): boolean { return ReaderTextPrepOps.canSelectTxtCharset(this); }
+  txtCharsetMenuLabel(): string { return ReaderTextPrepOps.txtCharsetMenuLabel(this); }
 
   openTxtCharsetDialog(): void {
     if (!this.canSelectTxtCharset()) return;
@@ -3728,198 +3553,61 @@ TtsGlobalCapsule({
     });
   }
 
-  async applyTxtCharsetSelection(): Promise<void> {
-    return ReaderTextPrepOps.applyTxtCharsetSelection(this);
-  }
-
-
-  openCurrentReaderReplaceRules(): void {
-    ReaderTextPrepOps.openCurrentReaderReplaceRules(this);
-  }
-
-  prepareReaderReplaceRulesContext(): void {
-    ReaderTextPrepOps.prepareReaderReplaceRulesContext(this);
-  }
-
-  openReaderReplaceRuleWithSelection(selectedText: string): void {
-    ReaderTextPrepOps.openReaderReplaceRuleWithSelection(this, selectedText);
-  }
-
-  saveReaderLayoutElementSettings(): void {
-    ReaderTextPrepOps.saveReaderLayoutElementSettings(this);
-  }
-
-
-  readerSourceNeedsLogin(): boolean {
-    return ReaderTextPrepOps.readerSourceNeedsLogin(this);
-  }
-
-  openReaderSourceLogin(): void {
-    ReaderTextPrepOps.openReaderSourceLogin(this);
-  }
-
-  readerCanRetry(): boolean {
-    return ReaderTextPrepOps.readerCanRetry(this);
-  }
-
-  retryReaderContent(): void {
-    ReaderTextPrepOps.retryReaderContent(this);
-  }
-
-  async handleTtsQuickAction(): Promise<void> {
-    return ReaderTextPrepOps.handleTtsQuickAction(this);
-  }
-
-  shouldShowTtsMiniPlayer(): boolean {
-    return ReaderTextPrepOps.shouldShowTtsMiniPlayer(this);
-  }
-
-  shouldShowGlobalTtsMiniPlayer(): boolean {
-    return ReaderTextPrepOps.shouldShowGlobalTtsMiniPlayer(this);
-  }
-
-  openGlobalTtsCatalog(): void {
-    ReaderTextPrepOps.openGlobalTtsCatalog(this);
-  }
-
-  ttsCatalogTitles(): string[] {
-    return ReaderTextPrepOps.ttsCatalogTitles(this);
-  }
-
-  ttsCatalogCount(): number {
-    return ReaderTextPrepOps.ttsCatalogCount(this);
-  }
-
-  ttsCatalogCurrentIndex(): number {
-    return ReaderTextPrepOps.ttsCatalogCurrentIndex(this);
-  }
-
-  ttsCatalogCachedFlag(canonicalIndex: number): boolean {
-    return ReaderTextPrepOps.ttsCatalogCachedFlag(this, canonicalIndex);
-  }
-
-  closeGlobalTtsCatalog(): void {
-    ReaderTextPrepOps.closeGlobalTtsCatalog(this);
-  }
-
-  selectGlobalTtsCatalog(index: number): void {
-    ReaderTextPrepOps.selectGlobalTtsCatalog(this, index);
-  }
-
-  globalTtsCatalogCanonicalIndex(displayIndex: number): number {
-    return ReaderTextPrepOps.globalTtsCatalogCanonicalIndex(this, displayIndex);
-  }
-
-  globalTtsCatalogDisplayIndex(canonicalIndex: number): number {
-    return ReaderTextPrepOps.globalTtsCatalogDisplayIndex(this, canonicalIndex);
-  }
+  async applyTxtCharsetSelection(): Promise<void> { return ReaderTextPrepOps.applyTxtCharsetSelection(this); }
+  openCurrentReaderReplaceRules(): void { ReaderTextPrepOps.openCurrentReaderReplaceRules(this); }
+  prepareReaderReplaceRulesContext(): void { ReaderTextPrepOps.prepareReaderReplaceRulesContext(this); }
+  openReaderReplaceRuleWithSelection(selectedText: string): void { ReaderTextPrepOps.openReaderReplaceRuleWithSelection(this, selectedText); }
+  saveReaderLayoutElementSettings(): void { ReaderTextPrepOps.saveReaderLayoutElementSettings(this); }
+  readerSourceNeedsLogin(): boolean { return ReaderTextPrepOps.readerSourceNeedsLogin(this); }
+  openReaderSourceLogin(): void { ReaderTextPrepOps.openReaderSourceLogin(this); }
+  readerCanRetry(): boolean { return ReaderTextPrepOps.readerCanRetry(this); }
+  retryReaderContent(): void { ReaderTextPrepOps.retryReaderContent(this); }
+  async handleTtsQuickAction(): Promise<void> { return ReaderTextPrepOps.handleTtsQuickAction(this); }
+  shouldShowTtsMiniPlayer(): boolean { return ReaderTextPrepOps.shouldShowTtsMiniPlayer(this); }
+  shouldShowGlobalTtsMiniPlayer(): boolean { return ReaderTextPrepOps.shouldShowGlobalTtsMiniPlayer(this); }
+  openGlobalTtsCatalog(): void { ReaderTextPrepOps.openGlobalTtsCatalog(this); }
+  ttsCatalogTitles(): string[] { return ReaderTextPrepOps.ttsCatalogTitles(this); }
+  ttsCatalogCount(): number { return ReaderTextPrepOps.ttsCatalogCount(this); }
+  ttsCatalogCurrentIndex(): number { return ReaderTextPrepOps.ttsCatalogCurrentIndex(this); }
+  ttsCatalogCachedFlag(canonicalIndex: number): boolean { return ReaderTextPrepOps.ttsCatalogCachedFlag(this, canonicalIndex); }
+  closeGlobalTtsCatalog(): void { ReaderTextPrepOps.closeGlobalTtsCatalog(this); }
+  selectGlobalTtsCatalog(index: number): void { ReaderTextPrepOps.selectGlobalTtsCatalog(this, index); }
+  globalTtsCatalogCanonicalIndex(displayIndex: number): number { return ReaderTextPrepOps.globalTtsCatalogCanonicalIndex(this, displayIndex); }
+  globalTtsCatalogDisplayIndex(canonicalIndex: number): number { return ReaderTextPrepOps.globalTtsCatalogDisplayIndex(this, canonicalIndex); }
 
   /**
    * The chip is read from the published session catalog so that the catalog opened
    * from the shelf renders identically to the one opened inside the reader.
    */
-  isGlobalTtsCatalogChapterCached(displayIndex: number): boolean {
-    return ReaderTextPrepOps.isGlobalTtsCatalogChapterCached(this, displayIndex);
-  }
+  isGlobalTtsCatalogChapterCached(displayIndex: number): boolean { return ReaderTextPrepOps.isGlobalTtsCatalogChapterCached(this, displayIndex); }
 
   /** Canonical-order cache flags published with the floating TTS session catalog. */
-  readerChapterCachedFlags(): boolean[] {
-    return ReaderTextPrepOps.readerChapterCachedFlags(this);
-  }
-
-  toggleGlobalTtsCatalogOrder(): void {
-    ReaderTextPrepOps.toggleGlobalTtsCatalogOrder(this);
-  }
-
-  openGlobalTtsReaderPage(): void {
-    ReaderTextPrepOps.openGlobalTtsReaderPage(this);
-  }
+  readerChapterCachedFlags(): boolean[] { return ReaderTextPrepOps.readerChapterCachedFlags(this); }
+  toggleGlobalTtsCatalogOrder(): void { ReaderTextPrepOps.toggleGlobalTtsCatalogOrder(this); }
+  openGlobalTtsReaderPage(): void { ReaderTextPrepOps.openGlobalTtsReaderPage(this); }
 
   // 全局浮标“定位”按钮：同书跳到后台朗读锚点页；他书朗读则打开对应阅读页。
-  async jumpToGlobalTtsPosition(): Promise<void> {
-    return ReaderTextPrepOps.jumpToGlobalTtsPosition(this);
-  }
-
-  ttsCurrentSentence(): string {
-    return ReaderTextPrepOps.ttsCurrentSentence(this);
-  }
-
-  ttsCurrentSentenceForPanel(): string {
-    return ReaderTextPrepOps.ttsCurrentSentenceForPanel(this);
-  }
-
-  ttsQuickSentencePreview(): string {
-    return ReaderTextPrepOps.ttsQuickSentencePreview(this);
-  }
-
-  ttsPanelTextBefore(): string {
-    return ReaderTextPrepOps.ttsPanelTextBefore(this);
-  }
-
-  ttsPanelTextAfter(): string {
-    return ReaderTextPrepOps.ttsPanelTextAfter(this);
-  }
-
-  ttsPanelOffsetSource(): string {
-    return ReaderTextPrepOps.ttsPanelOffsetSource(this);
-  }
-
-
-  ttsPanelFollowingText(): string {
-    return ReaderTextPrepOps.ttsPanelFollowingText(this);
-  }
-
-  ttsQuickProgressLabel(): string {
-    return ReaderTextPrepOps.ttsQuickProgressLabel(this);
-  }
-
-  ttsQuickProgress(): number {
-    return ReaderTextPrepOps.ttsQuickProgress(this);
-  }
-
-  showBookmarkActions(bookmark: Bookmark, event: GestureEvent): void {
-    ReaderTextPrepOps.showBookmarkActions(this, bookmark, event);
-  }
-
-  closeBookmarkActionMenu(): void {
-    ReaderTextPrepOps.closeBookmarkActionMenu(this);
-  }
-
-  bookmarkActionMenuLeft(menuWidth: number): number {
-    return ReaderTextPrepOps.bookmarkActionMenuLeft(this, menuWidth);
-  }
-
-  bookmarkActionMenuTop(menuHeight: number): number {
-    return ReaderTextPrepOps.bookmarkActionMenuTop(this, menuHeight);
-  }
-
-  getTocCover(): string {
-    return ReaderTextPrepOps.getTocCover(this);
-  }
-
-  getTocBookInitial(): string {
-    return ReaderTextPrepOps.getTocBookInitial(this);
-  }
-
-  getChapterTitle(chapterIndex: number = this.currentChapterIndex): string {
-    return ReaderTextPrepOps.getChapterTitle(this, chapterIndex);
-  }
-
-  applyReaderContentRules(content: string): string {
-    return ReaderTextPrepOps.applyReaderContentRules(this, content);
-  }
-
-  readerPreparedContentKey(content: string, chapterIndex: number): string {
-    return ReaderTextPrepOps.readerPreparedContentKey(this, content, chapterIndex);
-  }
-
-  getPreparedReaderContent(content: string, chapterIndex: number): string {
-    return ReaderTextPrepOps.getPreparedReaderContent(this, content, chapterIndex);
-  }
-
-  async prepareReaderContentRules(content: string, chapterIndex: number): Promise<string> {
-    return ReaderTextPrepOps.prepareReaderContentRules(this, content, chapterIndex);
-  }
+  async jumpToGlobalTtsPosition(): Promise<void> { return ReaderTextPrepOps.jumpToGlobalTtsPosition(this); }
+  ttsCurrentSentence(): string { return ReaderTextPrepOps.ttsCurrentSentence(this); }
+  ttsCurrentSentenceForPanel(): string { return ReaderTextPrepOps.ttsCurrentSentenceForPanel(this); }
+  ttsQuickSentencePreview(): string { return ReaderTextPrepOps.ttsQuickSentencePreview(this); }
+  ttsPanelTextBefore(): string { return ReaderTextPrepOps.ttsPanelTextBefore(this); }
+  ttsPanelTextAfter(): string { return ReaderTextPrepOps.ttsPanelTextAfter(this); }
+  ttsPanelOffsetSource(): string { return ReaderTextPrepOps.ttsPanelOffsetSource(this); }
+  ttsPanelFollowingText(): string { return ReaderTextPrepOps.ttsPanelFollowingText(this); }
+  ttsQuickProgressLabel(): string { return ReaderTextPrepOps.ttsQuickProgressLabel(this); }
+  ttsQuickProgress(): number { return ReaderTextPrepOps.ttsQuickProgress(this); }
+  showBookmarkActions(bookmark: Bookmark, event: GestureEvent): void { ReaderTextPrepOps.showBookmarkActions(this, bookmark, event); }
+  closeBookmarkActionMenu(): void { ReaderTextPrepOps.closeBookmarkActionMenu(this); }
+  bookmarkActionMenuLeft(menuWidth: number): number { return ReaderTextPrepOps.bookmarkActionMenuLeft(this, menuWidth); }
+  bookmarkActionMenuTop(menuHeight: number): number { return ReaderTextPrepOps.bookmarkActionMenuTop(this, menuHeight); }
+  getTocCover(): string { return ReaderTextPrepOps.getTocCover(this); }
+  getTocBookInitial(): string { return ReaderTextPrepOps.getTocBookInitial(this); }
+  getChapterTitle(chapterIndex: number = this.currentChapterIndex): string { return ReaderTextPrepOps.getChapterTitle(this, chapterIndex); }
+  applyReaderContentRules(content: string): string { return ReaderTextPrepOps.applyReaderContentRules(this, content); }
+  readerPreparedContentKey(content: string, chapterIndex: number): string { return ReaderTextPrepOps.readerPreparedContentKey(this, content, chapterIndex); }
+  getPreparedReaderContent(content: string, chapterIndex: number): string { return ReaderTextPrepOps.getPreparedReaderContent(this, content, chapterIndex); }
+  async prepareReaderContentRules(content: string, chapterIndex: number): Promise<string> { return ReaderTextPrepOps.prepareReaderContentRules(this, content, chapterIndex); }
 
   onReaderReplaceRulesChanged(): void {
     if (this.readerEntryInitializing || !this.readerPageVisible) {
@@ -3930,40 +3618,18 @@ TtsGlobalCapsule({
     });
   }
 
-  async reloadReaderReplaceRules(repaginate: boolean): Promise<void> {
-    return ReaderTextPrepOps.reloadReaderReplaceRules(this, repaginate);
-  }
+  async reloadReaderReplaceRules(repaginate: boolean): Promise<void> { return ReaderTextPrepOps.reloadReaderReplaceRules(this, repaginate); }
 //endregion
 //region 页眉页脚 / 漫画·连续滚动 / 页面度量 / 主题·字体 / 书签 / TTS音色·语速 / 目录搜索
 // [map] 契约: 读 排版/主题/字体/章节; 写 字体注册、书签、音色语速、目录滚动条
 
-  cleanChapterTitle(title: string): string {
-    return ReaderChromeThemeOps.cleanChapterTitle(this, title);
-  }
-
-  updatePendingVerification(): void {
-    ReaderChromeThemeOps.updatePendingVerification(this);
-  }
-
-  openVerificationPage(): void {
-    ReaderChromeThemeOps.openVerificationPage(this);
-  }
-
-  getProgressText(): string {
-    return ReaderChromeThemeOps.getProgressText(this);
-  }
-
-  getChapterInfoText(): string {
-    return ReaderChromeThemeOps.getChapterInfoText(this);
-  }
-
-  getReaderHeaderInfoText(): string {
-    return ReaderChromeThemeOps.getReaderHeaderInfoText(this);
-  }
-
-  getReaderFooterLeftText(): string {
-    return ReaderChromeThemeOps.getReaderFooterLeftText(this);
-  }
+  cleanChapterTitle(title: string): string { return ReaderChromeThemeOps.cleanChapterTitle(this, title); }
+  updatePendingVerification(): void { ReaderChromeThemeOps.updatePendingVerification(this); }
+  openVerificationPage(): void { ReaderChromeThemeOps.openVerificationPage(this); }
+  getProgressText(): string { return ReaderChromeThemeOps.getProgressText(this); }
+  getChapterInfoText(): string { return ReaderChromeThemeOps.getChapterInfoText(this); }
+  getReaderHeaderInfoText(): string { return ReaderChromeThemeOps.getReaderHeaderInfoText(this); }
+  getReaderFooterLeftText(): string { return ReaderChromeThemeOps.getReaderFooterLeftText(this); }
 
   getReaderFooterProgressText(): string {
     const mode = this.readerFooterProgressMode;
@@ -3983,172 +3649,52 @@ TtsGlobalCapsule({
     return this.getPageInfoText();
   }
 
-  getReaderFooterProgressValue(): number {
-    return ReaderChromeThemeOps.getReaderFooterProgressValue(this);
-  }
-
-  getPageInfoText(): string {
-    return ReaderChromeThemeOps.getPageInfoText(this);
-  }
-
-  getPageText(pageIndex: number): string {
-    return ReaderChromeThemeOps.getPageText(this, pageIndex);
-  }
-
-  getCurrentPageText(): string {
-    return ReaderChromeThemeOps.getCurrentPageText(this);
-  }
-
-  isLandscapeDoublePageActive(): boolean {
-    return ReaderChromeThemeOps.isLandscapeDoublePageActive(this);
-  }
-
-  initializeReaderComicMode(): void {
-    ReaderChromeThemeOps.initializeReaderComicMode(this);
-  }
-
-  readerSourceIndicatesComic(): boolean {
-    return ReaderChromeThemeOps.readerSourceIndicatesComic(this);
-  }
-
-  detectReaderComicMode(_source: string): void {
-    ReaderChromeThemeOps.detectReaderComicMode(this, _source);
-  }
-
-  toggleReaderComicReadingMode(): void {
-    ReaderChromeThemeOps.toggleReaderComicReadingMode(this);
-  }
-
-  isReaderComicModeActive(): boolean {
-    return ReaderChromeThemeOps.isReaderComicModeActive(this);
-  }
-
-  isReaderNovelContinuousScrollModeActive(): boolean {
-    return ReaderChromeThemeOps.isReaderNovelContinuousScrollModeActive(this);
-  }
-
-  isReaderContinuousScrollSurfaceActive(): boolean {
-    return ReaderChromeThemeOps.isReaderContinuousScrollSurfaceActive(this);
-  }
-
-  readerEffectivePageTurnMode(): number {
-    return ReaderChromeThemeOps.readerEffectivePageTurnMode(this);
-  }
-
-  comicBoundaryChapterSwipeDirection(offsetY: number): number {
-    return ReaderChromeThemeOps.comicBoundaryChapterSwipeDirection(this, offsetY);
-  }
-
-  beginReaderComicPan(): void {
-    ReaderChromeThemeOps.beginReaderComicPan(this);
-  }
-
-  updateReaderComicPan(event: GestureEvent): void {
-    ReaderChromeThemeOps.updateReaderComicPan(this, event);
-  }
-
-  finishReaderComicPan(event: GestureEvent): void {
-    ReaderChromeThemeOps.finishReaderComicPan(this, event);
-  }
-
-  cancelReaderComicPan(): void {
-    ReaderChromeThemeOps.cancelReaderComicPan(this);
-  }
-
-  resetReaderComicBoundaryFeedback(animated: boolean): void {
-    ReaderChromeThemeOps.resetReaderComicBoundaryFeedback(this, animated);
-  }
-
-  readerComicBoundaryHintText(): string {
-    return ReaderChromeThemeOps.readerComicBoundaryHintText(this);
-  }
-
-  switchComicBoundaryChapter(direction: number): void {
-    ReaderChromeThemeOps.switchComicBoundaryChapter(this, direction);
-  }
-
-  async runReaderComicChapterTransition(direction: number): Promise<void> {
-    return ReaderChromeThemeOps.runReaderComicChapterTransition(this, direction);
-  }
-
-  syncReaderComicPageDataSource(): void {
-    ReaderChromeThemeOps.syncReaderComicPageDataSource(this);
-  }
+  getReaderFooterProgressValue(): number { return ReaderChromeThemeOps.getReaderFooterProgressValue(this); }
+  getPageInfoText(): string { return ReaderChromeThemeOps.getPageInfoText(this); }
+  getPageText(pageIndex: number): string { return ReaderChromeThemeOps.getPageText(this, pageIndex); }
+  getCurrentPageText(): string { return ReaderChromeThemeOps.getCurrentPageText(this); }
+  isLandscapeDoublePageActive(): boolean { return ReaderChromeThemeOps.isLandscapeDoublePageActive(this); }
+  initializeReaderComicMode(): void { ReaderChromeThemeOps.initializeReaderComicMode(this); }
+  readerSourceIndicatesComic(): boolean { return ReaderChromeThemeOps.readerSourceIndicatesComic(this); }
+  detectReaderComicMode(_source: string): void { ReaderChromeThemeOps.detectReaderComicMode(this, _source); }
+  toggleReaderComicReadingMode(): void { ReaderChromeThemeOps.toggleReaderComicReadingMode(this); }
+  isReaderComicModeActive(): boolean { return ReaderChromeThemeOps.isReaderComicModeActive(this); }
+  isReaderNovelContinuousScrollModeActive(): boolean { return ReaderChromeThemeOps.isReaderNovelContinuousScrollModeActive(this); }
+  isReaderContinuousScrollSurfaceActive(): boolean { return ReaderChromeThemeOps.isReaderContinuousScrollSurfaceActive(this); }
+  readerEffectivePageTurnMode(): number { return ReaderChromeThemeOps.readerEffectivePageTurnMode(this); }
+  comicBoundaryChapterSwipeDirection(offsetY: number): number { return ReaderChromeThemeOps.comicBoundaryChapterSwipeDirection(this, offsetY); }
+  beginReaderComicPan(): void { ReaderChromeThemeOps.beginReaderComicPan(this); }
+  updateReaderComicPan(event: GestureEvent): void { ReaderChromeThemeOps.updateReaderComicPan(this, event); }
+  finishReaderComicPan(event: GestureEvent): void { ReaderChromeThemeOps.finishReaderComicPan(this, event); }
+  cancelReaderComicPan(): void { ReaderChromeThemeOps.cancelReaderComicPan(this); }
+  resetReaderComicBoundaryFeedback(animated: boolean): void { ReaderChromeThemeOps.resetReaderComicBoundaryFeedback(this, animated); }
+  readerComicBoundaryHintText(): string { return ReaderChromeThemeOps.readerComicBoundaryHintText(this); }
+  switchComicBoundaryChapter(direction: number): void { ReaderChromeThemeOps.switchComicBoundaryChapter(this, direction); }
+  async runReaderComicChapterTransition(direction: number): Promise<void> { return ReaderChromeThemeOps.runReaderComicChapterTransition(this, direction); }
+  syncReaderComicPageDataSource(): void { ReaderChromeThemeOps.syncReaderComicPageDataSource(this); }
 
   /**
    * onDataReloaded 会重建 LazyForEach 的挂载项，部分系统版本会把 List 打回索引 0，表现为
    * "阅读中偶发回到本章开头"。发布分页时 currentPageIndex 仍是权威位置，延迟一帧校验并把
    * List 拉回该页；位置未被破坏时 scrollToIndex 等价于无操作。
    */
-  reanchorContinuousReaderScrollAfterReload(reloaded: boolean): void {
-    ReaderChromeThemeOps.reanchorContinuousReaderScrollAfterReload(this, reloaded);
-  }
-
-  getReaderComicImageHeight(index: number): number {
-    return ReaderChromeThemeOps.getReaderComicImageHeight(this, index);
-  }
-
-  getReaderComicImageSeamOverlap(index: number): number {
-    return ReaderChromeThemeOps.getReaderComicImageSeamOverlap(this, index);
-  }
-
-  getReaderComicImageRenderHeight(index: number): number {
-    return ReaderChromeThemeOps.getReaderComicImageRenderHeight(this, index);
-  }
-
-  getReaderComicImageFit(index: number): ImageFit {
-    return ReaderChromeThemeOps.getReaderComicImageFit(this, index);
-  }
-
-  updateReaderComicImageRatio(index: number, sourceWidth: number, sourceHeight: number): void {
-    ReaderChromeThemeOps.updateReaderComicImageRatio(this, index, sourceWidth, sourceHeight);
-  }
-
-  async ensureReaderComicImageRatio(index: number, marker: string): Promise<void> {
-    return ReaderChromeThemeOps.ensureReaderComicImageRatio(this, index, marker);
-  }
-
-  scheduleReaderComicScrollRestore(): void {
-    ReaderChromeThemeOps.scheduleReaderComicScrollRestore(this);
-  }
-
-  onReaderComicScrollIndexChanged(start: number, end: number): void {
-    ReaderChromeThemeOps.onReaderComicScrollIndexChanged(this, start, end);
-  }
-
-  onReaderContinuousReachEnd(): void {
-    ReaderChromeThemeOps.onReaderContinuousReachEnd(this);
-  }
-
-  pruneContinuousReaderSelectionAreas(): void {
-    ReaderChromeThemeOps.pruneContinuousReaderSelectionAreas(this);
-  }
-
-  scheduleReaderComicProgressSave(): void {
-    ReaderChromeThemeOps.scheduleReaderComicProgressSave(this);
-  }
-
-  clearReaderComicProgressSaveTimer(): void {
-    ReaderChromeThemeOps.clearReaderComicProgressSaveTimer(this);
-  }
-
-  scheduleReaderPagedProgressSave(): void {
-    ReaderChromeThemeOps.scheduleReaderPagedProgressSave(this);
-  }
-
-  clearReaderPagedProgressSaveTimer(): void {
-    ReaderChromeThemeOps.clearReaderPagedProgressSaveTimer(this);
-  }
-
-
-
-  clearReaderComicPaginationProgress(): void {
-    ReaderChromeThemeOps.clearReaderComicPaginationProgress(this);
-  }
-
-  updateReaderComicPaginationProgress(chapterIndex: number, result: ReaderPaginationResult): void {
-    ReaderChromeThemeOps.updateReaderComicPaginationProgress(this, chapterIndex, result);
-  }
+  reanchorContinuousReaderScrollAfterReload(reloaded: boolean): void { ReaderChromeThemeOps.reanchorContinuousReaderScrollAfterReload(this, reloaded); }
+  getReaderComicImageHeight(index: number): number { return ReaderChromeThemeOps.getReaderComicImageHeight(this, index); }
+  getReaderComicImageSeamOverlap(index: number): number { return ReaderChromeThemeOps.getReaderComicImageSeamOverlap(this, index); }
+  getReaderComicImageRenderHeight(index: number): number { return ReaderChromeThemeOps.getReaderComicImageRenderHeight(this, index); }
+  getReaderComicImageFit(index: number): ImageFit { return ReaderChromeThemeOps.getReaderComicImageFit(this, index); }
+  updateReaderComicImageRatio(index: number, sourceWidth: number, sourceHeight: number): void { ReaderChromeThemeOps.updateReaderComicImageRatio(this, index, sourceWidth, sourceHeight); }
+  async ensureReaderComicImageRatio(index: number, marker: string): Promise<void> { return ReaderChromeThemeOps.ensureReaderComicImageRatio(this, index, marker); }
+  scheduleReaderComicScrollRestore(): void { ReaderChromeThemeOps.scheduleReaderComicScrollRestore(this); }
+  onReaderComicScrollIndexChanged(start: number, end: number): void { ReaderChromeThemeOps.onReaderComicScrollIndexChanged(this, start, end); }
+  onReaderContinuousReachEnd(): void { ReaderChromeThemeOps.onReaderContinuousReachEnd(this); }
+  pruneContinuousReaderSelectionAreas(): void { ReaderChromeThemeOps.pruneContinuousReaderSelectionAreas(this); }
+  scheduleReaderComicProgressSave(): void { ReaderChromeThemeOps.scheduleReaderComicProgressSave(this); }
+  clearReaderComicProgressSaveTimer(): void { ReaderChromeThemeOps.clearReaderComicProgressSaveTimer(this); }
+  scheduleReaderPagedProgressSave(): void { ReaderChromeThemeOps.scheduleReaderPagedProgressSave(this); }
+  clearReaderPagedProgressSaveTimer(): void { ReaderChromeThemeOps.clearReaderPagedProgressSaveTimer(this); }
+  clearReaderComicPaginationProgress(): void { ReaderChromeThemeOps.clearReaderComicPaginationProgress(this); }
+  updateReaderComicPaginationProgress(chapterIndex: number, result: ReaderPaginationResult): void { ReaderChromeThemeOps.updateReaderComicPaginationProgress(this, chapterIndex, result); }
 
 
   /**
@@ -4174,280 +3720,74 @@ TtsGlobalCapsule({
   }
 
   /** 占位提示点击重试：移出失败集合并重建条目，触发 Image 重新加载。 */
-  retryReaderComicImage(index: number): void {
-    ReaderChromeThemeOps.retryReaderComicImage(this, index);
-  }
-
-  getEffectiveReaderMarginLeft(): number {
-    return ReaderChromeThemeOps.getEffectiveReaderMarginLeft(this);
-  }
-
-  getEffectiveReaderMarginRight(): number {
-    return ReaderChromeThemeOps.getEffectiveReaderMarginRight(this);
-  }
-
-  getEffectiveReaderHorizontalMargin(left: boolean): number {
-    return ReaderChromeThemeOps.getEffectiveReaderHorizontalMargin(this, left);
-  }
-
-  getEffectiveReaderMarginTop(): number {
-    return ReaderChromeThemeOps.getEffectiveReaderMarginTop(this);
-  }
-
-
-  getReaderHeaderOverlayTopInset(): number {
-    return ReaderChromeThemeOps.getReaderHeaderOverlayTopInset(this);
-  }
-
-  getReaderHeaderContentReserve(): number {
-    return ReaderChromeThemeOps.getReaderHeaderContentReserve(this);
-  }
-
-  getEffectiveReaderMarginBottom(): number {
-    return ReaderChromeThemeOps.getEffectiveReaderMarginBottom(this);
-  }
-
-  getEffectiveReaderVerticalMargin(top: boolean): number {
-    return ReaderChromeThemeOps.getEffectiveReaderVerticalMargin(this, top);
-  }
-
-  getReaderPageTurnStep(): number {
-    return ReaderChromeThemeOps.getReaderPageTurnStep(this);
-  }
-
-  normalizeReaderSpreadPageIndex(pageIndex: number): number {
-    return ReaderChromeThemeOps.normalizeReaderSpreadPageIndex(this, pageIndex);
-  }
-
-  getSecondaryPageText(pageIndex: number = this.currentPageIndex): string {
-    return ReaderChromeThemeOps.getSecondaryPageText(this, pageIndex);
-  }
-
-  currentReaderSurfaceIndex(): number {
-    return ReaderChromeThemeOps.currentReaderSurfaceIndex(this);
-  }
-
-  currentReaderSurfaceKeys(): string[] {
-    return ReaderChromeThemeOps.currentReaderSurfaceKeys(this);
-  }
-
-  currentReaderV2ChapterSurfaceKeys(): string[] {
-    return ReaderChromeThemeOps.currentReaderV2ChapterSurfaceKeys(this);
-  }
-
-  visibleCurrentPageText(): string {
-    return ReaderChromeThemeOps.visibleCurrentPageText(this);
-  }
-
-  syncCurrentPageText(): void {
-    ReaderChromeThemeOps.syncCurrentPageText(this);
-  }
-
-  setCurrentPageText(text: string): void {
-    ReaderChromeThemeOps.setCurrentPageText(this, text);
-  }
-
-  updatePagedReaderArea(area: Area): void {
-    ReaderChromeThemeOps.updatePagedReaderArea(this, area);
-  }
-
-  rememberReaderBottomInfoBarHeight(area: Area): void {
-    ReaderChromeThemeOps.rememberReaderBottomInfoBarHeight(this, area);
-  }
-
-
-  applyReaderBottomInfoBarMeasuredHeight(height: number): void {
-    ReaderChromeThemeOps.applyReaderBottomInfoBarMeasuredHeight(this, height);
-  }
-
-  hasPagedReaderArea(): boolean {
-    return ReaderChromeThemeOps.hasPagedReaderArea(this);
-  }
-
-  getCurrentPageStartOffset(): number {
-    return ReaderChromeThemeOps.getCurrentPageStartOffset(this);
-  }
-
-  getReaderStableReflowOffset(): number {
-    return ReaderChromeThemeOps.getReaderStableReflowOffset(this);
-  }
-
-  getPageStartOffset(pageIndex: number): number {
-    return ReaderChromeThemeOps.getPageStartOffset(this, pageIndex);
-  }
-
-  getPageEndOffset(pageIndex: number): number {
-    return ReaderChromeThemeOps.getPageEndOffset(this, pageIndex);
-  }
-
-  findPageIndexByOffset(offset: number): number {
-    return ReaderChromeThemeOps.findPageIndexByOffset(this, offset);
-  }
-
-  restoreReaderTypographyOffsetIfAvailable(paginationComplete: boolean): boolean {
-    return ReaderChromeThemeOps.restoreReaderTypographyOffsetIfAvailable(this, paginationComplete);
-  }
-
-  setReaderTypographyRestoreOffset(offset: number): void {
-    ReaderChromeThemeOps.setReaderTypographyRestoreOffset(this, offset);
-  }
-
-  hasReaderTypographyRestoreOffset(): boolean {
-    return ReaderChromeThemeOps.hasReaderTypographyRestoreOffset(this);
-  }
-
-  getBackgroundColor(): string {
-    return ReaderChromeThemeOps.getBackgroundColor(this);
-  }
-
-  getBackgroundAssetId(): string {
-    return ReaderChromeThemeOps.getBackgroundAssetId(this);
-  }
-
-  getBackgroundImageFit(): ImageFit {
-    return ReaderChromeThemeOps.getBackgroundImageFit(this);
-  }
-
-  hasBackgroundImage(): boolean {
-    return ReaderChromeThemeOps.hasBackgroundImage(this);
-  }
-
-  readerContentLayerColor(): string {
-    return ReaderChromeThemeOps.readerContentLayerColor(this);
-  }
-
-  getTextColor(): string {
-    return ReaderChromeThemeOps.getTextColor(this);
-  }
-
-  currentReaderThemeIndex(): number {
-    return ReaderChromeThemeOps.currentReaderThemeIndex(this);
-  }
-
-  currentReaderThemes(): ReaderThemeItem[] {
-    return ReaderChromeThemeOps.currentReaderThemes(this);
-  }
-
-  currentReaderTheme(): ReaderThemeItem {
-    return ReaderChromeThemeOps.currentReaderTheme(this);
-  }
-
-  currentCustomThemeBackgroundColor(): string {
-    return ReaderChromeThemeOps.currentCustomThemeBackgroundColor(this);
-  }
-
-  currentCustomThemeTextColor(): string {
-    return ReaderChromeThemeOps.currentCustomThemeTextColor(this);
-  }
-
-  currentCustomThemeBackgroundImageUri(): string {
-    return ReaderChromeThemeOps.currentCustomThemeBackgroundImageUri(this);
-  }
-
-  currentCustomThemeBackgroundTypeIndex(): number {
-    return ReaderChromeThemeOps.currentCustomThemeBackgroundTypeIndex(this);
-  }
-
-  customThemeData(): ReaderCustomThemeData {
-    return ReaderChromeThemeOps.customThemeData(this);
-  }
-
-  currentCustomThemeScheme(): ReaderCustomThemeScheme {
-    return ReaderChromeThemeOps.currentCustomThemeScheme(this);
-  }
-
-  currentCustomThemeSchemes(): ReaderCustomThemeScheme[] {
-    return ReaderChromeThemeOps.currentCustomThemeSchemes(this);
-  }
-
-  currentCustomThemeSelectedIndex(): number {
-    return ReaderChromeThemeOps.currentCustomThemeSelectedIndex(this);
-  }
-
-  customThemeOptions(): SelectOption[] {
-    return ReaderChromeThemeOps.customThemeOptions(this);
-  }
-
-  customThemeFitSelectedIndex(): number {
-    return ReaderChromeThemeOps.customThemeFitSelectedIndex(this);
-  }
-
-  isReaderThemeDark(): boolean {
-    return ReaderChromeThemeOps.isReaderThemeDark(this);
-  }
-
-  isDarkHexColor(color: string): boolean {
-    return ReaderChromeThemeOps.isDarkHexColor(this, color);
-  }
-
-  getReaderFontFamily(): string {
-    return ReaderChromeThemeOps.getReaderFontFamily(this);
-  }
-
-  getBodyReaderFontFamily(): string {
-    return ReaderChromeThemeOps.getBodyReaderFontFamily(this);
-  }
-
-  getTitleReaderFontFamily(): string {
-    return ReaderChromeThemeOps.getTitleReaderFontFamily(this);
-  }
-
-  getRegexReaderFontFamily(): string {
-    return ReaderChromeThemeOps.getRegexReaderFontFamily(this);
-  }
-
-  resolveStyledReaderFontFamily(mode: string, family: string): string {
-    return ReaderChromeThemeOps.resolveStyledReaderFontFamily(this, mode, family);
-  }
-
-
-  registerCustomReaderFontFamily(family: string): void {
-    ReaderChromeThemeOps.registerCustomReaderFontFamily(this, family);
-  }
-
-  registerStyledCustomReaderFonts(): void {
-    ReaderChromeThemeOps.registerStyledCustomReaderFonts(this);
-  }
-
-  resolveReaderFontFamily(): string {
-    return ReaderChromeThemeOps.resolveReaderFontFamily(this);
-  }
-
-  getSystemReaderFontFamily(): string {
-    return ReaderChromeThemeOps.getSystemReaderFontFamily(this);
-  }
-
-  isReaderFontReady(): boolean {
-    return ReaderChromeThemeOps.isReaderFontReady(this);
-  }
-
-  clearReaderFontState(): void {
-    ReaderChromeThemeOps.clearReaderFontState(this);
-  }
-
-  async registerReaderFont(): Promise<boolean> {
-    return ReaderChromeThemeOps.registerReaderFont(this);
-  }
-
-  async registerReaderFontBySettings(fontFamily: string, fontFilePath: string, fontSourceName: string): Promise<boolean> {
-    return ReaderChromeThemeOps.registerReaderFontBySettings(this, fontFamily, fontFilePath, fontSourceName);
-  }
-
-  async registerReaderFontAsync(source: string): Promise<boolean> {
-    return ReaderChromeThemeOps.registerReaderFontAsync(this, source);
-  }
-
-  activateRegisteredReaderFont(familyName: string): void {
-    ReaderChromeThemeOps.activateRegisteredReaderFont(this, familyName);
-  }
-
-  refreshRegisteredReaderFontLater(familyName: string, delayMs: number): void {
-    ReaderChromeThemeOps.refreshRegisteredReaderFontLater(this, familyName, delayMs);
-  }
-
-  applyLoadedReaderSettings(settings: ReaderSettings): void {
-    ReaderChromeThemeOps.applyLoadedReaderSettings(this, settings);
-  }
+  retryReaderComicImage(index: number): void { ReaderChromeThemeOps.retryReaderComicImage(this, index); }
+  getEffectiveReaderMarginLeft(): number { return ReaderChromeThemeOps.getEffectiveReaderMarginLeft(this); }
+  getEffectiveReaderMarginRight(): number { return ReaderChromeThemeOps.getEffectiveReaderMarginRight(this); }
+  getEffectiveReaderHorizontalMargin(left: boolean): number { return ReaderChromeThemeOps.getEffectiveReaderHorizontalMargin(this, left); }
+  getEffectiveReaderMarginTop(): number { return ReaderChromeThemeOps.getEffectiveReaderMarginTop(this); }
+  getReaderHeaderOverlayTopInset(): number { return ReaderChromeThemeOps.getReaderHeaderOverlayTopInset(this); }
+  getReaderHeaderContentReserve(): number { return ReaderChromeThemeOps.getReaderHeaderContentReserve(this); }
+  getEffectiveReaderMarginBottom(): number { return ReaderChromeThemeOps.getEffectiveReaderMarginBottom(this); }
+  getEffectiveReaderVerticalMargin(top: boolean): number { return ReaderChromeThemeOps.getEffectiveReaderVerticalMargin(this, top); }
+  getReaderPageTurnStep(): number { return ReaderChromeThemeOps.getReaderPageTurnStep(this); }
+  normalizeReaderSpreadPageIndex(pageIndex: number): number { return ReaderChromeThemeOps.normalizeReaderSpreadPageIndex(this, pageIndex); }
+  getSecondaryPageText(pageIndex: number = this.currentPageIndex): string { return ReaderChromeThemeOps.getSecondaryPageText(this, pageIndex); }
+  currentReaderSurfaceIndex(): number { return ReaderChromeThemeOps.currentReaderSurfaceIndex(this); }
+  currentReaderSurfaceKeys(): string[] { return ReaderChromeThemeOps.currentReaderSurfaceKeys(this); }
+  currentReaderV2ChapterSurfaceKeys(): string[] { return ReaderChromeThemeOps.currentReaderV2ChapterSurfaceKeys(this); }
+  visibleCurrentPageText(): string { return ReaderChromeThemeOps.visibleCurrentPageText(this); }
+  syncCurrentPageText(): void { ReaderChromeThemeOps.syncCurrentPageText(this); }
+  setCurrentPageText(text: string): void { ReaderChromeThemeOps.setCurrentPageText(this, text); }
+  updatePagedReaderArea(area: Area): void { ReaderChromeThemeOps.updatePagedReaderArea(this, area); }
+  rememberReaderBottomInfoBarHeight(area: Area): void { ReaderChromeThemeOps.rememberReaderBottomInfoBarHeight(this, area); }
+  applyReaderBottomInfoBarMeasuredHeight(height: number): void { ReaderChromeThemeOps.applyReaderBottomInfoBarMeasuredHeight(this, height); }
+  hasPagedReaderArea(): boolean { return ReaderChromeThemeOps.hasPagedReaderArea(this); }
+  getCurrentPageStartOffset(): number { return ReaderChromeThemeOps.getCurrentPageStartOffset(this); }
+  getReaderStableReflowOffset(): number { return ReaderChromeThemeOps.getReaderStableReflowOffset(this); }
+  getPageStartOffset(pageIndex: number): number { return ReaderChromeThemeOps.getPageStartOffset(this, pageIndex); }
+  getPageEndOffset(pageIndex: number): number { return ReaderChromeThemeOps.getPageEndOffset(this, pageIndex); }
+  findPageIndexByOffset(offset: number): number { return ReaderChromeThemeOps.findPageIndexByOffset(this, offset); }
+  restoreReaderTypographyOffsetIfAvailable(paginationComplete: boolean): boolean { return ReaderChromeThemeOps.restoreReaderTypographyOffsetIfAvailable(this, paginationComplete); }
+  setReaderTypographyRestoreOffset(offset: number): void { ReaderChromeThemeOps.setReaderTypographyRestoreOffset(this, offset); }
+  hasReaderTypographyRestoreOffset(): boolean { return ReaderChromeThemeOps.hasReaderTypographyRestoreOffset(this); }
+  getBackgroundColor(): string { return ReaderChromeThemeOps.getBackgroundColor(this); }
+  getBackgroundAssetId(): string { return ReaderChromeThemeOps.getBackgroundAssetId(this); }
+  getBackgroundImageFit(): ImageFit { return ReaderChromeThemeOps.getBackgroundImageFit(this); }
+  hasBackgroundImage(): boolean { return ReaderChromeThemeOps.hasBackgroundImage(this); }
+  readerContentLayerColor(): string { return ReaderChromeThemeOps.readerContentLayerColor(this); }
+  getTextColor(): string { return ReaderChromeThemeOps.getTextColor(this); }
+  currentReaderThemeIndex(): number { return ReaderChromeThemeOps.currentReaderThemeIndex(this); }
+  currentReaderThemes(): ReaderThemeItem[] { return ReaderChromeThemeOps.currentReaderThemes(this); }
+  currentReaderTheme(): ReaderThemeItem { return ReaderChromeThemeOps.currentReaderTheme(this); }
+  currentCustomThemeBackgroundColor(): string { return ReaderChromeThemeOps.currentCustomThemeBackgroundColor(this); }
+  currentCustomThemeTextColor(): string { return ReaderChromeThemeOps.currentCustomThemeTextColor(this); }
+  currentCustomThemeBackgroundImageUri(): string { return ReaderChromeThemeOps.currentCustomThemeBackgroundImageUri(this); }
+  currentCustomThemeBackgroundTypeIndex(): number { return ReaderChromeThemeOps.currentCustomThemeBackgroundTypeIndex(this); }
+  customThemeData(): ReaderCustomThemeData { return ReaderChromeThemeOps.customThemeData(this); }
+  currentCustomThemeScheme(): ReaderCustomThemeScheme { return ReaderChromeThemeOps.currentCustomThemeScheme(this); }
+  currentCustomThemeSchemes(): ReaderCustomThemeScheme[] { return ReaderChromeThemeOps.currentCustomThemeSchemes(this); }
+  currentCustomThemeSelectedIndex(): number { return ReaderChromeThemeOps.currentCustomThemeSelectedIndex(this); }
+  customThemeOptions(): SelectOption[] { return ReaderChromeThemeOps.customThemeOptions(this); }
+  customThemeFitSelectedIndex(): number { return ReaderChromeThemeOps.customThemeFitSelectedIndex(this); }
+  isReaderThemeDark(): boolean { return ReaderChromeThemeOps.isReaderThemeDark(this); }
+  isDarkHexColor(color: string): boolean { return ReaderChromeThemeOps.isDarkHexColor(this, color); }
+  getReaderFontFamily(): string { return ReaderChromeThemeOps.getReaderFontFamily(this); }
+  getBodyReaderFontFamily(): string { return ReaderChromeThemeOps.getBodyReaderFontFamily(this); }
+  getTitleReaderFontFamily(): string { return ReaderChromeThemeOps.getTitleReaderFontFamily(this); }
+  getRegexReaderFontFamily(): string { return ReaderChromeThemeOps.getRegexReaderFontFamily(this); }
+  resolveStyledReaderFontFamily(mode: string, family: string): string { return ReaderChromeThemeOps.resolveStyledReaderFontFamily(this, mode, family); }
+  registerCustomReaderFontFamily(family: string): void { ReaderChromeThemeOps.registerCustomReaderFontFamily(this, family); }
+  registerStyledCustomReaderFonts(): void { ReaderChromeThemeOps.registerStyledCustomReaderFonts(this); }
+  resolveReaderFontFamily(): string { return ReaderChromeThemeOps.resolveReaderFontFamily(this); }
+  getSystemReaderFontFamily(): string { return ReaderChromeThemeOps.getSystemReaderFontFamily(this); }
+  isReaderFontReady(): boolean { return ReaderChromeThemeOps.isReaderFontReady(this); }
+  clearReaderFontState(): void { ReaderChromeThemeOps.clearReaderFontState(this); }
+  async registerReaderFont(): Promise<boolean> { return ReaderChromeThemeOps.registerReaderFont(this); }
+  async registerReaderFontBySettings(fontFamily: string, fontFilePath: string, fontSourceName: string): Promise<boolean> { return ReaderChromeThemeOps.registerReaderFontBySettings(this, fontFamily, fontFilePath, fontSourceName); }
+  async registerReaderFontAsync(source: string): Promise<boolean> { return ReaderChromeThemeOps.registerReaderFontAsync(this, source); }
+  activateRegisteredReaderFont(familyName: string): void { ReaderChromeThemeOps.activateRegisteredReaderFont(this, familyName); }
+  refreshRegisteredReaderFontLater(familyName: string, delayMs: number): void { ReaderChromeThemeOps.refreshRegisteredReaderFontLater(this, familyName, delayMs); }
+  applyLoadedReaderSettings(settings: ReaderSettings): void { ReaderChromeThemeOps.applyLoadedReaderSettings(this, settings); }
 
   onReaderFontStyleChanged(): void {
     this.cachedRegexRulesKey = '';
@@ -4462,587 +3802,167 @@ TtsGlobalCapsule({
 
 
 
-  applyReaderApplicationFont(familyName: string): void {
-    ReaderChromeThemeOps.applyReaderApplicationFont(this, familyName);
-  }
-
-  saveReaderFontSettings(): void {
-    ReaderChromeThemeOps.saveReaderFontSettings(this);
-  }
-
-  getTocTitleColor(chapter: BookChapter, index: number): string {
-    return ReaderChromeThemeOps.getTocTitleColor(this, chapter, index);
-  }
-
-  setReaderContent(text: string): void {
-    ReaderChromeThemeOps.setReaderContent(this, text);
-  }
-
-  openTocPanel(): void {
-    ReaderChromeThemeOps.openTocPanel(this);
-  }
-
-  async refreshTocFromPanel(): Promise<void> {
-    return ReaderChromeThemeOps.refreshTocFromPanel(this);
-  }
-
-  async loadBookmarks(): Promise<void> {
-    return ReaderChromeThemeOps.loadBookmarks(this);
-  }
-
-  currentPageBookmark(): Bookmark | undefined {
-    return ReaderChromeThemeOps.currentPageBookmark(this);
-  }
-
-  isCurrentPageBookmarked(): boolean {
-    return ReaderChromeThemeOps.isCurrentPageBookmarked(this);
-  }
-
-  async toggleCurrentPageBookmark(): Promise<void> {
-    return ReaderChromeThemeOps.toggleCurrentPageBookmark(this);
-  }
-
-  bookmarkPullHintText(): string {
-    return ReaderChromeThemeOps.bookmarkPullHintText(this);
-  }
-
-  bookmarkPullHintColor(): string {
-    return ReaderChromeThemeOps.bookmarkPullHintColor(this);
-  }
-
-  readerBookmarkMarkerTopOffset(): number {
-    return ReaderChromeThemeOps.readerBookmarkMarkerTopOffset(this);
-  }
-
-  async addCurrentBookmark(): Promise<void> {
-    return ReaderChromeThemeOps.addCurrentBookmark(this);
-  }
-
-  bookmarkContentPreview(pageIndex: number): string {
-    return ReaderChromeThemeOps.bookmarkContentPreview(this, pageIndex);
-  }
-
-  async deleteBookmark(bookmark: Bookmark): Promise<void> {
-    return ReaderChromeThemeOps.deleteBookmark(this, bookmark);
-  }
-
-  enterBookmarkMultiSelect(bookmarkUrl: string): void {
-    ReaderChromeThemeOps.enterBookmarkMultiSelect(this, bookmarkUrl);
-  }
-
-  isBookmarkSelected(bookmarkUrl: string): boolean {
-    return ReaderChromeThemeOps.isBookmarkSelected(this, bookmarkUrl);
-  }
-
-  toggleBookmarkSelection(bookmarkUrl: string): void {
-    ReaderChromeThemeOps.toggleBookmarkSelection(this, bookmarkUrl);
-  }
-
-  toggleSelectAllBookmarks(): void {
-    ReaderChromeThemeOps.toggleSelectAllBookmarks(this);
-  }
-
-  cancelBookmarkMultiSelect(): void {
-    ReaderChromeThemeOps.cancelBookmarkMultiSelect(this);
-  }
-
-  async deleteSelectedBookmarks(): Promise<void> {
-    return ReaderChromeThemeOps.deleteSelectedBookmarks(this);
-  }
-
-  async jumpToBookmark(bookmark: Bookmark): Promise<void> {
-    return ReaderChromeThemeOps.jumpToBookmark(this, bookmark);
-  }
-
-
-  openSettingsPanel(): void {
-    ReaderChromeThemeOps.openSettingsPanel(this);
-  }
-
-  openTtsSettingsPanel(): void {
-    ReaderChromeThemeOps.openTtsSettingsPanel(this);
-  }
-
-  openTypographySettingsPanel(): void {
-    ReaderChromeThemeOps.openTypographySettingsPanel(this);
-  }
-
-  closeSettingsPanelKeepMenu(): void {
-    ReaderChromeThemeOps.closeSettingsPanelKeepMenu(this);
-  }
-
-  async loadTtsSettingsAndVoices(): Promise<void> {
-    return ReaderChromeThemeOps.loadTtsSettingsAndVoices(this);
-  }
-
-  applyLoadedTtsSettings(settings: TtsSettings): void {
-    ReaderChromeThemeOps.applyLoadedTtsSettings(this, settings);
-  }
+  applyReaderApplicationFont(familyName: string): void { ReaderChromeThemeOps.applyReaderApplicationFont(this, familyName); }
+  saveReaderFontSettings(): void { ReaderChromeThemeOps.saveReaderFontSettings(this); }
+  getTocTitleColor(chapter: BookChapter, index: number): string { return ReaderChromeThemeOps.getTocTitleColor(this, chapter, index); }
+  setReaderContent(text: string): void { ReaderChromeThemeOps.setReaderContent(this, text); }
+  openTocPanel(): void { ReaderChromeThemeOps.openTocPanel(this); }
+  async refreshTocFromPanel(): Promise<void> { return ReaderChromeThemeOps.refreshTocFromPanel(this); }
+  async loadBookmarks(): Promise<void> { return ReaderChromeThemeOps.loadBookmarks(this); }
+  currentPageBookmark(): Bookmark | undefined { return ReaderChromeThemeOps.currentPageBookmark(this); }
+  isCurrentPageBookmarked(): boolean { return ReaderChromeThemeOps.isCurrentPageBookmarked(this); }
+  async toggleCurrentPageBookmark(): Promise<void> { return ReaderChromeThemeOps.toggleCurrentPageBookmark(this); }
+  bookmarkPullHintText(): string { return ReaderChromeThemeOps.bookmarkPullHintText(this); }
+  bookmarkPullHintColor(): string { return ReaderChromeThemeOps.bookmarkPullHintColor(this); }
+  readerBookmarkMarkerTopOffset(): number { return ReaderChromeThemeOps.readerBookmarkMarkerTopOffset(this); }
+  async addCurrentBookmark(): Promise<void> { return ReaderChromeThemeOps.addCurrentBookmark(this); }
+  bookmarkContentPreview(pageIndex: number): string { return ReaderChromeThemeOps.bookmarkContentPreview(this, pageIndex); }
+  async deleteBookmark(bookmark: Bookmark): Promise<void> { return ReaderChromeThemeOps.deleteBookmark(this, bookmark); }
+  enterBookmarkMultiSelect(bookmarkUrl: string): void { ReaderChromeThemeOps.enterBookmarkMultiSelect(this, bookmarkUrl); }
+  isBookmarkSelected(bookmarkUrl: string): boolean { return ReaderChromeThemeOps.isBookmarkSelected(this, bookmarkUrl); }
+  toggleBookmarkSelection(bookmarkUrl: string): void { ReaderChromeThemeOps.toggleBookmarkSelection(this, bookmarkUrl); }
+  toggleSelectAllBookmarks(): void { ReaderChromeThemeOps.toggleSelectAllBookmarks(this); }
+  cancelBookmarkMultiSelect(): void { ReaderChromeThemeOps.cancelBookmarkMultiSelect(this); }
+  async deleteSelectedBookmarks(): Promise<void> { return ReaderChromeThemeOps.deleteSelectedBookmarks(this); }
+  async jumpToBookmark(bookmark: Bookmark): Promise<void> { return ReaderChromeThemeOps.jumpToBookmark(this, bookmark); }
+  openSettingsPanel(): void { ReaderChromeThemeOps.openSettingsPanel(this); }
+  openTtsSettingsPanel(): void { ReaderChromeThemeOps.openTtsSettingsPanel(this); }
+  openTypographySettingsPanel(): void { ReaderChromeThemeOps.openTypographySettingsPanel(this); }
+  closeSettingsPanelKeepMenu(): void { ReaderChromeThemeOps.closeSettingsPanelKeepMenu(this); }
+  async loadTtsSettingsAndVoices(): Promise<void> { return ReaderChromeThemeOps.loadTtsSettingsAndVoices(this); }
+  applyLoadedTtsSettings(settings: TtsSettings): void { ReaderChromeThemeOps.applyLoadedTtsSettings(this, settings); }
 
   onTtsCustomVoicesChanged(): void {
     this.ttsCustomVoiceOptions = SystemTtsReader.parseCustomVoices(this.ttsCustomVoices);
     this.ttsSelectedVoiceKey = this.currentTtsVoiceKey();
   }
 
-  normalizeDefaultTtsVoice(): void {
-    ReaderChromeThemeOps.normalizeDefaultTtsVoice(this);
-  }
-
-  currentTtsSettings(): TtsSettings {
-    return ReaderChromeThemeOps.currentTtsSettings(this);
-  }
-
-  saveTtsSettings(): void {
-    ReaderChromeThemeOps.saveTtsSettings(this);
-  }
-
-  async loadTtsVoices(): Promise<void> {
-    return ReaderChromeThemeOps.loadTtsVoices(this);
-  }
-
-  firstAvailableTtsVoice(): TtsVoiceOption {
-    return ReaderChromeThemeOps.firstAvailableTtsVoice(this);
-  }
-
-  applyInstalledTtsVoiceOverrides(voices: TtsVoiceOption[]): TtsVoiceOption[] {
-    return ReaderChromeThemeOps.applyInstalledTtsVoiceOverrides(this, voices);
-  }
-
-
-  isLocallyInstalledTtsVoice(voice: TtsVoiceOption): boolean {
-    return ReaderChromeThemeOps.isLocallyInstalledTtsVoice(this, voice);
-  }
-
-
-  isTtsSessionManuallyPaused(): boolean {
-    return ReaderChromeThemeOps.isTtsSessionManuallyPaused(this);
-  }
-
-  applyTtsVoice(voice: TtsVoiceOption, restartSpeaking: boolean): void {
-    ReaderChromeThemeOps.applyTtsVoice(this, voice, restartSpeaking);
-  }
-
-  applyTtsSpeed(value: number): void {
-    ReaderChromeThemeOps.applyTtsSpeed(this, value);
-  }
-
-  scheduleActiveTtsSpeedRestart(): void {
-    ReaderChromeThemeOps.scheduleActiveTtsSpeedRestart(this);
-  }
-
-  scheduleTtsSpeedSettingsSave(): void {
-    ReaderChromeThemeOps.scheduleTtsSpeedSettingsSave(this);
-  }
-
-  scheduleTtsSpeedAvSessionUpdate(): void {
-    ReaderChromeThemeOps.scheduleTtsSpeedAvSessionUpdate(this);
-  }
-
-  flushPendingTtsSpeedSettings(): void {
-    ReaderChromeThemeOps.flushPendingTtsSpeedSettings(this);
-  }
-
-  currentTtsVoiceKey(): string {
-    return ReaderChromeThemeOps.currentTtsVoiceKey(this);
-  }
-
-  findCurrentTtsVoice(): TtsVoiceOption | undefined {
-    return ReaderChromeThemeOps.findCurrentTtsVoice(this);
-  }
-
-  isCurrentTtsVoice(voice: TtsVoiceOption): boolean {
-    return ReaderChromeThemeOps.isCurrentTtsVoice(this, voice);
-  }
-
-  applyCustomTtsVoice(voice: HttpTTS, restartSpeaking: boolean): void {
-    ReaderChromeThemeOps.applyCustomTtsVoice(this, voice, restartSpeaking);
-  }
-
-  findCurrentCustomTtsVoice(): HttpTTS | undefined {
-    return ReaderChromeThemeOps.findCurrentCustomTtsVoice(this);
-  }
-
-
-  isCurrentCustomTtsVoice(voice: HttpTTS): boolean {
-    return ReaderChromeThemeOps.isCurrentCustomTtsVoice(this, voice);
-  }
-
-
-
-
-  tocGlobalIndex(localIndex: number): number {
-    return ReaderChromeThemeOps.tocGlobalIndex(this, localIndex);
-  }
-
-  tocChapterAtDisplayIndex(displayIndex: number): BookChapter {
-    return ReaderChromeThemeOps.tocChapterAtDisplayIndex(this, displayIndex);
-  }
-
-  toggleTocOrder(): void {
-    ReaderChromeThemeOps.toggleTocOrder(this);
-  }
-
-  selectableCustomTtsVoices(): HttpTTS[] {
-    return ReaderChromeThemeOps.selectableCustomTtsVoices(this);
-  }
-
-  selectableSystemTtsVoices(): TtsVoiceOption[] {
-    return ReaderChromeThemeOps.selectableSystemTtsVoices(this);
-  }
-
-  async downloadTtsVoice(voice: TtsVoiceOption): Promise<void> {
-    return ReaderChromeThemeOps.downloadTtsVoice(this, voice);
-  }
-
-  markTtsVoiceInstalled(voice: TtsVoiceOption): void {
-    ReaderChromeThemeOps.markTtsVoiceInstalled(this, voice);
-  }
-
-  selectedTtsVoiceTitle(): string {
-    return ReaderChromeThemeOps.selectedTtsVoiceTitle(this);
-  }
-
-  ttsQuickVoiceOptions(): SelectOption[] {
-    return ReaderChromeThemeOps.ttsQuickVoiceOptions(this);
-  }
-
-  ttsQuickVoiceLabels(): string[] {
-    return ReaderChromeThemeOps.ttsQuickVoiceLabels(this);
-  }
-
-  ttsQuickVoiceSelectedIndex(): number {
-    return ReaderChromeThemeOps.ttsQuickVoiceSelectedIndex(this);
-  }
-
-  selectTtsQuickVoice(index: number): void {
-    ReaderChromeThemeOps.selectTtsQuickVoice(this, index);
-  }
-
-  isTocSearchActive(): boolean {
-    return ReaderChromeThemeOps.isTocSearchActive(this);
-  }
-
-  toggleTocSearch(): void {
-    ReaderChromeThemeOps.toggleTocSearch(this);
-  }
-
-  async submitTocSearch(): Promise<void> {
-    return ReaderChromeThemeOps.submitTocSearch(this);
-  }
-
-  clearTocSearchResult(): void {
-    ReaderChromeThemeOps.clearTocSearchResult(this);
-  }
-
-  async loadTocDatabaseChapterCount(): Promise<void> {
-    return ReaderChromeThemeOps.loadTocDatabaseChapterCount(this);
-  }
-
-  updateTocScrollbarPosition(start: number, end: number): void {
-    ReaderChromeThemeOps.updateTocScrollbarPosition(this, start, end);
-  }
-
-  tocShouldShowVirtualScrollbar(): boolean {
-    return ReaderChromeThemeOps.tocShouldShowVirtualScrollbar(this);
-  }
-
-  tocScrollbarThumbLength(): number {
-    return ReaderChromeThemeOps.tocScrollbarThumbLength(this);
-  }
-
-  tocScrollbarThumbOffset(): number {
-    return ReaderChromeThemeOps.tocScrollbarThumbOffset(this);
-  }
-
-  tocDisplayedScrollbarThumbOffset(): number {
-    return ReaderChromeThemeOps.tocDisplayedScrollbarThumbOffset(this);
-  }
-
-
-  beginTocScrollbarDrag(event: GestureEvent): void {
-    ReaderChromeThemeOps.beginTocScrollbarDrag(this, event);
-  }
-
-  updateTocScrollbarDrag(event: GestureEvent): void {
-    ReaderChromeThemeOps.updateTocScrollbarDrag(this, event);
-  }
-
-  endTocScrollbarDrag(event: GestureEvent): void {
-    ReaderChromeThemeOps.endTocScrollbarDrag(this, event);
-  }
-
-  cancelTocScrollbarDrag(): void {
-    ReaderChromeThemeOps.cancelTocScrollbarDrag(this);
-  }
-
-  jumpTocScrollbarToPointer(event: GestureEvent): void {
-    ReaderChromeThemeOps.jumpTocScrollbarToPointer(this, event);
-  }
-
-  updateTocScrollbarFromPointer(pointerY: number): void {
-    ReaderChromeThemeOps.updateTocScrollbarFromPointer(this, pointerY);
-  }
-
-  flushTocScrollbarTarget(): void {
-    ReaderChromeThemeOps.flushTocScrollbarTarget(this);
-  }
-
-  queueTocScrollbarTarget(targetIndex: number, delayMs: number = 16): void {
-    ReaderChromeThemeOps.queueTocScrollbarTarget(this, targetIndex, delayMs);
-  }
-
-  applyTocScrollbarTarget(targetIndex: number): void {
-    ReaderChromeThemeOps.applyTocScrollbarTarget(this, targetIndex);
-  }
-
-  nearestTocSearchResultIndex(targetIndex: number): number {
-    return ReaderChromeThemeOps.nearestTocSearchResultIndex(this, targetIndex);
-  }
-
-  scrollTocVisibleEdge(toEnd: boolean): void {
-    ReaderChromeThemeOps.scrollTocVisibleEdge(this, toEnd);
-  }
-
-  setTocWindowAround(index: number, align: ScrollAlign): number {
-    return ReaderChromeThemeOps.setTocWindowAround(this, index, align);
-  }
-
-  loadNextTocPage(): void {
-    ReaderChromeThemeOps.loadNextTocPage(this);
-  }
-
-  loadPreviousTocPage(): void {
-    ReaderChromeThemeOps.loadPreviousTocPage(this);
-  }
-
-  scrollTocToCurrentChapter(smooth: boolean = true): void {
-    ReaderChromeThemeOps.scrollTocToCurrentChapter(this, smooth);
-  }
-
-  scrollTocToChapter(index: number, align: ScrollAlign, smooth: boolean = true): void {
-    ReaderChromeThemeOps.scrollTocToChapter(this, index, align, smooth);
-  }
-
-  getSubTextColor(): string {
-    return ReaderChromeThemeOps.getSubTextColor(this);
-  }
+  normalizeDefaultTtsVoice(): void { ReaderChromeThemeOps.normalizeDefaultTtsVoice(this); }
+  currentTtsSettings(): TtsSettings { return ReaderChromeThemeOps.currentTtsSettings(this); }
+  saveTtsSettings(): void { ReaderChromeThemeOps.saveTtsSettings(this); }
+  async loadTtsVoices(): Promise<void> { return ReaderChromeThemeOps.loadTtsVoices(this); }
+  firstAvailableTtsVoice(): TtsVoiceOption { return ReaderChromeThemeOps.firstAvailableTtsVoice(this); }
+  applyInstalledTtsVoiceOverrides(voices: TtsVoiceOption[]): TtsVoiceOption[] { return ReaderChromeThemeOps.applyInstalledTtsVoiceOverrides(this, voices); }
+  isLocallyInstalledTtsVoice(voice: TtsVoiceOption): boolean { return ReaderChromeThemeOps.isLocallyInstalledTtsVoice(this, voice); }
+  isTtsSessionManuallyPaused(): boolean { return ReaderChromeThemeOps.isTtsSessionManuallyPaused(this); }
+  applyTtsVoice(voice: TtsVoiceOption, restartSpeaking: boolean): void { ReaderChromeThemeOps.applyTtsVoice(this, voice, restartSpeaking); }
+  applyTtsSpeed(value: number): void { ReaderChromeThemeOps.applyTtsSpeed(this, value); }
+  scheduleActiveTtsSpeedRestart(): void { ReaderChromeThemeOps.scheduleActiveTtsSpeedRestart(this); }
+  scheduleTtsSpeedSettingsSave(): void { ReaderChromeThemeOps.scheduleTtsSpeedSettingsSave(this); }
+  scheduleTtsSpeedAvSessionUpdate(): void { ReaderChromeThemeOps.scheduleTtsSpeedAvSessionUpdate(this); }
+  flushPendingTtsSpeedSettings(): void { ReaderChromeThemeOps.flushPendingTtsSpeedSettings(this); }
+  currentTtsVoiceKey(): string { return ReaderChromeThemeOps.currentTtsVoiceKey(this); }
+  findCurrentTtsVoice(): TtsVoiceOption | undefined { return ReaderChromeThemeOps.findCurrentTtsVoice(this); }
+  isCurrentTtsVoice(voice: TtsVoiceOption): boolean { return ReaderChromeThemeOps.isCurrentTtsVoice(this, voice); }
+  applyCustomTtsVoice(voice: HttpTTS, restartSpeaking: boolean): void { ReaderChromeThemeOps.applyCustomTtsVoice(this, voice, restartSpeaking); }
+  findCurrentCustomTtsVoice(): HttpTTS | undefined { return ReaderChromeThemeOps.findCurrentCustomTtsVoice(this); }
+  isCurrentCustomTtsVoice(voice: HttpTTS): boolean { return ReaderChromeThemeOps.isCurrentCustomTtsVoice(this, voice); }
+  tocGlobalIndex(localIndex: number): number { return ReaderChromeThemeOps.tocGlobalIndex(this, localIndex); }
+  tocChapterAtDisplayIndex(displayIndex: number): BookChapter { return ReaderChromeThemeOps.tocChapterAtDisplayIndex(this, displayIndex); }
+  toggleTocOrder(): void { ReaderChromeThemeOps.toggleTocOrder(this); }
+  selectableCustomTtsVoices(): HttpTTS[] { return ReaderChromeThemeOps.selectableCustomTtsVoices(this); }
+  selectableSystemTtsVoices(): TtsVoiceOption[] { return ReaderChromeThemeOps.selectableSystemTtsVoices(this); }
+  async downloadTtsVoice(voice: TtsVoiceOption): Promise<void> { return ReaderChromeThemeOps.downloadTtsVoice(this, voice); }
+  markTtsVoiceInstalled(voice: TtsVoiceOption): void { ReaderChromeThemeOps.markTtsVoiceInstalled(this, voice); }
+  selectedTtsVoiceTitle(): string { return ReaderChromeThemeOps.selectedTtsVoiceTitle(this); }
+  ttsQuickVoiceOptions(): SelectOption[] { return ReaderChromeThemeOps.ttsQuickVoiceOptions(this); }
+  ttsQuickVoiceLabels(): string[] { return ReaderChromeThemeOps.ttsQuickVoiceLabels(this); }
+  ttsQuickVoiceSelectedIndex(): number { return ReaderChromeThemeOps.ttsQuickVoiceSelectedIndex(this); }
+  selectTtsQuickVoice(index: number): void { ReaderChromeThemeOps.selectTtsQuickVoice(this, index); }
+  isTocSearchActive(): boolean { return ReaderChromeThemeOps.isTocSearchActive(this); }
+  toggleTocSearch(): void { ReaderChromeThemeOps.toggleTocSearch(this); }
+  async submitTocSearch(): Promise<void> { return ReaderChromeThemeOps.submitTocSearch(this); }
+  clearTocSearchResult(): void { ReaderChromeThemeOps.clearTocSearchResult(this); }
+  async loadTocDatabaseChapterCount(): Promise<void> { return ReaderChromeThemeOps.loadTocDatabaseChapterCount(this); }
+  updateTocScrollbarPosition(start: number, end: number): void { ReaderChromeThemeOps.updateTocScrollbarPosition(this, start, end); }
+  tocShouldShowVirtualScrollbar(): boolean { return ReaderChromeThemeOps.tocShouldShowVirtualScrollbar(this); }
+  tocScrollbarThumbLength(): number { return ReaderChromeThemeOps.tocScrollbarThumbLength(this); }
+  tocScrollbarThumbOffset(): number { return ReaderChromeThemeOps.tocScrollbarThumbOffset(this); }
+  tocDisplayedScrollbarThumbOffset(): number { return ReaderChromeThemeOps.tocDisplayedScrollbarThumbOffset(this); }
+  beginTocScrollbarDrag(event: GestureEvent): void { ReaderChromeThemeOps.beginTocScrollbarDrag(this, event); }
+  updateTocScrollbarDrag(event: GestureEvent): void { ReaderChromeThemeOps.updateTocScrollbarDrag(this, event); }
+  endTocScrollbarDrag(event: GestureEvent): void { ReaderChromeThemeOps.endTocScrollbarDrag(this, event); }
+  cancelTocScrollbarDrag(): void { ReaderChromeThemeOps.cancelTocScrollbarDrag(this); }
+  jumpTocScrollbarToPointer(event: GestureEvent): void { ReaderChromeThemeOps.jumpTocScrollbarToPointer(this, event); }
+  updateTocScrollbarFromPointer(pointerY: number): void { ReaderChromeThemeOps.updateTocScrollbarFromPointer(this, pointerY); }
+  flushTocScrollbarTarget(): void { ReaderChromeThemeOps.flushTocScrollbarTarget(this); }
+  queueTocScrollbarTarget(targetIndex: number, delayMs: number = 16): void { ReaderChromeThemeOps.queueTocScrollbarTarget(this, targetIndex, delayMs); }
+  applyTocScrollbarTarget(targetIndex: number): void { ReaderChromeThemeOps.applyTocScrollbarTarget(this, targetIndex); }
+  nearestTocSearchResultIndex(targetIndex: number): number { return ReaderChromeThemeOps.nearestTocSearchResultIndex(this, targetIndex); }
+  scrollTocVisibleEdge(toEnd: boolean): void { ReaderChromeThemeOps.scrollTocVisibleEdge(this, toEnd); }
+  setTocWindowAround(index: number, align: ScrollAlign): number { return ReaderChromeThemeOps.setTocWindowAround(this, index, align); }
+  loadNextTocPage(): void { ReaderChromeThemeOps.loadNextTocPage(this); }
+  loadPreviousTocPage(): void { ReaderChromeThemeOps.loadPreviousTocPage(this); }
+  scrollTocToCurrentChapter(smooth: boolean = true): void { ReaderChromeThemeOps.scrollTocToCurrentChapter(this, smooth); }
+  scrollTocToChapter(index: number, align: ScrollAlign, smooth: boolean = true): void { ReaderChromeThemeOps.scrollTocToChapter(this, index, align, smooth); }
+  getSubTextColor(): string { return ReaderChromeThemeOps.getSubTextColor(this); }
 
   // Reader controls (floating top menu, panels, toolbars) sit on their own
   // light/dark material surface rather than directly on the page, so they need
   // a fixed high-contrast icon color instead of the theme's reader text color.
-  readerControlIconColor(): string {
-    return ReaderChromeThemeOps.readerControlIconColor(this);
-  }
-
-  accentColor(): string {
-    return ReaderChromeThemeOps.accentColor(this);
-  }
-
-  buttonColor(): string {
-    return ReaderChromeThemeOps.buttonColor(this);
-  }
+  readerControlIconColor(): string { return ReaderChromeThemeOps.readerControlIconColor(this); }
+  accentColor(): string { return ReaderChromeThemeOps.accentColor(this); }
+  buttonColor(): string { return ReaderChromeThemeOps.buttonColor(this); }
 
   /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
-  dangerColor(): string {
-    return ReaderChromeThemeOps.dangerColor(this);
-  }
+  dangerColor(): string { return ReaderChromeThemeOps.dangerColor(this); }
 
   /** 设置面板滚动条滑块颜色：深浅两套，收拢散落的硬编码对。 */
-  readerPanelScrollBarColor(): string {
-    return ReaderChromeThemeOps.readerPanelScrollBarColor(this);
-  }
+  readerPanelScrollBarColor(): string { return ReaderChromeThemeOps.readerPanelScrollBarColor(this); }
 
   /** 朗读设置中速速/定时芯片与弱按钮的休眠底色：深浅两套。 */
-  readerChipIdleColor(): string {
-    return ReaderChromeThemeOps.readerChipIdleColor(this);
-  }
+  readerChipIdleColor(): string { return ReaderChromeThemeOps.readerChipIdleColor(this); }
 
   /** 自定义主题编辑器中输入框/选择器的底色（跟随系统深浅色，而非阅读主题）。 */
-  customThemeFieldColor(): string {
-    return ReaderChromeThemeOps.customThemeFieldColor(this);
-  }
-
-  tocSelectedBackgroundColor(): string {
-    return ReaderChromeThemeOps.tocSelectedBackgroundColor(this);
-  }
-
-  readerGlassPanelColor(): string {
-    return ReaderChromeThemeOps.readerGlassPanelColor(this);
-  }
-
-  readerGlassBorderColor(): string {
-    return ReaderChromeThemeOps.readerGlassBorderColor(this);
-  }
-
-  readerGlassShadowColor(): string {
-    return ReaderChromeThemeOps.readerGlassShadowColor(this);
-  }
-
-  readerSolidPanelColor(): string {
-    return ReaderChromeThemeOps.readerSolidPanelColor(this);
-  }
-
-  getReaderPageTurnSurfaceSafeAreaEdges(): SafeAreaEdge[] {
-    return ReaderChromeThemeOps.getReaderPageTurnSurfaceSafeAreaEdges(this);
-  }
-
-  getReaderTopSafePadding(): number {
-    return ReaderChromeThemeOps.getReaderTopSafePadding(this);
-  }
-
-  getReaderPageContentTopPadding(): number {
-    return ReaderChromeThemeOps.getReaderPageContentTopPadding(this);
-  }
-
-  getTopControlSafePadding(): number {
-    return ReaderChromeThemeOps.getTopControlSafePadding(this);
-  }
-
-  getTopOverlayHeight(): number {
-    return ReaderChromeThemeOps.getTopOverlayHeight(this);
-  }
-
-  getReaderContentBottomReserve(): number {
-    return ReaderChromeThemeOps.getReaderContentBottomReserve(this);
-  }
-
-
-  getReaderBottomInfoBarHeight(): number {
-    return ReaderChromeThemeOps.getReaderBottomInfoBarHeight(this);
-  }
-
-  getReaderBottomInfoBarBottomInset(): number {
-    return ReaderChromeThemeOps.getReaderBottomInfoBarBottomInset(this);
-  }
-
-
-  getReaderV2BottomGuard(): number {
-    return ReaderChromeThemeOps.getReaderV2BottomGuard(this);
-  }
+  customThemeFieldColor(): string { return ReaderChromeThemeOps.customThemeFieldColor(this); }
+  tocSelectedBackgroundColor(): string { return ReaderChromeThemeOps.tocSelectedBackgroundColor(this); }
+  readerGlassPanelColor(): string { return ReaderChromeThemeOps.readerGlassPanelColor(this); }
+  readerGlassBorderColor(): string { return ReaderChromeThemeOps.readerGlassBorderColor(this); }
+  readerGlassShadowColor(): string { return ReaderChromeThemeOps.readerGlassShadowColor(this); }
+  readerSolidPanelColor(): string { return ReaderChromeThemeOps.readerSolidPanelColor(this); }
+  getReaderPageTurnSurfaceSafeAreaEdges(): SafeAreaEdge[] { return ReaderChromeThemeOps.getReaderPageTurnSurfaceSafeAreaEdges(this); }
+  getReaderTopSafePadding(): number { return ReaderChromeThemeOps.getReaderTopSafePadding(this); }
+  getReaderPageContentTopPadding(): number { return ReaderChromeThemeOps.getReaderPageContentTopPadding(this); }
+  getTopControlSafePadding(): number { return ReaderChromeThemeOps.getTopControlSafePadding(this); }
+  getTopOverlayHeight(): number { return ReaderChromeThemeOps.getTopOverlayHeight(this); }
+  getReaderContentBottomReserve(): number { return ReaderChromeThemeOps.getReaderContentBottomReserve(this); }
+  getReaderBottomInfoBarHeight(): number { return ReaderChromeThemeOps.getReaderBottomInfoBarHeight(this); }
+  getReaderBottomInfoBarBottomInset(): number { return ReaderChromeThemeOps.getReaderBottomInfoBarBottomInset(this); }
+  getReaderV2BottomGuard(): number { return ReaderChromeThemeOps.getReaderV2BottomGuard(this); }
 //endregion
 //region 尺寸计算 / 排版变更监听 / 媒体控制条·睡眠定时器 / 触摸·翻页手势
 // [map] 契约: 读写 面板尺寸/排版代际/媒体控制/触摸 状态; 定时器成对清理
 
-  getReaderPaginationBottomInfoBarHeight(): number {
-    return ReaderGestureOps.getReaderPaginationBottomInfoBarHeight(this);
-  }
-
-  getReaderBottomInfoBarVisualOffsetY(): number {
-    return ReaderGestureOps.getReaderBottomInfoBarVisualOffsetY(this);
-  }
-
-  readerFloatingBarBottomMargin(): number {
-    return ReaderGestureOps.readerFloatingBarBottomMargin(this);
-  }
-
-  readerFloatingBarWidth(): number {
-    return ReaderGestureOps.readerFloatingBarWidth(this);
-  }
-
-  readerSettingsPanelHeight(): number {
-    return ReaderGestureOps.readerSettingsPanelHeight(this);
-  }
-
-  readerChapterTrackColor(): string {
-    return ReaderGestureOps.readerChapterTrackColor(this);
-  }
-
-
-  readerUsesSideAnchoredControls(): boolean {
-    return ReaderGestureOps.readerUsesSideAnchoredControls(this);
-  }
-
-  readerFloatingBarLeft(): number {
-    return ReaderGestureOps.readerFloatingBarLeft(this);
-  }
-
-  readerFloatingBarRight(): number {
-    return ReaderGestureOps.readerFloatingBarRight(this);
-  }
-
-  readerFloatingBarTranslateX(): number {
-    return ReaderGestureOps.readerFloatingBarTranslateX(this);
-  }
-
-  readerChapterTooltipWidth(): number {
-    return ReaderGestureOps.readerChapterTooltipWidth(this);
-  }
-
-  readerChapterTooltipCenteredLeft(): number {
-    return ReaderGestureOps.readerChapterTooltipCenteredLeft(this);
-  }
-
-  readerTtsQuickActionLeft(): number {
-    return ReaderGestureOps.readerTtsQuickActionLeft(this);
-  }
-
-  readerTtsExpandedControlLeft(): number {
-    return ReaderGestureOps.readerTtsExpandedControlLeft(this);
-  }
-
-  readerBottomMenuOverlayHeight(): number {
-    return ReaderGestureOps.readerBottomMenuOverlayHeight(this);
-  }
-
-  readerBottomActionOverlayHeight(): number {
-    return ReaderGestureOps.readerBottomActionOverlayHeight(this);
-  }
-
-  readerFloatingPanelBottomInset(): number {
-    return ReaderGestureOps.readerFloatingPanelBottomInset(this);
-  }
-
-  readerTocPanelHeight(): number {
-    return ReaderGestureOps.readerTocPanelHeight(this);
-  }
-
-  getReaderContentBottomPadding(): number {
-    return ReaderGestureOps.getReaderContentBottomPadding(this);
-  }
-
-  getReaderPaginationViewportHeight(): number {
-    return ReaderGestureOps.getReaderPaginationViewportHeight(this);
-  }
-
-  getReaderBackgroundViewportHeight(): number {
-    return ReaderGestureOps.getReaderBackgroundViewportHeight(this);
-  }
-
-  getEffectiveReaderLineHeight(): number {
-    return ReaderGestureOps.getEffectiveReaderLineHeight(this);
-  }
-
-  getReaderPageColumnWidth(): number {
-    return ReaderGestureOps.getReaderPageColumnWidth(this);
-  }
-
-  getReaderDoublePageRightOrigin(): number {
-    return ReaderGestureOps.getReaderDoublePageRightOrigin(this);
-  }
-
-  readerTextAlignValue(): TextAlign {
-    return ReaderGestureOps.readerTextAlignValue(this);
-  }
-
-  readerGraphicsTextAlignValue(): graphicsText.TextAlign {
-    return ReaderGestureOps.readerGraphicsTextAlignValue(this);
-  }
-
-  getReaderAdaptiveLetterSpacing(): number {
-    return ReaderGestureOps.getReaderAdaptiveLetterSpacing(this);
-  }
-
-  getReaderPageLineSpacing(pageLineHeight: number = this.getEffectiveReaderLineHeight()): number {
-    return ReaderGestureOps.getReaderPageLineSpacing(this, pageLineHeight);
-  }
-
-  getReaderParagraphBoundarySpacing(pageLineHeight: number = this.getEffectiveReaderLineHeight()): number {
-    return ReaderGestureOps.getReaderParagraphBoundarySpacing(this, pageLineHeight);
-  }
-
-  getMeasuredReaderParagraphBoundarySpacingPx(): number {
-    return ReaderGestureOps.getMeasuredReaderParagraphBoundarySpacingPx(this);
-  }
+  getReaderPaginationBottomInfoBarHeight(): number { return ReaderGestureOps.getReaderPaginationBottomInfoBarHeight(this); }
+  getReaderBottomInfoBarVisualOffsetY(): number { return ReaderGestureOps.getReaderBottomInfoBarVisualOffsetY(this); }
+  readerFloatingBarBottomMargin(): number { return ReaderGestureOps.readerFloatingBarBottomMargin(this); }
+  readerFloatingBarWidth(): number { return ReaderGestureOps.readerFloatingBarWidth(this); }
+  readerSettingsPanelHeight(): number { return ReaderGestureOps.readerSettingsPanelHeight(this); }
+  readerChapterTrackColor(): string { return ReaderGestureOps.readerChapterTrackColor(this); }
+  readerUsesSideAnchoredControls(): boolean { return ReaderGestureOps.readerUsesSideAnchoredControls(this); }
+  readerFloatingBarLeft(): number { return ReaderGestureOps.readerFloatingBarLeft(this); }
+  readerFloatingBarRight(): number { return ReaderGestureOps.readerFloatingBarRight(this); }
+  readerFloatingBarTranslateX(): number { return ReaderGestureOps.readerFloatingBarTranslateX(this); }
+  readerChapterTooltipWidth(): number { return ReaderGestureOps.readerChapterTooltipWidth(this); }
+  readerChapterTooltipCenteredLeft(): number { return ReaderGestureOps.readerChapterTooltipCenteredLeft(this); }
+  readerTtsQuickActionLeft(): number { return ReaderGestureOps.readerTtsQuickActionLeft(this); }
+  readerTtsExpandedControlLeft(): number { return ReaderGestureOps.readerTtsExpandedControlLeft(this); }
+  readerBottomMenuOverlayHeight(): number { return ReaderGestureOps.readerBottomMenuOverlayHeight(this); }
+  readerBottomActionOverlayHeight(): number { return ReaderGestureOps.readerBottomActionOverlayHeight(this); }
+  readerFloatingPanelBottomInset(): number { return ReaderGestureOps.readerFloatingPanelBottomInset(this); }
+  readerTocPanelHeight(): number { return ReaderGestureOps.readerTocPanelHeight(this); }
+  getReaderContentBottomPadding(): number { return ReaderGestureOps.getReaderContentBottomPadding(this); }
+  getReaderPaginationViewportHeight(): number { return ReaderGestureOps.getReaderPaginationViewportHeight(this); }
+  getReaderBackgroundViewportHeight(): number { return ReaderGestureOps.getReaderBackgroundViewportHeight(this); }
+  getEffectiveReaderLineHeight(): number { return ReaderGestureOps.getEffectiveReaderLineHeight(this); }
+  getReaderPageColumnWidth(): number { return ReaderGestureOps.getReaderPageColumnWidth(this); }
+  getReaderDoublePageRightOrigin(): number { return ReaderGestureOps.getReaderDoublePageRightOrigin(this); }
+  readerTextAlignValue(): TextAlign { return ReaderGestureOps.readerTextAlignValue(this); }
+  readerGraphicsTextAlignValue(): graphicsText.TextAlign { return ReaderGestureOps.readerGraphicsTextAlignValue(this); }
+  getReaderAdaptiveLetterSpacing(): number { return ReaderGestureOps.getReaderAdaptiveLetterSpacing(this); }
+  getReaderPageLineSpacing(pageLineHeight: number = this.getEffectiveReaderLineHeight()): number { return ReaderGestureOps.getReaderPageLineSpacing(this, pageLineHeight); }
+  getReaderParagraphBoundarySpacing(pageLineHeight: number = this.getEffectiveReaderLineHeight()): number { return ReaderGestureOps.getReaderParagraphBoundarySpacing(this, pageLineHeight); }
+  getMeasuredReaderParagraphBoundarySpacingPx(): number { return ReaderGestureOps.getMeasuredReaderParagraphBoundarySpacingPx(this); }
 
   getMeasuredReaderParagraphComponentHeightPx(metrics: ReaderParagraphMetrics,
     pageLineHeight: number = this.getEffectiveReaderLineHeight(), componentPixelAligned: boolean = false): number {
@@ -5093,41 +4013,15 @@ TtsGlobalCapsule({
     this.saveReadingProgress();
   }
 
-  scheduleReaderLayoutChange(): void {
-    ReaderGestureOps.scheduleReaderLayoutChange(this);
-  }
-
-  scheduleReaderTypographyChange(): void {
-    ReaderGestureOps.scheduleReaderTypographyChange(this);
-  }
-
-  applyPendingReaderLayoutChange(): void {
-    ReaderGestureOps.applyPendingReaderLayoutChange(this);
-  }
-
-  scheduleReaderLayoutStabilization(readingOffset: number): void {
-    ReaderGestureOps.scheduleReaderLayoutStabilization(this, readingOffset);
-  }
-
-  invalidateReaderTypographyLayout(): void {
-    ReaderGestureOps.invalidateReaderTypographyLayout(this);
-  }
-
-  flushPendingReaderLayoutChange(repaginate: boolean = true): void {
-    ReaderGestureOps.flushPendingReaderLayoutChange(this, repaginate);
-  }
-
-  refreshReaderTextRender(): void {
-    ReaderGestureOps.refreshReaderTextRender(this);
-  }
-
-  forceCurrentReaderPageRender(): void {
-    ReaderGestureOps.forceCurrentReaderPageRender(this);
-  }
-
-  cancelReaderPaginationWork(releaseNativeCaches: boolean): void {
-    ReaderGestureOps.cancelReaderPaginationWork(this, releaseNativeCaches);
-  }
+  scheduleReaderLayoutChange(): void { ReaderGestureOps.scheduleReaderLayoutChange(this); }
+  scheduleReaderTypographyChange(): void { ReaderGestureOps.scheduleReaderTypographyChange(this); }
+  applyPendingReaderLayoutChange(): void { ReaderGestureOps.applyPendingReaderLayoutChange(this); }
+  scheduleReaderLayoutStabilization(readingOffset: number): void { ReaderGestureOps.scheduleReaderLayoutStabilization(this, readingOffset); }
+  invalidateReaderTypographyLayout(): void { ReaderGestureOps.invalidateReaderTypographyLayout(this); }
+  flushPendingReaderLayoutChange(repaginate: boolean = true): void { ReaderGestureOps.flushPendingReaderLayoutChange(this, repaginate); }
+  refreshReaderTextRender(): void { ReaderGestureOps.refreshReaderTextRender(this); }
+  forceCurrentReaderPageRender(): void { ReaderGestureOps.forceCurrentReaderPageRender(this); }
+  cancelReaderPaginationWork(releaseNativeCaches: boolean): void { ReaderGestureOps.cancelReaderPaginationWork(this, releaseNativeCaches); }
 
   onReaderFontChanged(): void {
     const serial = ++this.readerFontChangeSerial;
@@ -5164,21 +4058,10 @@ TtsGlobalCapsule({
     if (this.readerPageVisible) this.applyReaderScreenOrientation();
   }
 
-  applyReaderScreenOrientation(orientation: string = this.readerScreenOrientation): void {
-    ReaderGestureOps.applyReaderScreenOrientation(this, orientation);
-  }
-
-  resetReaderScreenOrientation(): void {
-    ReaderGestureOps.resetReaderScreenOrientation(this);
-  }
-
-  syncReaderPageHeightForContentTopPadding(): void {
-    ReaderGestureOps.syncReaderPageHeightForContentTopPadding(this);
-  }
-
-  scheduleReaderExtendLayoutRefresh(readingOffset: number = -1): void {
-    ReaderGestureOps.scheduleReaderExtendLayoutRefresh(this, readingOffset);
-  }
+  applyReaderScreenOrientation(orientation: string = this.readerScreenOrientation): void { ReaderGestureOps.applyReaderScreenOrientation(this, orientation); }
+  resetReaderScreenOrientation(): void { ReaderGestureOps.resetReaderScreenOrientation(this); }
+  syncReaderPageHeightForContentTopPadding(): void { ReaderGestureOps.syncReaderPageHeightForContentTopPadding(this); }
+  scheduleReaderExtendLayoutRefresh(readingOffset: number = -1): void { ReaderGestureOps.scheduleReaderExtendLayoutRefresh(this, readingOffset); }
 
   onReaderThemeChanged(): void {
     this.scheduleReaderThemeRefresh();
@@ -5188,9 +4071,7 @@ TtsGlobalCapsule({
     this.scheduleReaderThemeRefresh();
   }
 
-  scheduleReaderThemeRefresh(): void {
-    ReaderGestureOps.scheduleReaderThemeRefresh(this);
-  }
+  scheduleReaderThemeRefresh(): void { ReaderGestureOps.scheduleReaderThemeRefresh(this); }
 
   onTtsCoverSettingsChanged(): void {
     if (!this.isTtsSpeaking && !this.ttsReader.isSpeaking() && !this.hasTtsAvSession()) {
@@ -5224,69 +4105,22 @@ TtsGlobalCapsule({
     this.saveReadConfig();
   }
 
-  updateVolumeKeySubscription(): void {
-    ReaderGestureOps.updateVolumeKeySubscription(this);
-  }
-
-  registerVolumeKeyTurn(): void {
-    ReaderGestureOps.registerVolumeKeyTurn(this);
-  }
-
-  unregisterVolumeKeyTurn(): void {
-    ReaderGestureOps.unregisterVolumeKeyTurn(this);
-  }
-
-  handleVolumeKeyTurn(direction: number): void {
-    ReaderGestureOps.handleVolumeKeyTurn(this, direction);
-  }
-
-  clampChapterIndex(index: number): number {
-    return ReaderGestureOps.clampChapterIndex(this, index);
-  }
-
-  getMenuChapterDisplayIndex(): number {
-    return ReaderGestureOps.getMenuChapterDisplayIndex(this);
-  }
-
-  handleMenuChapterSliderChange(value: number, mode: SliderChangeMode): void {
-    ReaderGestureOps.handleMenuChapterSliderChange(this, value, mode);
-  }
-
-  async confirmMenuChapterJump(targetIndex: number): Promise<void> {
-    return ReaderGestureOps.confirmMenuChapterJump(this, targetIndex);
-  }
-
-  resetMenuChapterPreview(): void {
-    ReaderGestureOps.resetMenuChapterPreview(this);
-  }
-
-  async jumpToMenuChapter(targetIndex: number): Promise<void> {
-    return ReaderGestureOps.jumpToMenuChapter(this, targetIndex);
-  }
-
-  async jumpToAdjacentChapterFromMenu(direction: number): Promise<void> {
-    return ReaderGestureOps.jumpToAdjacentChapterFromMenu(this, direction);
-  }
-
-  restorePendingPageIndex(paginationComplete: boolean = true): void {
-    ReaderGestureOps.restorePendingPageIndex(this, paginationComplete);
-  }
-
-  canSaveReadingProgress(): boolean {
-    return ReaderGestureOps.canSaveReadingProgress(this);
-  }
-
-  committedLocalPageTurnCheckpointPageIndex(): number {
-    return ReaderGestureOps.committedLocalPageTurnCheckpointPageIndex(this);
-  }
-
-  settleCommittedLocalPageTurnForCheckpoint(): void {
-    ReaderGestureOps.settleCommittedLocalPageTurnForCheckpoint(this);
-  }
-
-  async saveReadingProgress(notifyShelf: boolean = false): Promise<void> {
-    return ReaderGestureOps.saveReadingProgress(this, notifyShelf);
-  }
+  updateVolumeKeySubscription(): void { ReaderGestureOps.updateVolumeKeySubscription(this); }
+  registerVolumeKeyTurn(): void { ReaderGestureOps.registerVolumeKeyTurn(this); }
+  unregisterVolumeKeyTurn(): void { ReaderGestureOps.unregisterVolumeKeyTurn(this); }
+  handleVolumeKeyTurn(direction: number): void { ReaderGestureOps.handleVolumeKeyTurn(this, direction); }
+  clampChapterIndex(index: number): number { return ReaderGestureOps.clampChapterIndex(this, index); }
+  getMenuChapterDisplayIndex(): number { return ReaderGestureOps.getMenuChapterDisplayIndex(this); }
+  handleMenuChapterSliderChange(value: number, mode: SliderChangeMode): void { ReaderGestureOps.handleMenuChapterSliderChange(this, value, mode); }
+  async confirmMenuChapterJump(targetIndex: number): Promise<void> { return ReaderGestureOps.confirmMenuChapterJump(this, targetIndex); }
+  resetMenuChapterPreview(): void { ReaderGestureOps.resetMenuChapterPreview(this); }
+  async jumpToMenuChapter(targetIndex: number): Promise<void> { return ReaderGestureOps.jumpToMenuChapter(this, targetIndex); }
+  async jumpToAdjacentChapterFromMenu(direction: number): Promise<void> { return ReaderGestureOps.jumpToAdjacentChapterFromMenu(this, direction); }
+  restorePendingPageIndex(paginationComplete: boolean = true): void { ReaderGestureOps.restorePendingPageIndex(this, paginationComplete); }
+  canSaveReadingProgress(): boolean { return ReaderGestureOps.canSaveReadingProgress(this); }
+  committedLocalPageTurnCheckpointPageIndex(): number { return ReaderGestureOps.committedLocalPageTurnCheckpointPageIndex(this); }
+  settleCommittedLocalPageTurnForCheckpoint(): void { ReaderGestureOps.settleCommittedLocalPageTurnForCheckpoint(this); }
+  async saveReadingProgress(notifyShelf: boolean = false): Promise<void> { return ReaderGestureOps.saveReadingProgress(this, notifyShelf); }
 
   async markBookRecentlyRead() {
     if (!this.book) {
@@ -5307,9 +4141,7 @@ TtsGlobalCapsule({
     }
   }
 
-  reloadRecentReadCardLater(force: boolean = false): void {
-    ReaderGestureOps.reloadRecentReadCardLater(this, force);
-  }
+  reloadRecentReadCardLater(force: boolean = false): void { ReaderGestureOps.reloadRecentReadCardLater(this, force); }
 
   async saveReadConfig() {
     if (!this.book) return;
@@ -5322,13 +4154,8 @@ TtsGlobalCapsule({
     }
   }
 
-  currentChapterProgressPageCount(): number {
-    return ReaderGestureOps.currentChapterProgressPageCount(this);
-  }
-
-  getShelfLastReadPageText(pageIndex: number): string {
-    return ReaderGestureOps.getShelfLastReadPageText(this, pageIndex);
-  }
+  currentChapterProgressPageCount(): number { return ReaderGestureOps.currentChapterProgressPageCount(this); }
+  getShelfLastReadPageText(pageIndex: number): string { return ReaderGestureOps.getShelfLastReadPageText(this, pageIndex); }
 
   getShelfLastReadPageImage(pageIndex: number): string {
     const page = (this.getPageText(pageIndex) || '').trim();
@@ -5348,147 +4175,44 @@ TtsGlobalCapsule({
   }
 
 
-  handleTtsExpandedControl(index: number): void {
-    ReaderGestureOps.handleTtsExpandedControl(this, index);
-  }
-
-  cycleTtsSleepTimer(): void {
-    ReaderGestureOps.cycleTtsSleepTimer(this);
-  }
-
-  setTtsSleepTimer(minutes: number): void {
-    ReaderGestureOps.setTtsSleepTimer(this, minutes);
-  }
-
-  clearTtsSleepTimer(): void {
-    ReaderGestureOps.clearTtsSleepTimer(this);
-  }
-
-  cycleTtsSpeed(): void {
-    ReaderGestureOps.cycleTtsSpeed(this);
-  }
-
-  shouldShowTtsMediaControls(): boolean {
-    return ReaderGestureOps.shouldShowTtsMediaControls(this);
-  }
-
-  canPlayPreviousTtsChapter(): boolean {
-    return ReaderGestureOps.canPlayPreviousTtsChapter(this);
-  }
-
-  canPlayNextTtsChapter(): boolean {
-    return ReaderGestureOps.canPlayNextTtsChapter(this);
-  }
-
-  disabledButtonColor(): string {
-    return ReaderGestureOps.disabledButtonColor(this);
-  }
-
-  canHandleReaderPageTurnPan(): boolean {
-    return ReaderGestureOps.canHandleReaderPageTurnPan(this);
-  }
-
-  handleReaderPagedContentClick(event: ClickEvent): void {
-    ReaderGestureOps.handleReaderPagedContentClick(this, event);
-  }
-
-  handleReaderPanStart(event: GestureEvent): void {
-    ReaderGestureOps.handleReaderPanStart(this, event);
-  }
-
-  canHandleBookmarkPull(offsetX: number, offsetY: number): boolean {
-    return ReaderGestureOps.canHandleBookmarkPull(this, offsetX, offsetY);
-  }
-
-  bookmarkPullCommitDistance(): number {
-    return ReaderGestureOps.bookmarkPullCommitDistance(this);
-  }
-
-  canCommitBookmarkPull(offsetX: number, offsetY: number): boolean {
-    return ReaderGestureOps.canCommitBookmarkPull(this, offsetX, offsetY);
-  }
-
-  updateBookmarkPullEffect(offsetX: number, offsetY: number): void {
-    ReaderGestureOps.updateBookmarkPullEffect(this, offsetX, offsetY);
-  }
-
-  finishBookmarkPull(commit: boolean): void {
-    ReaderGestureOps.finishBookmarkPull(this, commit);
-  }
-
-  handleReaderPanUpdate(event: GestureEvent): void {
-    ReaderGestureOps.handleReaderPanUpdate(this, event);
-  }
-
-  handleReaderPanEnd(event: GestureEvent): void {
-    ReaderGestureOps.handleReaderPanEnd(this, event);
-  }
-
-  handleReaderPanCancel(): void {
-    ReaderGestureOps.handleReaderPanCancel(this);
-  }
-
-  handleReaderTouch(event: TouchEvent): void {
-    ReaderGestureOps.handleReaderTouch(this, event);
-  }
-
-  async jumpToReaderPositionKeepingTts(targetChapterIndex: number, targetPageIndex: number): Promise<void> {
-    return ReaderGestureOps.jumpToReaderPositionKeepingTts(this, targetChapterIndex, targetPageIndex);
-  }
-
-  updateReaderMenuAnchorByPoint(x: number): void {
-    ReaderGestureOps.updateReaderMenuAnchorByPoint(this, x);
-  }
-
-  finishReaderHorizontalTouch(canCommitTap: boolean = true): void {
-    ReaderGestureOps.finishReaderHorizontalTouch(this, canCommitTap);
-  }
-
-  commitReaderTapByPoint(x: number, y: number): boolean {
-    return ReaderGestureOps.commitReaderTapByPoint(this, x, y);
-  }
+  handleTtsExpandedControl(index: number): void { ReaderGestureOps.handleTtsExpandedControl(this, index); }
+  cycleTtsSleepTimer(): void { ReaderGestureOps.cycleTtsSleepTimer(this); }
+  setTtsSleepTimer(minutes: number): void { ReaderGestureOps.setTtsSleepTimer(this, minutes); }
+  clearTtsSleepTimer(): void { ReaderGestureOps.clearTtsSleepTimer(this); }
+  cycleTtsSpeed(): void { ReaderGestureOps.cycleTtsSpeed(this); }
+  shouldShowTtsMediaControls(): boolean { return ReaderGestureOps.shouldShowTtsMediaControls(this); }
+  canPlayPreviousTtsChapter(): boolean { return ReaderGestureOps.canPlayPreviousTtsChapter(this); }
+  canPlayNextTtsChapter(): boolean { return ReaderGestureOps.canPlayNextTtsChapter(this); }
+  disabledButtonColor(): string { return ReaderGestureOps.disabledButtonColor(this); }
+  canHandleReaderPageTurnPan(): boolean { return ReaderGestureOps.canHandleReaderPageTurnPan(this); }
+  handleReaderPagedContentClick(event: ClickEvent): void { ReaderGestureOps.handleReaderPagedContentClick(this, event); }
+  handleReaderPanStart(event: GestureEvent): void { ReaderGestureOps.handleReaderPanStart(this, event); }
+  canHandleBookmarkPull(offsetX: number, offsetY: number): boolean { return ReaderGestureOps.canHandleBookmarkPull(this, offsetX, offsetY); }
+  bookmarkPullCommitDistance(): number { return ReaderGestureOps.bookmarkPullCommitDistance(this); }
+  canCommitBookmarkPull(offsetX: number, offsetY: number): boolean { return ReaderGestureOps.canCommitBookmarkPull(this, offsetX, offsetY); }
+  updateBookmarkPullEffect(offsetX: number, offsetY: number): void { ReaderGestureOps.updateBookmarkPullEffect(this, offsetX, offsetY); }
+  finishBookmarkPull(commit: boolean): void { ReaderGestureOps.finishBookmarkPull(this, commit); }
+  handleReaderPanUpdate(event: GestureEvent): void { ReaderGestureOps.handleReaderPanUpdate(this, event); }
+  handleReaderPanEnd(event: GestureEvent): void { ReaderGestureOps.handleReaderPanEnd(this, event); }
+  handleReaderPanCancel(): void { ReaderGestureOps.handleReaderPanCancel(this); }
+  handleReaderTouch(event: TouchEvent): void { ReaderGestureOps.handleReaderTouch(this, event); }
+  async jumpToReaderPositionKeepingTts(targetChapterIndex: number, targetPageIndex: number): Promise<void> { return ReaderGestureOps.jumpToReaderPositionKeepingTts(this, targetChapterIndex, targetPageIndex); }
+  updateReaderMenuAnchorByPoint(x: number): void { ReaderGestureOps.updateReaderMenuAnchorByPoint(this, x); }
+  finishReaderHorizontalTouch(canCommitTap: boolean = true): void { ReaderGestureOps.finishReaderHorizontalTouch(this, canCommitTap); }
+  commitReaderTapByPoint(x: number, y: number): boolean { return ReaderGestureOps.commitReaderTapByPoint(this, x, y); }
 //endregion
 //region 点击区域 / 设置面板 / 音色下拉 / 主题自定义 / 交互·眼动·预载设置
 // [map] 契约: 写 各类设置项持久化; 修改后触发重排 / 重载 / 重新分页
 
-  getTapZoneIndex(x: number, y: number, width: number, height: number): number {
-    return ReaderSettingsOps.getTapZoneIndex(this, x, y, width, height);
-  }
-
-  commitReaderTapZone(index: number): boolean {
-    return ReaderSettingsOps.commitReaderTapZone(this, index);
-  }
-
-  commitReaderTapAction(action: number): boolean {
-    return ReaderSettingsOps.commitReaderTapAction(this, action);
-  }
-
-  readerTapZoneActionsList(): number[] {
-    return ReaderSettingsOps.readerTapZoneActionsList(this);
-  }
-
-  readerTapZoneActionAt(index: number): number {
-    return ReaderSettingsOps.readerTapZoneActionAt(this, index);
-  }
-
-  cycleTapZoneAction(index: number): void {
-    ReaderSettingsOps.cycleTapZoneAction(this, index);
-  }
-
-  setTapZoneActions(actions: string): void {
-    ReaderSettingsOps.setTapZoneActions(this, actions);
-  }
-
-
-
-
-  tapZoneSummaryText(): string {
-    return ReaderSettingsOps.tapZoneSummaryText(this);
-  }
-
-  isReaderTouchMoved(offsetX: number, offsetY: number): boolean {
-    return ReaderSettingsOps.isReaderTouchMoved(this, offsetX, offsetY);
-  }
+  getTapZoneIndex(x: number, y: number, width: number, height: number): number { return ReaderSettingsOps.getTapZoneIndex(this, x, y, width, height); }
+  commitReaderTapZone(index: number): boolean { return ReaderSettingsOps.commitReaderTapZone(this, index); }
+  commitReaderTapAction(action: number): boolean { return ReaderSettingsOps.commitReaderTapAction(this, action); }
+  readerTapZoneActionsList(): number[] { return ReaderSettingsOps.readerTapZoneActionsList(this); }
+  readerTapZoneActionAt(index: number): number { return ReaderSettingsOps.readerTapZoneActionAt(this, index); }
+  cycleTapZoneAction(index: number): void { ReaderSettingsOps.cycleTapZoneAction(this, index); }
+  setTapZoneActions(actions: string): void { ReaderSettingsOps.setTapZoneActions(this, actions); }
+  tapZoneSummaryText(): string { return ReaderSettingsOps.tapZoneSummaryText(this); }
+  isReaderTouchMoved(offsetX: number, offsetY: number): boolean { return ReaderSettingsOps.isReaderTouchMoved(this, offsetX, offsetY); }
 
   /**
    * Dismisses a live text selection without performing the action the tap would otherwise trigger.
@@ -5496,34 +4220,15 @@ TtsGlobalCapsule({
    * so consuming the click here is enough to cancel the selection. Drag events are never touched, which
    * keeps the native selection handles working.
    */
-  consumeSuppressedReaderTapClick(): boolean {
-    return ReaderSettingsOps.consumeSuppressedReaderTapClick(this);
-  }
-
-  getReaderPageTurnGestureOffset(offsetX: number, offsetY: number): number {
-    return ReaderSettingsOps.getReaderPageTurnGestureOffset(this, offsetX, offsetY);
-  }
+  consumeSuppressedReaderTapClick(): boolean { return ReaderSettingsOps.consumeSuppressedReaderTapClick(this); }
+  getReaderPageTurnGestureOffset(offsetX: number, offsetY: number): number { return ReaderSettingsOps.getReaderPageTurnGestureOffset(this, offsetX, offsetY); }
 
   // 拖动达到页面尺寸的一定比例才提交；快速甩动允许用更短的距离提交，但仍需明确位移。
-  isPageTurnCommitOffset(axisOffset: number, axisVelocity: number): boolean {
-    return ReaderSettingsOps.isPageTurnCommitOffset(this, axisOffset, axisVelocity);
-  }
-
-  isReaderPageTurnCommitGesture(offsetX: number, offsetY: number, axisVelocity: number = 0): boolean {
-    return ReaderSettingsOps.isReaderPageTurnCommitGesture(this, offsetX, offsetY, axisVelocity);
-  }
-
-  commitReaderMove(offsetX: number, offsetY: number, releaseVelocity: number = 0): void {
-    ReaderSettingsOps.commitReaderMove(this, offsetX, offsetY, releaseVelocity);
-  }
-
-  commitReaderVerticalMove(offsetY: number, releaseVelocity: number = 0): void {
-    ReaderSettingsOps.commitReaderVerticalMove(this, offsetY, releaseVelocity);
-  }
-
-  commitReaderHorizontalMove(offsetX: number, releaseVelocity: number = 0): void {
-    ReaderSettingsOps.commitReaderHorizontalMove(this, offsetX, releaseVelocity);
-  }
+  isPageTurnCommitOffset(axisOffset: number, axisVelocity: number): boolean { return ReaderSettingsOps.isPageTurnCommitOffset(this, axisOffset, axisVelocity); }
+  isReaderPageTurnCommitGesture(offsetX: number, offsetY: number, axisVelocity: number = 0): boolean { return ReaderSettingsOps.isReaderPageTurnCommitGesture(this, offsetX, offsetY, axisVelocity); }
+  commitReaderMove(offsetX: number, offsetY: number, releaseVelocity: number = 0): void { ReaderSettingsOps.commitReaderMove(this, offsetX, offsetY, releaseVelocity); }
+  commitReaderVerticalMove(offsetY: number, releaseVelocity: number = 0): void { ReaderSettingsOps.commitReaderVerticalMove(this, offsetY, releaseVelocity); }
+  commitReaderHorizontalMove(offsetX: number, releaseVelocity: number = 0): void { ReaderSettingsOps.commitReaderHorizontalMove(this, offsetX, releaseVelocity); }
 
   @Builder
   settingsPanel() {
@@ -5701,53 +4406,17 @@ TtsGlobalCapsule({
     .transition(LeafFns.readerPanelTransition())
   }
 
-  settingsPanelTitle(): string {
-    return ReaderSettingsOps.settingsPanelTitle(this);
-  }
-
-
-  readerTypographySelectedLabel(): string {
-    return ReaderSettingsOps.readerTypographySelectedLabel(this);
-  }
-
-
-  readerTextAlignSelectedIndex(): number {
-    return ReaderSettingsOps.readerTextAlignSelectedIndex(this);
-  }
-
-  setReaderTextAlignByIndex(index: number): void {
-    ReaderSettingsOps.setReaderTextAlignByIndex(this, index);
-  }
-
-
-
-  readerTypographyValue(settingIndex: number): number {
-    return ReaderSettingsOps.readerTypographyValue(this, settingIndex);
-  }
-
-  openReaderTypographyValueInput(): void {
-    ReaderSettingsOps.openReaderTypographyValueInput(this);
-  }
-
-  applyReaderTypographyValueInput(): void {
-    ReaderSettingsOps.applyReaderTypographyValueInput(this);
-  }
-
-  applyReaderTypographyValue(settingIndex: number, value: number): void {
-    ReaderSettingsOps.applyReaderTypographyValue(this, settingIndex, value);
-  }
-
-  stepReaderTypographyValue(settingIndex: number, delta: number): void {
-    ReaderSettingsOps.stepReaderTypographyValue(this, settingIndex, delta);
-  }
-
-  syncReaderTypographyDraft(): void {
-    ReaderSettingsOps.syncReaderTypographyDraft(this);
-  }
-
-  commitReaderTypographyDraft(): void {
-    ReaderSettingsOps.commitReaderTypographyDraft(this);
-  }
+  settingsPanelTitle(): string { return ReaderSettingsOps.settingsPanelTitle(this); }
+  readerTypographySelectedLabel(): string { return ReaderSettingsOps.readerTypographySelectedLabel(this); }
+  readerTextAlignSelectedIndex(): number { return ReaderSettingsOps.readerTextAlignSelectedIndex(this); }
+  setReaderTextAlignByIndex(index: number): void { ReaderSettingsOps.setReaderTextAlignByIndex(this, index); }
+  readerTypographyValue(settingIndex: number): number { return ReaderSettingsOps.readerTypographyValue(this, settingIndex); }
+  openReaderTypographyValueInput(): void { ReaderSettingsOps.openReaderTypographyValueInput(this); }
+  applyReaderTypographyValueInput(): void { ReaderSettingsOps.applyReaderTypographyValueInput(this); }
+  applyReaderTypographyValue(settingIndex: number, value: number): void { ReaderSettingsOps.applyReaderTypographyValue(this, settingIndex, value); }
+  stepReaderTypographyValue(settingIndex: number, delta: number): void { ReaderSettingsOps.stepReaderTypographyValue(this, settingIndex, delta); }
+  syncReaderTypographyDraft(): void { ReaderSettingsOps.syncReaderTypographyDraft(this); }
+  commitReaderTypographyDraft(): void { ReaderSettingsOps.commitReaderTypographyDraft(this); }
 
   @Builder
   readerQuickSettingsPanel() {
@@ -5996,122 +4665,34 @@ TtsGlobalCapsule({
   }
 
 
-  pageTurnModeSelectedIndex(): number {
-    return ReaderSettingsOps.pageTurnModeSelectedIndex(this);
-  }
-
-  pageTurnAnimationOptions(): SelectOption[] {
-    return ReaderSettingsOps.pageTurnAnimationOptions(this);
-  }
-
-  pageTurnAnimationTypes(): number[] {
-    return ReaderSettingsOps.pageTurnAnimationTypes(this);
-  }
-
-  pageTurnAnimationSelectedIndex(): number {
-    return ReaderSettingsOps.pageTurnAnimationSelectedIndex(this);
-  }
-
-  pageTurnAnimationValue(): string {
-    return ReaderSettingsOps.pageTurnAnimationValue(this);
-  }
-
-
-  screenTimeoutSelectedIndex(): number {
-    return ReaderSettingsOps.screenTimeoutSelectedIndex(this);
-  }
-
-
-  screenOrientationSelectedIndex(): number {
-    return ReaderSettingsOps.screenOrientationSelectedIndex(this);
-  }
-
-
-
-  readerEyeTurnPromptVisible(): boolean {
-    return ReaderSettingsOps.readerEyeTurnPromptVisible(this);
-  }
-
-  readerEyeTurnPromptTop(): number {
-    return ReaderSettingsOps.readerEyeTurnPromptTop(this);
-  }
-
-  readerEyeCalibrationTargetTopVp(): number {
-    return ReaderSettingsOps.readerEyeCalibrationTargetTopVp(this);
-  }
-
-  readerEyeCalibrationPreviewWidthVp(): number {
-    return ReaderSettingsOps.readerEyeCalibrationPreviewWidthVp(this);
-  }
-
-  readerEyeCalibrationPreviewHeightVp(): number {
-    return ReaderSettingsOps.readerEyeCalibrationPreviewHeightVp(this);
-  }
-
-  readerEyeCalibrationPreviewLeftVp(): number {
-    return ReaderSettingsOps.readerEyeCalibrationPreviewLeftVp(this);
-  }
-
-
-  readerEyeCalibrationPreviewHint(): string {
-    return ReaderSettingsOps.readerEyeCalibrationPreviewHint(this);
-  }
-
-  readerEyeCalibrationInstruction(): string {
-    return ReaderSettingsOps.readerEyeCalibrationInstruction(this);
-  }
-
-  switchPageTurnMode(mode: number) {
-    ReaderSettingsOps.switchPageTurnMode(this, mode);
-  }
-
-  setReaderPageTurnAnimationType(index: number): void {
-    ReaderSettingsOps.setReaderPageTurnAnimationType(this, index);
-  }
-
-  normalizePageTurnAnimationType(type: number): number {
-    return ReaderSettingsOps.normalizePageTurnAnimationType(this, type);
-  }
-
-  isPageTurnAnimationEnabled(): boolean {
-    return ReaderSettingsOps.isPageTurnAnimationEnabled(this);
-  }
-
-  saveReaderLayoutSettings(): void {
-    ReaderSettingsOps.saveReaderLayoutSettings(this);
-  }
-
-  setReaderLandscapeDoublePage(enabled: boolean): void {
-    ReaderSettingsOps.setReaderLandscapeDoublePage(this, enabled);
-  }
-
-  setReaderScreenOrientationByIndex(index: number): void {
-    ReaderSettingsOps.setReaderScreenOrientationByIndex(this, index);
-  }
-
-  applyReaderThemeIndex(index: number): void {
-    ReaderSettingsOps.applyReaderThemeIndex(this, index);
-  }
-
-  saveReaderThemeSettings(): void {
-    ReaderSettingsOps.saveReaderThemeSettings(this);
-  }
-
-  setCurrentThemeBackgroundColor(color: string): void {
-    ReaderSettingsOps.setCurrentThemeBackgroundColor(this, color);
-  }
-
-  setCurrentThemeTextColor(color: string): void {
-    ReaderSettingsOps.setCurrentThemeTextColor(this, color);
-  }
-
-  persistCustomThemeData(data: ReaderCustomThemeData): void {
-    ReaderSettingsOps.persistCustomThemeData(this, data);
-  }
-
-  addCustomTheme(): void {
-    ReaderSettingsOps.addCustomTheme(this);
-  }
+  pageTurnModeSelectedIndex(): number { return ReaderSettingsOps.pageTurnModeSelectedIndex(this); }
+  pageTurnAnimationOptions(): SelectOption[] { return ReaderSettingsOps.pageTurnAnimationOptions(this); }
+  pageTurnAnimationTypes(): number[] { return ReaderSettingsOps.pageTurnAnimationTypes(this); }
+  pageTurnAnimationSelectedIndex(): number { return ReaderSettingsOps.pageTurnAnimationSelectedIndex(this); }
+  pageTurnAnimationValue(): string { return ReaderSettingsOps.pageTurnAnimationValue(this); }
+  screenTimeoutSelectedIndex(): number { return ReaderSettingsOps.screenTimeoutSelectedIndex(this); }
+  screenOrientationSelectedIndex(): number { return ReaderSettingsOps.screenOrientationSelectedIndex(this); }
+  readerEyeTurnPromptVisible(): boolean { return ReaderSettingsOps.readerEyeTurnPromptVisible(this); }
+  readerEyeTurnPromptTop(): number { return ReaderSettingsOps.readerEyeTurnPromptTop(this); }
+  readerEyeCalibrationTargetTopVp(): number { return ReaderSettingsOps.readerEyeCalibrationTargetTopVp(this); }
+  readerEyeCalibrationPreviewWidthVp(): number { return ReaderSettingsOps.readerEyeCalibrationPreviewWidthVp(this); }
+  readerEyeCalibrationPreviewHeightVp(): number { return ReaderSettingsOps.readerEyeCalibrationPreviewHeightVp(this); }
+  readerEyeCalibrationPreviewLeftVp(): number { return ReaderSettingsOps.readerEyeCalibrationPreviewLeftVp(this); }
+  readerEyeCalibrationPreviewHint(): string { return ReaderSettingsOps.readerEyeCalibrationPreviewHint(this); }
+  readerEyeCalibrationInstruction(): string { return ReaderSettingsOps.readerEyeCalibrationInstruction(this); }
+  switchPageTurnMode(mode: number) { ReaderSettingsOps.switchPageTurnMode(this, mode); }
+  setReaderPageTurnAnimationType(index: number): void { ReaderSettingsOps.setReaderPageTurnAnimationType(this, index); }
+  normalizePageTurnAnimationType(type: number): number { return ReaderSettingsOps.normalizePageTurnAnimationType(this, type); }
+  isPageTurnAnimationEnabled(): boolean { return ReaderSettingsOps.isPageTurnAnimationEnabled(this); }
+  saveReaderLayoutSettings(): void { ReaderSettingsOps.saveReaderLayoutSettings(this); }
+  setReaderLandscapeDoublePage(enabled: boolean): void { ReaderSettingsOps.setReaderLandscapeDoublePage(this, enabled); }
+  setReaderScreenOrientationByIndex(index: number): void { ReaderSettingsOps.setReaderScreenOrientationByIndex(this, index); }
+  applyReaderThemeIndex(index: number): void { ReaderSettingsOps.applyReaderThemeIndex(this, index); }
+  saveReaderThemeSettings(): void { ReaderSettingsOps.saveReaderThemeSettings(this); }
+  setCurrentThemeBackgroundColor(color: string): void { ReaderSettingsOps.setCurrentThemeBackgroundColor(this, color); }
+  setCurrentThemeTextColor(color: string): void { ReaderSettingsOps.setCurrentThemeTextColor(this, color); }
+  persistCustomThemeData(data: ReaderCustomThemeData): void { ReaderSettingsOps.persistCustomThemeData(this, data); }
+  addCustomTheme(): void { ReaderSettingsOps.addCustomTheme(this); }
 
   openReaderCustomThemeDeleteConfirm(): void {
     this.showReaderCustomThemeDeleteConfirm = true;
@@ -6135,141 +4716,49 @@ TtsGlobalCapsule({
     });
   }
 
-  closeReaderCustomThemeDeleteConfirm(): void {
-    ReaderSettingsOps.closeReaderCustomThemeDeleteConfirm(this);
-  }
-
-  deleteCurrentCustomTheme(): void {
-    ReaderSettingsOps.deleteCurrentCustomTheme(this);
-  }
-
-  selectCustomTheme(index: number): void {
-    ReaderSettingsOps.selectCustomTheme(this, index);
-  }
-
-  renameCurrentCustomTheme(name: string): void {
-    ReaderSettingsOps.renameCurrentCustomTheme(this, name);
-  }
-
-  async chooseCurrentCustomThemeImage(): Promise<void> {
-    return ReaderSettingsOps.chooseCurrentCustomThemeImage(this);
-  }
-
-  clearCurrentCustomThemeImage(): void {
-    ReaderSettingsOps.clearCurrentCustomThemeImage(this);
-  }
-
-  setCurrentCustomThemeBackgroundType(index: number): void {
-    ReaderSettingsOps.setCurrentCustomThemeBackgroundType(this, index);
-  }
-
-  setCurrentCustomThemeImageFit(index: number): void {
-    ReaderSettingsOps.setCurrentCustomThemeImageFit(this, index);
-  }
-
-  saveReaderInteractionSettings(): void {
-    ReaderSettingsOps.saveReaderInteractionSettings(this);
-  }
-
-  setReaderVolumeTurnPage(enabled: boolean): void {
-    ReaderSettingsOps.setReaderVolumeTurnPage(this, enabled);
-  }
-
-  setReaderEyeTurnEnabled(enabled: boolean): void {
-    ReaderSettingsOps.setReaderEyeTurnEnabled(this, enabled);
-  }
-
-  saveReaderEyeTurnSettings(): void {
-    ReaderSettingsOps.saveReaderEyeTurnSettings(this);
-  }
-
-  setReaderEyeTurnDirectionEnabled(previous: boolean, enabled: boolean): void {
-    ReaderSettingsOps.setReaderEyeTurnDirectionEnabled(this, previous, enabled);
-  }
-
-
-  setReaderEyeDwell(previous: boolean, index: number): void {
-    ReaderSettingsOps.setReaderEyeDwell(this, previous, index);
-  }
-
-  isReaderEyeLandscape(): boolean {
-    return ReaderSettingsOps.isReaderEyeLandscape(this);
-  }
-
-  currentReaderEyeCalibrationRaw(): string {
-    return ReaderSettingsOps.currentReaderEyeCalibrationRaw(this);
-  }
-
-  configureReaderEyeTurnController(): void {
-    ReaderSettingsOps.configureReaderEyeTurnController(this);
-  }
-
-  startReaderEyeTurnIfReady(): void {
-    ReaderSettingsOps.startReaderEyeTurnIfReady(this);
-  }
+  closeReaderCustomThemeDeleteConfirm(): void { ReaderSettingsOps.closeReaderCustomThemeDeleteConfirm(this); }
+  deleteCurrentCustomTheme(): void { ReaderSettingsOps.deleteCurrentCustomTheme(this); }
+  selectCustomTheme(index: number): void { ReaderSettingsOps.selectCustomTheme(this, index); }
+  renameCurrentCustomTheme(name: string): void { ReaderSettingsOps.renameCurrentCustomTheme(this, name); }
+  async chooseCurrentCustomThemeImage(): Promise<void> { return ReaderSettingsOps.chooseCurrentCustomThemeImage(this); }
+  clearCurrentCustomThemeImage(): void { ReaderSettingsOps.clearCurrentCustomThemeImage(this); }
+  setCurrentCustomThemeBackgroundType(index: number): void { ReaderSettingsOps.setCurrentCustomThemeBackgroundType(this, index); }
+  setCurrentCustomThemeImageFit(index: number): void { ReaderSettingsOps.setCurrentCustomThemeImageFit(this, index); }
+  saveReaderInteractionSettings(): void { ReaderSettingsOps.saveReaderInteractionSettings(this); }
+  setReaderVolumeTurnPage(enabled: boolean): void { ReaderSettingsOps.setReaderVolumeTurnPage(this, enabled); }
+  setReaderEyeTurnEnabled(enabled: boolean): void { ReaderSettingsOps.setReaderEyeTurnEnabled(this, enabled); }
+  saveReaderEyeTurnSettings(): void { ReaderSettingsOps.saveReaderEyeTurnSettings(this); }
+  setReaderEyeTurnDirectionEnabled(previous: boolean, enabled: boolean): void { ReaderSettingsOps.setReaderEyeTurnDirectionEnabled(this, previous, enabled); }
+  setReaderEyeDwell(previous: boolean, index: number): void { ReaderSettingsOps.setReaderEyeDwell(this, previous, index); }
+  isReaderEyeLandscape(): boolean { return ReaderSettingsOps.isReaderEyeLandscape(this); }
+  currentReaderEyeCalibrationRaw(): string { return ReaderSettingsOps.currentReaderEyeCalibrationRaw(this); }
+  configureReaderEyeTurnController(): void { ReaderSettingsOps.configureReaderEyeTurnController(this); }
+  startReaderEyeTurnIfReady(): void { ReaderSettingsOps.startReaderEyeTurnIfReady(this); }
 
   /**
    * Prefers AR Engine for gaze signals and only falls back to the camera
    * pipeline when the kit is unavailable on this device.
    */
-  startArEyeTurnHostIfAvailable(): void {
-    ReaderSettingsOps.startArEyeTurnHostIfAvailable(this);
-  }
-
-  startReaderEyeTurnCamera(): void {
-    ReaderSettingsOps.startReaderEyeTurnCamera(this);
-  }
+  startArEyeTurnHostIfAvailable(): void { ReaderSettingsOps.startArEyeTurnHostIfAvailable(this); }
+  startReaderEyeTurnCamera(): void { ReaderSettingsOps.startReaderEyeTurnCamera(this); }
 
   /** True when either AR Engine or the camera pipeline is producing gaze samples. */
-  readerEyeTurnSignalReady(): boolean {
-    return ReaderSettingsOps.readerEyeTurnSignalReady(this);
-  }
-
-  stopArEyeTurnHost(): void {
-    ReaderSettingsOps.stopArEyeTurnHost(this);
-  }
-
-  refreshReaderEyeTurnForViewport(): void {
-    ReaderSettingsOps.refreshReaderEyeTurnForViewport(this);
-  }
-
-  readerEyeTurnCanTrigger(): boolean {
-    return ReaderSettingsOps.readerEyeTurnCanTrigger(this);
-  }
+  readerEyeTurnSignalReady(): boolean { return ReaderSettingsOps.readerEyeTurnSignalReady(this); }
+  stopArEyeTurnHost(): void { ReaderSettingsOps.stopArEyeTurnHost(this); }
+  refreshReaderEyeTurnForViewport(): void { ReaderSettingsOps.refreshReaderEyeTurnForViewport(this); }
+  readerEyeTurnCanTrigger(): boolean { return ReaderSettingsOps.readerEyeTurnCanTrigger(this); }
 
   /** Which condition currently blocks an eye-turn, for diagnostics only. */
-  readerEyeTurnBlockReason(): string {
-    return ReaderSettingsOps.readerEyeTurnBlockReason(this);
-  }
-
-  openReaderEyeCalibration(): void {
-    ReaderSettingsOps.openReaderEyeCalibration(this);
-  }
-
-  beginReaderEyeCalibrationCapture(): void {
-    ReaderSettingsOps.beginReaderEyeCalibrationCapture(this);
-  }
+  readerEyeTurnBlockReason(): string { return ReaderSettingsOps.readerEyeTurnBlockReason(this); }
+  openReaderEyeCalibration(): void { ReaderSettingsOps.openReaderEyeCalibration(this); }
+  beginReaderEyeCalibrationCapture(): void { ReaderSettingsOps.beginReaderEyeCalibrationCapture(this); }
 
   /** Starts the 1.5s sampling window for the current fixation (the reader taps to advance). */
-  startReaderEyeCalibrationPhaseSampling(): void {
-    ReaderSettingsOps.startReaderEyeCalibrationPhaseSampling(this);
-  }
-
-  currentReaderEyeCalibrationTargetLabel(): string {
-    return ReaderSettingsOps.currentReaderEyeCalibrationTargetLabel(this);
-  }
-
-  consumeReaderEyeCalibrationSample(sample: EyeTurnSample): void {
-    ReaderSettingsOps.consumeReaderEyeCalibrationSample(this, sample);
-  }
-
-  scheduleReaderEyeCalibrationTick(delayMs: number = READER_EYE_CALIBRATION_TICK_MS): void {
-    ReaderSettingsOps.scheduleReaderEyeCalibrationTick(this, delayMs);
-  }
-
-  updateReaderEyeCalibrationSequence(): void {
-    ReaderSettingsOps.updateReaderEyeCalibrationSequence(this);
-  }
+  startReaderEyeCalibrationPhaseSampling(): void { ReaderSettingsOps.startReaderEyeCalibrationPhaseSampling(this); }
+  currentReaderEyeCalibrationTargetLabel(): string { return ReaderSettingsOps.currentReaderEyeCalibrationTargetLabel(this); }
+  consumeReaderEyeCalibrationSample(sample: EyeTurnSample): void { ReaderSettingsOps.consumeReaderEyeCalibrationSample(this, sample); }
+  scheduleReaderEyeCalibrationTick(delayMs: number = READER_EYE_CALIBRATION_TICK_MS): void { ReaderSettingsOps.scheduleReaderEyeCalibrationTick(this, delayMs); }
+  updateReaderEyeCalibrationSequence(): void { ReaderSettingsOps.updateReaderEyeCalibrationSequence(this); }
 
   /** Median absolute deviation: a robust spread used to reject an unsteady fixation. */
   /**
@@ -6277,76 +4766,27 @@ TtsGlobalCapsule({
    * The sign of the deltas comes straight from the measurements, so the gesture direction
    * can no longer be guessed wrong.
    */
-  finishReaderEyeCalibrationFromFixation(): void {
-    ReaderSettingsOps.finishReaderEyeCalibrationFromFixation(this);
-  }
-
-  failReaderEyeCalibration(message: string): void {
-    ReaderSettingsOps.failReaderEyeCalibration(this, message);
-  }
-
-  abortReaderEyeCalibrationAttempt(message: string): void {
-    ReaderSettingsOps.abortReaderEyeCalibrationAttempt(this, message);
-  }
-
-  clearReaderEyeCalibrationTimer(): void {
-    ReaderSettingsOps.clearReaderEyeCalibrationTimer(this);
-  }
-
-  cancelReaderEyeCalibration(): void {
-    ReaderSettingsOps.cancelReaderEyeCalibration(this);
-  }
-
-  setReaderScreenTimeoutByIndex(index: number): void {
-    ReaderSettingsOps.setReaderScreenTimeoutByIndex(this, index);
-  }
-
-  setReaderExtendToStatusBar(enabled: boolean): void {
-    ReaderSettingsOps.setReaderExtendToStatusBar(this, enabled);
-  }
-
-  setKeepParagraphIndent(enabled: boolean): void {
-    ReaderSettingsOps.setKeepParagraphIndent(this, enabled);
-  }
-
-  setReaderPreloadEnabled(enabled: boolean): void {
-    ReaderSettingsOps.setReaderPreloadEnabled(this, enabled);
-  }
-
-  setReaderPreloadChapterCount(count: number): void {
-    ReaderSettingsOps.setReaderPreloadChapterCount(this, count);
-  }
-
-  setReaderQuickBookmarkEnabled(enabled: boolean): void {
-    ReaderSettingsOps.setReaderQuickBookmarkEnabled(this, enabled);
-  }
+  finishReaderEyeCalibrationFromFixation(): void { ReaderSettingsOps.finishReaderEyeCalibrationFromFixation(this); }
+  failReaderEyeCalibration(message: string): void { ReaderSettingsOps.failReaderEyeCalibration(this, message); }
+  abortReaderEyeCalibrationAttempt(message: string): void { ReaderSettingsOps.abortReaderEyeCalibrationAttempt(this, message); }
+  clearReaderEyeCalibrationTimer(): void { ReaderSettingsOps.clearReaderEyeCalibrationTimer(this); }
+  cancelReaderEyeCalibration(): void { ReaderSettingsOps.cancelReaderEyeCalibration(this); }
+  setReaderScreenTimeoutByIndex(index: number): void { ReaderSettingsOps.setReaderScreenTimeoutByIndex(this, index); }
+  setReaderExtendToStatusBar(enabled: boolean): void { ReaderSettingsOps.setReaderExtendToStatusBar(this, enabled); }
+  setKeepParagraphIndent(enabled: boolean): void { ReaderSettingsOps.setKeepParagraphIndent(this, enabled); }
+  setReaderPreloadEnabled(enabled: boolean): void { ReaderSettingsOps.setReaderPreloadEnabled(this, enabled); }
+  setReaderPreloadChapterCount(count: number): void { ReaderSettingsOps.setReaderPreloadChapterCount(this, count); }
+  setReaderQuickBookmarkEnabled(enabled: boolean): void { ReaderSettingsOps.setReaderQuickBookmarkEnabled(this, enabled); }
 //endregion
 //region TTS 浮标会话 / 朗读编排(起播·续播·换章·看门狗) / 后台委托 / 封面 / 高亮清理
 // [map] 契约: 核心长链路: ttsReadToken / ttsFocusGeneration / ttsChapterSwitching; 与浮标会话、AVSession 双向同步
 
-  publishTtsFloatingSession(): void {
-    ReaderTtsOrchestrationOps.publishTtsFloatingSession(this);
-  }
-
-  publishTtsFloatingVoices(): void {
-    ReaderTtsOrchestrationOps.publishTtsFloatingVoices(this);
-  }
-
-  updateTtsFloatingSession(): void {
-    ReaderTtsOrchestrationOps.updateTtsFloatingSession(this);
-  }
-
-  stopTtsFloatingSession(): void {
-    ReaderTtsOrchestrationOps.stopTtsFloatingSession(this);
-  }
-
-  async toggleTtsReading(): Promise<void> {
-    return ReaderTtsOrchestrationOps.toggleTtsReading(this);
-  }
-
-  setTtsPagedScrollOverride(enabled: boolean): void {
-    ReaderTtsOrchestrationOps.setTtsPagedScrollOverride(this, enabled);
-  }
+  publishTtsFloatingSession(): void { ReaderTtsOrchestrationOps.publishTtsFloatingSession(this); }
+  publishTtsFloatingVoices(): void { ReaderTtsOrchestrationOps.publishTtsFloatingVoices(this); }
+  updateTtsFloatingSession(): void { ReaderTtsOrchestrationOps.updateTtsFloatingSession(this); }
+  stopTtsFloatingSession(): void { ReaderTtsOrchestrationOps.stopTtsFloatingSession(this); }
+  async toggleTtsReading(): Promise<void> { return ReaderTtsOrchestrationOps.toggleTtsReading(this); }
+  setTtsPagedScrollOverride(enabled: boolean): void { ReaderTtsOrchestrationOps.setTtsPagedScrollOverride(this, enabled); }
 
   async startTtsReadingFromCurrentPosition(showToast: boolean,
     manualPageTurnResume: boolean = false, manualPageTurnResumeSerial: number = -1,
@@ -6356,131 +4796,40 @@ TtsGlobalCapsule({
 
   /** Return the last source position that can belong to an audible TTS chunk. */
 
-  stopTtsReading(userCancelled: boolean = true): void {
-    ReaderTtsOrchestrationOps.stopTtsReading(this, userCancelled);
-  }
-
-  stopTtsReaderForChapterSwitch(): void {
-    ReaderTtsOrchestrationOps.stopTtsReaderForChapterSwitch(this);
-  }
-
-  clearManualPageTurnTtsResumeTimer(): void {
-    ReaderTtsOrchestrationOps.clearManualPageTurnTtsResumeTimer(this);
-  }
-
-  cancelManualPageTurnTtsResume(): void {
-    ReaderTtsOrchestrationOps.cancelManualPageTurnTtsResume(this);
-  }
-
-  deferManualPageTurnTtsResume(): void {
-    ReaderTtsOrchestrationOps.deferManualPageTurnTtsResume(this);
-  }
-
-  isManualPageTurnTtsResumeCurrent(serial: number): boolean {
-    return ReaderTtsOrchestrationOps.isManualPageTurnTtsResumeCurrent(this, serial);
-  }
-
-  prepareTtsForManualPageTurn(): void {
-    ReaderTtsOrchestrationOps.prepareTtsForManualPageTurn(this);
-  }
-
-  scheduleTtsResumeAfterManualPageTurn(attempt: number = 0): void {
-    ReaderTtsOrchestrationOps.scheduleTtsResumeAfterManualPageTurn(this, attempt);
-  }
-
-  isReaderPageTurnPositionReadyForTts(): boolean {
-    return ReaderTtsOrchestrationOps.isReaderPageTurnPositionReadyForTts(this);
-  }
-
-  syncTtsStateToVisiblePage(): void {
-    ReaderTtsOrchestrationOps.syncTtsStateToVisiblePage(this);
-  }
-
-  async continueTtsReading(token: number): Promise<void> {
-    return ReaderTtsOrchestrationOps.continueTtsReading(this, token);
-  }
-
-  isTtsReadingAtExpectedEnd(): boolean {
-    return ReaderTtsOrchestrationOps.isTtsReadingAtExpectedEnd(this);
-  }
+  stopTtsReading(userCancelled: boolean = true): void { ReaderTtsOrchestrationOps.stopTtsReading(this, userCancelled); }
+  stopTtsReaderForChapterSwitch(): void { ReaderTtsOrchestrationOps.stopTtsReaderForChapterSwitch(this); }
+  clearManualPageTurnTtsResumeTimer(): void { ReaderTtsOrchestrationOps.clearManualPageTurnTtsResumeTimer(this); }
+  cancelManualPageTurnTtsResume(): void { ReaderTtsOrchestrationOps.cancelManualPageTurnTtsResume(this); }
+  deferManualPageTurnTtsResume(): void { ReaderTtsOrchestrationOps.deferManualPageTurnTtsResume(this); }
+  isManualPageTurnTtsResumeCurrent(serial: number): boolean { return ReaderTtsOrchestrationOps.isManualPageTurnTtsResumeCurrent(this, serial); }
+  prepareTtsForManualPageTurn(): void { ReaderTtsOrchestrationOps.prepareTtsForManualPageTurn(this); }
+  scheduleTtsResumeAfterManualPageTurn(attempt: number = 0): void { ReaderTtsOrchestrationOps.scheduleTtsResumeAfterManualPageTurn(this, attempt); }
+  isReaderPageTurnPositionReadyForTts(): boolean { return ReaderTtsOrchestrationOps.isReaderPageTurnPositionReadyForTts(this); }
+  syncTtsStateToVisiblePage(): void { ReaderTtsOrchestrationOps.syncTtsStateToVisiblePage(this); }
+  async continueTtsReading(token: number): Promise<void> { return ReaderTtsOrchestrationOps.continueTtsReading(this, token); }
+  isTtsReadingAtExpectedEnd(): boolean { return ReaderTtsOrchestrationOps.isTtsReadingAtExpectedEnd(this); }
 
   // 章末等待主要来自下一章第一段音频的首次合成（自定义音色是一次网络往返）。
   // 当前章只剩最后一两段时，提前按预取文本合成下一章开头音频；章末切换时直接消费缓存结果。
-  maybePrefetchTtsNextChapterAudio(): void {
-    ReaderTtsOrchestrationOps.maybePrefetchTtsNextChapterAudio(this);
-  }
-
-  async prefetchTtsNextChapterAudio(): Promise<void> {
-    return ReaderTtsOrchestrationOps.prefetchTtsNextChapterAudio(this);
-  }
-
-  armTtsContinuationWatchdog(): void {
-    ReaderTtsOrchestrationOps.armTtsContinuationWatchdog(this);
-  }
-
-  clearTtsContinuationWatchdog(): void {
-    ReaderTtsOrchestrationOps.clearTtsContinuationWatchdog(this);
-  }
-
-  async advanceTtsReadingToNextChapter(): Promise<boolean> {
-    return ReaderTtsOrchestrationOps.advanceTtsReadingToNextChapter(this);
-  }
-
-  finishTtsReading(): void {
-    ReaderTtsOrchestrationOps.finishTtsReading(this);
-  }
-
-  async loadReaderSettings(): Promise<void> {
-    return ReaderTtsOrchestrationOps.loadReaderSettings(this);
-  }
-
-  isTtsBackgroundRunning(): boolean {
-    return ReaderTtsOrchestrationOps.isTtsBackgroundRunning(this);
-  }
-
-  isTtsBackgroundRequesting(): boolean {
-    return ReaderTtsOrchestrationOps.isTtsBackgroundRequesting(this);
-  }
-
-  hasTtsAvSession(): boolean {
-    return ReaderTtsOrchestrationOps.hasTtsAvSession(this);
-  }
-
-  async startTtsBackgroundRunning(): Promise<boolean> {
-    return ReaderTtsOrchestrationOps.startTtsBackgroundRunning(this);
-  }
-
-  async stopTtsBackgroundRunning(): Promise<void> {
-    return ReaderTtsOrchestrationOps.stopTtsBackgroundRunning(this);
-  }
-
-  onTtsAudioStarted(): void {
-    ReaderTtsOrchestrationOps.onTtsAudioStarted(this);
-  }
-
-  async updateTtsAvSessionPlaybackState(state: avSession.PlaybackState): Promise<void> {
-    return ReaderTtsOrchestrationOps.updateTtsAvSessionPlaybackState(this, state);
-  }
-
-  async syncTtsSystemMediaControls(): Promise<void> {
-    return ReaderTtsOrchestrationOps.syncTtsSystemMediaControls(this);
-  }
-
-  ttsAvPlaybackState(): avSession.PlaybackState {
-    return ReaderTtsOrchestrationOps.ttsAvPlaybackState(this);
-  }
-
-  async refreshTtsMediaImage(): Promise<void> {
-    return ReaderTtsOrchestrationOps.refreshTtsMediaImage(this);
-  }
-
-  async playNextChapterFromMediaSession(): Promise<void> {
-    return ReaderTtsOrchestrationOps.playNextChapterFromMediaSession(this);
-  }
-
-  async playPreviousChapterFromMediaSession(): Promise<void> {
-    return ReaderTtsOrchestrationOps.playPreviousChapterFromMediaSession(this);
-  }
+  maybePrefetchTtsNextChapterAudio(): void { ReaderTtsOrchestrationOps.maybePrefetchTtsNextChapterAudio(this); }
+  async prefetchTtsNextChapterAudio(): Promise<void> { return ReaderTtsOrchestrationOps.prefetchTtsNextChapterAudio(this); }
+  armTtsContinuationWatchdog(): void { ReaderTtsOrchestrationOps.armTtsContinuationWatchdog(this); }
+  clearTtsContinuationWatchdog(): void { ReaderTtsOrchestrationOps.clearTtsContinuationWatchdog(this); }
+  async advanceTtsReadingToNextChapter(): Promise<boolean> { return ReaderTtsOrchestrationOps.advanceTtsReadingToNextChapter(this); }
+  finishTtsReading(): void { ReaderTtsOrchestrationOps.finishTtsReading(this); }
+  async loadReaderSettings(): Promise<void> { return ReaderTtsOrchestrationOps.loadReaderSettings(this); }
+  isTtsBackgroundRunning(): boolean { return ReaderTtsOrchestrationOps.isTtsBackgroundRunning(this); }
+  isTtsBackgroundRequesting(): boolean { return ReaderTtsOrchestrationOps.isTtsBackgroundRequesting(this); }
+  hasTtsAvSession(): boolean { return ReaderTtsOrchestrationOps.hasTtsAvSession(this); }
+  async startTtsBackgroundRunning(): Promise<boolean> { return ReaderTtsOrchestrationOps.startTtsBackgroundRunning(this); }
+  async stopTtsBackgroundRunning(): Promise<void> { return ReaderTtsOrchestrationOps.stopTtsBackgroundRunning(this); }
+  onTtsAudioStarted(): void { ReaderTtsOrchestrationOps.onTtsAudioStarted(this); }
+  async updateTtsAvSessionPlaybackState(state: avSession.PlaybackState): Promise<void> { return ReaderTtsOrchestrationOps.updateTtsAvSessionPlaybackState(this, state); }
+  async syncTtsSystemMediaControls(): Promise<void> { return ReaderTtsOrchestrationOps.syncTtsSystemMediaControls(this); }
+  ttsAvPlaybackState(): avSession.PlaybackState { return ReaderTtsOrchestrationOps.ttsAvPlaybackState(this); }
+  async refreshTtsMediaImage(): Promise<void> { return ReaderTtsOrchestrationOps.refreshTtsMediaImage(this); }
+  async playNextChapterFromMediaSession(): Promise<void> { return ReaderTtsOrchestrationOps.playNextChapterFromMediaSession(this); }
+  async playPreviousChapterFromMediaSession(): Promise<void> { return ReaderTtsOrchestrationOps.playPreviousChapterFromMediaSession(this); }
 
   // ---- ReaderTtsBackgroundHost 实现：供控制器读写的页面状态访问器 ----
 
@@ -6488,154 +4837,56 @@ TtsGlobalCapsule({
     return getContext(this);
   }
 
-  getReaderBook(): Book | null {
-    return ReaderTtsOrchestrationOps.getReaderBook(this);
-  }
-
-  getReaderBookUrl(): string {
-    return ReaderTtsOrchestrationOps.getReaderBookUrl(this);
-  }
-
-  getCurrentChapterIndex(): number {
-    return ReaderTtsOrchestrationOps.getCurrentChapterIndex(this);
-  }
-
-  getCurrentPageIndex(): number {
-    return ReaderTtsOrchestrationOps.getCurrentPageIndex(this);
-  }
-
-  setCurrentPageIndex(value: number): void {
-    ReaderTtsOrchestrationOps.setCurrentPageIndex(this, value);
-  }
-
-  setPendingRestorePageIndex(value: number): void {
-    ReaderTtsOrchestrationOps.setPendingRestorePageIndex(this, value);
-  }
-
-  getContentPageCount(): number {
-    return ReaderTtsOrchestrationOps.getContentPageCount(this);
-  }
-
-  getTtsReader(): SystemTtsReader {
-    return ReaderTtsOrchestrationOps.getTtsReader(this);
-  }
-
-  isTtsSpeakingState(): boolean {
-    return ReaderTtsOrchestrationOps.isTtsSpeakingState(this);
-  }
-
-  isTtsPausedState(): boolean {
-    return ReaderTtsOrchestrationOps.isTtsPausedState(this);
-  }
-
-  getTtsSpeed(): number {
-    return ReaderTtsOrchestrationOps.getTtsSpeed(this);
-  }
-
-  getTtsCharCountSource(): string {
-    return ReaderTtsOrchestrationOps.getTtsCharCountSource(this);
-  }
-
-  isFullTextCaching(): boolean {
-    return ReaderTtsOrchestrationOps.isFullTextCaching(this);
-  }
-
-  isFullTextCacheBackgroundRunning(): boolean {
-    return ReaderTtsOrchestrationOps.isFullTextCacheBackgroundRunning(this);
-  }
-
-  setFullTextCacheBackgroundRunning(value: boolean): void {
-    ReaderTtsOrchestrationOps.setFullTextCacheBackgroundRunning(this, value);
-  }
-
-  isTtsChapterSwitching(): boolean {
-    return ReaderTtsOrchestrationOps.isTtsChapterSwitching(this);
-  }
-
-  setTtsChapterSwitching(value: boolean): void {
-    ReaderTtsOrchestrationOps.setTtsChapterSwitching(this, value);
-  }
-
-  getTtsLastMediaChapterCommandAt(): number {
-    return ReaderTtsOrchestrationOps.getTtsLastMediaChapterCommandAt(this);
-  }
-
-  setTtsLastMediaChapterCommandAt(value: number): void {
-    ReaderTtsOrchestrationOps.setTtsLastMediaChapterCommandAt(this, value);
-  }
-
-  ownsTtsFloatingSession(): boolean {
-    return ReaderTtsOrchestrationOps.ownsTtsFloatingSession(this);
-  }
+  getReaderBook(): Book | null { return ReaderTtsOrchestrationOps.getReaderBook(this); }
+  getReaderBookUrl(): string { return ReaderTtsOrchestrationOps.getReaderBookUrl(this); }
+  getCurrentChapterIndex(): number { return ReaderTtsOrchestrationOps.getCurrentChapterIndex(this); }
+  getCurrentPageIndex(): number { return ReaderTtsOrchestrationOps.getCurrentPageIndex(this); }
+  setCurrentPageIndex(value: number): void { ReaderTtsOrchestrationOps.setCurrentPageIndex(this, value); }
+  setPendingRestorePageIndex(value: number): void { ReaderTtsOrchestrationOps.setPendingRestorePageIndex(this, value); }
+  getContentPageCount(): number { return ReaderTtsOrchestrationOps.getContentPageCount(this); }
+  getTtsReader(): SystemTtsReader { return ReaderTtsOrchestrationOps.getTtsReader(this); }
+  isTtsSpeakingState(): boolean { return ReaderTtsOrchestrationOps.isTtsSpeakingState(this); }
+  isTtsPausedState(): boolean { return ReaderTtsOrchestrationOps.isTtsPausedState(this); }
+  getTtsSpeed(): number { return ReaderTtsOrchestrationOps.getTtsSpeed(this); }
+  getTtsCharCountSource(): string { return ReaderTtsOrchestrationOps.getTtsCharCountSource(this); }
+  isFullTextCaching(): boolean { return ReaderTtsOrchestrationOps.isFullTextCaching(this); }
+  isFullTextCacheBackgroundRunning(): boolean { return ReaderTtsOrchestrationOps.isFullTextCacheBackgroundRunning(this); }
+  setFullTextCacheBackgroundRunning(value: boolean): void { ReaderTtsOrchestrationOps.setFullTextCacheBackgroundRunning(this, value); }
+  isTtsChapterSwitching(): boolean { return ReaderTtsOrchestrationOps.isTtsChapterSwitching(this); }
+  setTtsChapterSwitching(value: boolean): void { ReaderTtsOrchestrationOps.setTtsChapterSwitching(this, value); }
+  getTtsLastMediaChapterCommandAt(): number { return ReaderTtsOrchestrationOps.getTtsLastMediaChapterCommandAt(this); }
+  setTtsLastMediaChapterCommandAt(value: number): void { ReaderTtsOrchestrationOps.setTtsLastMediaChapterCommandAt(this, value); }
+  ownsTtsFloatingSession(): boolean { return ReaderTtsOrchestrationOps.ownsTtsFloatingSession(this); }
 
   async playPositionFromFloatingSession(targetChapterIndex: number, targetPageIndex: number,
     targetSourceOffset: number = -1): Promise<void> {
     return ReaderTtsOrchestrationOps.playPositionFromFloatingSession(this, targetChapterIndex, targetPageIndex, targetSourceOffset);
   }
 
-  getTtsPanelCoverList(): string[] {
-    return ReaderTtsOrchestrationOps.getTtsPanelCoverList(this);
-  }
-
-  getTtsFloatingCover(): ResourceStr {
-    return ReaderTtsOrchestrationOps.getTtsFloatingCover(this);
-  }
-
-  getTtsCoverPlaceholderColor(): string {
-    return ReaderTtsOrchestrationOps.getTtsCoverPlaceholderColor(this);
-  }
-
-  getBookshelfDisplayCoverRaw(): string {
-    return ReaderTtsOrchestrationOps.getBookshelfDisplayCoverRaw(this);
-  }
-
-  getTtsGalleryCoverRaw(): string {
-    return ReaderTtsOrchestrationOps.getTtsGalleryCoverRaw(this);
-  }
-
-  pickStableTtsCover(covers: string[]): string {
-    return ReaderTtsOrchestrationOps.pickStableTtsCover(this, covers);
-  }
+  getTtsPanelCoverList(): string[] { return ReaderTtsOrchestrationOps.getTtsPanelCoverList(this); }
+  getTtsFloatingCover(): ResourceStr { return ReaderTtsOrchestrationOps.getTtsFloatingCover(this); }
+  getTtsCoverPlaceholderColor(): string { return ReaderTtsOrchestrationOps.getTtsCoverPlaceholderColor(this); }
+  getBookshelfDisplayCoverRaw(): string { return ReaderTtsOrchestrationOps.getBookshelfDisplayCoverRaw(this); }
+  getTtsGalleryCoverRaw(): string { return ReaderTtsOrchestrationOps.getTtsGalleryCoverRaw(this); }
+  pickStableTtsCover(covers: string[]): string { return ReaderTtsOrchestrationOps.pickStableTtsCover(this, covers); }
 //endregion
 //region 焦点会话 / 正文规范化纯函数群 / 分页测量引擎
 // [map] 契约: 含大量可纯化的正文处理(findMeasuredPageEnd 等); 分页测量读排版状态
 
-  clearTtsHighlight(): void {
-    ReaderPaginationOps.clearTtsHighlight(this);
-  }
-
-  publishTtsHighlightRenderChange(): void {
-    ReaderPaginationOps.publishTtsHighlightRenderChange(this);
-  }
-
-  currentTtsSourceIdentity(): string {
-    return ReaderPaginationOps.currentTtsSourceIdentity(this);
-  }
-
-  invalidateTtsFocusSession(): void {
-    ReaderPaginationOps.invalidateTtsFocusSession(this);
-  }
+  clearTtsHighlight(): void { ReaderPaginationOps.clearTtsHighlight(this); }
+  publishTtsHighlightRenderChange(): void { ReaderPaginationOps.publishTtsHighlightRenderChange(this); }
+  currentTtsSourceIdentity(): string { return ReaderPaginationOps.currentTtsSourceIdentity(this); }
+  invalidateTtsFocusSession(): void { ReaderPaginationOps.invalidateTtsFocusSession(this); }
 
   isCurrentTtsFocusSession(token: number, generation: number,
     chapterIndex: number, sourceIdentity: string): boolean {
     return ReaderPaginationOps.isCurrentTtsFocusSession(this, token, generation, chapterIndex, sourceIdentity);
   }
 
-  getTtsReadingText(startOffset: number = -1): string {
-    return ReaderPaginationOps.getTtsReadingText(this, startOffset);
-  }
-
-  getTtsFocusBreakOffsets(textLength: number): number[] {
-    return ReaderPaginationOps.getTtsFocusBreakOffsets(this, textLength);
-  }
-
-  getPagedSourceText(): string {
-    return ReaderPaginationOps.getPagedSourceText(this);
-  }
-
-  buildPagedSourceText(chapterIndex: number, content: string): string {
-    return ReaderPaginationOps.buildPagedSourceText(this, chapterIndex, content);
-  }
+  getTtsReadingText(startOffset: number = -1): string { return ReaderPaginationOps.getTtsReadingText(this, startOffset); }
+  getTtsFocusBreakOffsets(textLength: number): number[] { return ReaderPaginationOps.getTtsFocusBreakOffsets(this, textLength); }
+  getPagedSourceText(): string { return ReaderPaginationOps.getPagedSourceText(this); }
+  buildPagedSourceText(chapterIndex: number, content: string): string { return ReaderPaginationOps.buildPagedSourceText(this, chapterIndex, content); }
 
 
 
@@ -6644,13 +4895,8 @@ TtsGlobalCapsule({
 
   // 分页/分块起点使用的裁剪字符集："保留段首缩进"开启时只跳过换行与零宽字符，
   // 保留空格类缩进；默认行为维持全量裁剪。
-  trimPageStartChar(value: string): boolean {
-    return ReaderPaginationOps.trimPageStartChar(this, value);
-  }
-
-  pushReaderPage(source: string, rawStart: number, rawEnd: number, pages: string[], starts: number[], ends: number[]): void {
-    ReaderPaginationOps.pushReaderPage(this, source, rawStart, rawEnd, pages, starts, ends);
-  }
+  trimPageStartChar(value: string): boolean { return ReaderPaginationOps.trimPageStartChar(this, value); }
+  pushReaderPage(source: string, rawStart: number, rawEnd: number, pages: string[], starts: number[], ends: number[]): void { ReaderPaginationOps.pushReaderPage(this, source, rawStart, rawEnd, pages, starts, ends); }
 
 
   fitReaderActionMarkerPageEnd(source: string, start: number, rawEnd: number, availableWidth: number,
@@ -6694,22 +4940,10 @@ TtsGlobalCapsule({
     return ReaderPaginationOps.findParagraphLayoutPageEnd(this, source, start, availableWidth, availableHeight, chapterIndex);
   }
 
-  getReaderLayoutWindowSize(availableWidth: number, availableHeight: number): number {
-    return ReaderPaginationOps.getReaderLayoutWindowSize(this, availableWidth, availableHeight);
-  }
-
-
-  getReaderPaginationRenderGuardHeight(): number {
-    return ReaderPaginationOps.getReaderPaginationRenderGuardHeight(this);
-  }
-
-  getReaderTextParagraphs(text: string): ReaderTextParagraph[] {
-    return ReaderPaginationOps.getReaderTextParagraphs(this, text);
-  }
-
-  cacheReaderTextParagraphs(text: string, paragraphs: ReaderTextParagraph[]): void {
-    ReaderPaginationOps.cacheReaderTextParagraphs(this, text, paragraphs);
-  }
+  getReaderLayoutWindowSize(availableWidth: number, availableHeight: number): number { return ReaderPaginationOps.getReaderLayoutWindowSize(this, availableWidth, availableHeight); }
+  getReaderPaginationRenderGuardHeight(): number { return ReaderPaginationOps.getReaderPaginationRenderGuardHeight(this); }
+  getReaderTextParagraphs(text: string): ReaderTextParagraph[] { return ReaderPaginationOps.getReaderTextParagraphs(this, text); }
+  cacheReaderTextParagraphs(text: string, paragraphs: ReaderTextParagraph[]): void { ReaderPaginationOps.cacheReaderTextParagraphs(this, text, paragraphs); }
 
   measureReaderTextHeight(text: string, availableWidth: number,
     chapterIndex: number = this.currentChapterIndex, documentSource: string = text,
@@ -6723,9 +4957,7 @@ TtsGlobalCapsule({
     return ReaderPaginationOps.measureReaderSingleParagraphHeight(this, text, availableWidth, chapterIndex, documentSource, absoluteStart);
   }
 
-  getReaderPaginationHeightScale(): number {
-    return ReaderPaginationOps.getReaderPaginationHeightScale(this);
-  }
+  getReaderPaginationHeightScale(): number { return ReaderPaginationOps.getReaderPaginationHeightScale(this); }
 
   calibrateReaderPaginationHeightFromMergedText(paragraphs: ReaderTextParagraph[], chapterIndex: number,
     pageStart: number, documentSource: string, pageLineHeight: number, area: Area): void {
@@ -6737,9 +4969,7 @@ TtsGlobalCapsule({
     ReaderPaginationOps.scheduleReaderPaginationBottomFitCalibration(this, paragraphs, chapterIndex, pageStart, area);
   }
 
-  readerPaginationHeightCalibrationIdentity(): string {
-    return ReaderPaginationOps.readerPaginationHeightCalibrationIdentity(this);
-  }
+  readerPaginationHeightCalibrationIdentity(): string { return ReaderPaginationOps.readerPaginationHeightCalibrationIdentity(this); }
 
   readerParagraphMetrics(text: string, availableWidth: number,
     chapterIndex: number = this.currentChapterIndex, documentSource: string = text,
@@ -6747,17 +4977,9 @@ TtsGlobalCapsule({
     return ReaderPaginationOps.readerParagraphMetrics(this, text, availableWidth, chapterIndex, documentSource, absoluteStart);
   }
 
-  cacheReaderParagraphMetrics(key: string, metrics: ReaderParagraphMetrics): void {
-    ReaderPaginationOps.cacheReaderParagraphMetrics(this, key, metrics);
-  }
-
-  readerActionMeasurementText(text: string, documentSource: string, absoluteStart: number): string {
-    return ReaderPaginationOps.readerActionMeasurementText(this, text, documentSource, absoluteStart);
-  }
-
-  buildReaderMeasureTextStyle(fontSize: number, fontFamily: string): graphicsText.TextStyle {
-    return ReaderPaginationOps.buildReaderMeasureTextStyle(this, fontSize, fontFamily);
-  }
+  cacheReaderParagraphMetrics(key: string, metrics: ReaderParagraphMetrics): void { ReaderPaginationOps.cacheReaderParagraphMetrics(this, key, metrics); }
+  readerActionMeasurementText(text: string, documentSource: string, absoluteStart: number): string { return ReaderPaginationOps.readerActionMeasurementText(this, text, documentSource, absoluteStart); }
+  buildReaderMeasureTextStyle(fontSize: number, fontFamily: string): graphicsText.TextStyle { return ReaderPaginationOps.buildReaderMeasureTextStyle(this, fontSize, fontFamily); }
 
   buildMeasuredReaderParagraph(text: string, availableWidth: number,
     chapterIndex: number = this.currentChapterIndex, documentSource: string = text,
@@ -6786,17 +5008,9 @@ TtsGlobalCapsule({
     ReaderPaginationOps.addMeasuredRegexReaderText(this, builder, text, bodyStyle, documentSource, absoluteStart);
   }
 
-  addMeasuredRegexBubbleCap(builder: graphicsText.ParagraphBuilder, slice: ReadTextSlice): void {
-    ReaderPaginationOps.addMeasuredRegexBubbleCap(this, builder, slice);
-  }
-
-  hasMeasuredThemeRegexDecoration(text: string, documentSource: string, absoluteStart: number): boolean {
-    return ReaderPaginationOps.hasMeasuredThemeRegexDecoration(this, text, documentSource, absoluteStart);
-  }
-
-  getParagraphFallbackMeasureStyle(text: string, chapterIndex: number): ReaderParagraphMeasureFallback {
-    return ReaderPaginationOps.getParagraphFallbackMeasureStyle(this, text, chapterIndex);
-  }
+  addMeasuredRegexBubbleCap(builder: graphicsText.ParagraphBuilder, slice: ReadTextSlice): void { ReaderPaginationOps.addMeasuredRegexBubbleCap(this, builder, slice); }
+  hasMeasuredThemeRegexDecoration(text: string, documentSource: string, absoluteStart: number): boolean { return ReaderPaginationOps.hasMeasuredThemeRegexDecoration(this, text, documentSource, absoluteStart); }
+  getParagraphFallbackMeasureStyle(text: string, chapterIndex: number): ReaderParagraphMeasureFallback { return ReaderPaginationOps.getParagraphFallbackMeasureStyle(this, text, chapterIndex); }
 
 
 
@@ -6816,166 +5030,58 @@ TtsGlobalCapsule({
     ReaderHighlightOps.followTtsChunk(this, chunk, token, generation, chapterIndex, sourceIdentity);
   }
 
-  noteTtsFocusLatency(elapsedMs: number): void {
-    ReaderHighlightOps.noteTtsFocusLatency(this, elapsedMs);
-  }
-
-  applyTtsChunkFocus(chunk: TtsChunk): void {
-    ReaderHighlightOps.applyTtsChunkFocus(this, chunk);
-  }
-
-
-  readerHeaderContentSelectedIndex(): number {
-    return ReaderHighlightOps.readerHeaderContentSelectedIndex(this);
-  }
-
-
-  readerFooterLeftSelectedIndex(): number {
-    return ReaderHighlightOps.readerFooterLeftSelectedIndex(this);
-  }
-
-
-  readerFooterProgressSelectedIndex(): number {
-    return ReaderHighlightOps.readerFooterProgressSelectedIndex(this);
-  }
-
-  saveReaderChromeSettings(): void {
-    ReaderHighlightOps.saveReaderChromeSettings(this);
-  }
-
-  syncTtsFocusAfterResumeLater(delayMs: number): void {
-    ReaderHighlightOps.syncTtsFocusAfterResumeLater(this, delayMs);
-  }
-
-  scheduleTtsFocusResumeSyncRetry(): void {
-    ReaderHighlightOps.scheduleTtsFocusResumeSyncRetry(this);
-  }
-
-  syncTtsFocusAfterResume(): void {
-    ReaderHighlightOps.syncTtsFocusAfterResume(this);
-  }
-
-  resolveTtsChunkPageIndex(chunk: TtsChunk): number {
-    return ReaderHighlightOps.resolveTtsChunkPageIndex(this, chunk);
-  }
-
-  updateTtsChunkHighlight(chunk: TtsChunk, pageIndex: number, persistPosition: boolean = true): void {
-    ReaderHighlightOps.updateTtsChunkHighlight(this, chunk, pageIndex, persistPosition);
-  }
+  noteTtsFocusLatency(elapsedMs: number): void { ReaderHighlightOps.noteTtsFocusLatency(this, elapsedMs); }
+  applyTtsChunkFocus(chunk: TtsChunk): void { ReaderHighlightOps.applyTtsChunkFocus(this, chunk); }
+  readerHeaderContentSelectedIndex(): number { return ReaderHighlightOps.readerHeaderContentSelectedIndex(this); }
+  readerFooterLeftSelectedIndex(): number { return ReaderHighlightOps.readerFooterLeftSelectedIndex(this); }
+  readerFooterProgressSelectedIndex(): number { return ReaderHighlightOps.readerFooterProgressSelectedIndex(this); }
+  saveReaderChromeSettings(): void { ReaderHighlightOps.saveReaderChromeSettings(this); }
+  syncTtsFocusAfterResumeLater(delayMs: number): void { ReaderHighlightOps.syncTtsFocusAfterResumeLater(this, delayMs); }
+  scheduleTtsFocusResumeSyncRetry(): void { ReaderHighlightOps.scheduleTtsFocusResumeSyncRetry(this); }
+  syncTtsFocusAfterResume(): void { ReaderHighlightOps.syncTtsFocusAfterResume(this); }
+  resolveTtsChunkPageIndex(chunk: TtsChunk): number { return ReaderHighlightOps.resolveTtsChunkPageIndex(this, chunk); }
+  updateTtsChunkHighlight(chunk: TtsChunk, pageIndex: number, persistPosition: boolean = true): void { ReaderHighlightOps.updateTtsChunkHighlight(this, chunk, pageIndex, persistPosition); }
 
   scheduleTtsFocusRepublishAfterPageTurn(chapterIndex: number, pageIndex: number,
     absoluteStart: number, absoluteEnd: number): void {
     ReaderHighlightOps.scheduleTtsFocusRepublishAfterPageTurn(this, chapterIndex, pageIndex, absoluteStart, absoluteEnd);
   }
 
-  publishTtsFocusAfterResumeBoundary(): void {
-    ReaderHighlightOps.publishTtsFocusAfterResumeBoundary(this);
-  }
-
-  scheduleCurrentTtsFocusRepublishAfterPageTurn(): void {
-    ReaderHighlightOps.scheduleCurrentTtsFocusRepublishAfterPageTurn(this);
-  }
+  publishTtsFocusAfterResumeBoundary(): void { ReaderHighlightOps.publishTtsFocusAfterResumeBoundary(this); }
+  scheduleCurrentTtsFocusRepublishAfterPageTurn(): void { ReaderHighlightOps.scheduleCurrentTtsFocusRepublishAfterPageTurn(this); }
 
   republishTtsFocusAfterPageTurn(serial: number, chapterIndex: number, pageIndex: number,
     absoluteStart: number, absoluteEnd: number, attempt: number): void {
     ReaderHighlightOps.republishTtsFocusAfterPageTurn(this, serial, chapterIndex, pageIndex, absoluteStart, absoluteEnd, attempt);
   }
 
-  scheduleTtsFocusSyncAfterPagination(): void {
-    ReaderHighlightOps.scheduleTtsFocusSyncAfterPagination(this);
-  }
-
-  syncActiveTtsFocusAfterPagination(): void {
-    ReaderHighlightOps.syncActiveTtsFocusAfterPagination(this);
-  }
-
-  persistTtsReadPosition(absoluteStart: number, absoluteEnd: number): void {
-    ReaderHighlightOps.persistTtsReadPosition(this, absoluteStart, absoluteEnd);
-  }
-
-  flushTtsReadPosition(): void {
-    ReaderHighlightOps.flushTtsReadPosition(this);
-  }
-
-  async flushReadingProgressCheckpoint(): Promise<void> {
-    return ReaderHighlightOps.flushReadingProgressCheckpoint(this);
-  }
-
-  restorePersistedTtsFocus(): boolean {
-    return ReaderHighlightOps.restorePersistedTtsFocus(this);
-  }
-
-  activeMirroredTtsChapterIndex(): number {
-    return ReaderHighlightOps.activeMirroredTtsChapterIndex(this);
-  }
-
-  isMirroringActiveTtsForCurrentBook(): boolean {
-    return ReaderHighlightOps.isMirroringActiveTtsForCurrentBook(this);
-  }
-
-  async syncMirroredTtsFocus(): Promise<void> {
-    return ReaderHighlightOps.syncMirroredTtsFocus(this);
-  }
-
-  clearMirroredTtsFocus(): void {
-    ReaderHighlightOps.clearMirroredTtsFocus(this);
-  }
+  scheduleTtsFocusSyncAfterPagination(): void { ReaderHighlightOps.scheduleTtsFocusSyncAfterPagination(this); }
+  syncActiveTtsFocusAfterPagination(): void { ReaderHighlightOps.syncActiveTtsFocusAfterPagination(this); }
+  persistTtsReadPosition(absoluteStart: number, absoluteEnd: number): void { ReaderHighlightOps.persistTtsReadPosition(this, absoluteStart, absoluteEnd); }
+  flushTtsReadPosition(): void { ReaderHighlightOps.flushTtsReadPosition(this); }
+  async flushReadingProgressCheckpoint(): Promise<void> { return ReaderHighlightOps.flushReadingProgressCheckpoint(this); }
+  restorePersistedTtsFocus(): boolean { return ReaderHighlightOps.restorePersistedTtsFocus(this); }
+  activeMirroredTtsChapterIndex(): number { return ReaderHighlightOps.activeMirroredTtsChapterIndex(this); }
+  isMirroringActiveTtsForCurrentBook(): boolean { return ReaderHighlightOps.isMirroringActiveTtsForCurrentBook(this); }
+  async syncMirroredTtsFocus(): Promise<void> { return ReaderHighlightOps.syncMirroredTtsFocus(this); }
+  clearMirroredTtsFocus(): void { ReaderHighlightOps.clearMirroredTtsFocus(this); }
 
   // 后台朗读宿主（通常是侧滑返回后残留的上一阅读页实例）与本页并存时，二者共享同一引擎
   // 与进度写入，镜像跟随期间极易出现翻页高亮卡顿、页面偶发错乱。这里在打开本页时一次性
   // 接管：停掉持会话的后台宿主，由本页从全局锚点句级续播，成为唯一宿主。
-  async takeOverMirroredTtsSession(): Promise<void> {
-    return ReaderHighlightOps.takeOverMirroredTtsSession(this);
-  }
-
-  shouldRenderTtsFocus(): boolean {
-    return ReaderHighlightOps.shouldRenderTtsFocus(this);
-  }
-
-  animateTtsToPage(targetPageIndex: number, chunk: TtsChunk): void {
-    ReaderHighlightOps.animateTtsToPage(this, targetPageIndex, chunk);
-  }
-
-  async runPendingTtsPageTurn(): Promise<void> {
-    return ReaderHighlightOps.runPendingTtsPageTurn(this);
-  }
-
-  async runTtsPageTurnAnimationTo(targetPageIndex: number, turnSerial: number): Promise<void> {
-    return ReaderHighlightOps.runTtsPageTurnAnimationTo(this, targetPageIndex, turnSerial);
-  }
-
-  applyTtsPageTarget(targetPageIndex: number, turnSerial: number): void {
-    ReaderHighlightOps.applyTtsPageTarget(this, targetPageIndex, turnSerial);
-  }
-
-  async runTtsPageTurnAnimation(direction: number, turnSerial: number = this.ttsPageTurnSerial): Promise<void> {
-    return ReaderHighlightOps.runTtsPageTurnAnimation(this, direction, turnSerial);
-  }
-
-  async runTtsTapPageTurn(direction: number, turnSerial: number): Promise<void> {
-    return ReaderHighlightOps.runTtsTapPageTurn(this, direction, turnSerial);
-  }
-
-  async runTtsSlidePageTurn(direction: number, turnSerial: number): Promise<void> {
-    return ReaderHighlightOps.runTtsSlidePageTurn(this, direction, turnSerial);
-  }
-
-  async applyTtsPageTurn(direction: number, turnSerial: number): Promise<void> {
-    return ReaderHighlightOps.applyTtsPageTurn(this, direction, turnSerial);
-  }
-
-
-  suspendReaderPaginationWork(): void {
-    ReaderHighlightOps.suspendReaderPaginationWork(this);
-  }
-
-  resumeReaderPaginationWorkAfterPageShow(): void {
-    ReaderHighlightOps.resumeReaderPaginationWorkAfterPageShow(this);
-  }
-
-  resumeCurrentReaderPaginationCompletion(): void {
-    ReaderHighlightOps.resumeCurrentReaderPaginationCompletion(this);
-  }
+  async takeOverMirroredTtsSession(): Promise<void> { return ReaderHighlightOps.takeOverMirroredTtsSession(this); }
+  shouldRenderTtsFocus(): boolean { return ReaderHighlightOps.shouldRenderTtsFocus(this); }
+  animateTtsToPage(targetPageIndex: number, chunk: TtsChunk): void { ReaderHighlightOps.animateTtsToPage(this, targetPageIndex, chunk); }
+  async runPendingTtsPageTurn(): Promise<void> { return ReaderHighlightOps.runPendingTtsPageTurn(this); }
+  async runTtsPageTurnAnimationTo(targetPageIndex: number, turnSerial: number): Promise<void> { return ReaderHighlightOps.runTtsPageTurnAnimationTo(this, targetPageIndex, turnSerial); }
+  applyTtsPageTarget(targetPageIndex: number, turnSerial: number): void { ReaderHighlightOps.applyTtsPageTarget(this, targetPageIndex, turnSerial); }
+  async runTtsPageTurnAnimation(direction: number, turnSerial: number = this.ttsPageTurnSerial): Promise<void> { return ReaderHighlightOps.runTtsPageTurnAnimation(this, direction, turnSerial); }
+  async runTtsTapPageTurn(direction: number, turnSerial: number): Promise<void> { return ReaderHighlightOps.runTtsTapPageTurn(this, direction, turnSerial); }
+  async runTtsSlidePageTurn(direction: number, turnSerial: number): Promise<void> { return ReaderHighlightOps.runTtsSlidePageTurn(this, direction, turnSerial); }
+  async applyTtsPageTurn(direction: number, turnSerial: number): Promise<void> { return ReaderHighlightOps.applyTtsPageTurn(this, direction, turnSerial); }
+  suspendReaderPaginationWork(): void { ReaderHighlightOps.suspendReaderPaginationWork(this); }
+  resumeReaderPaginationWorkAfterPageShow(): void { ReaderHighlightOps.resumeReaderPaginationWorkAfterPageShow(this); }
+  resumeCurrentReaderPaginationCompletion(): void { ReaderHighlightOps.resumeCurrentReaderPaginationCompletion(this); }
 
   @Builder
   readerActiveCurrentPageSurface(currentRenderVersion: number, currentText: string,
@@ -6995,9 +5101,7 @@ TtsGlobalCapsule({
     }
   }
 
-  async waitForReaderComicBoundaryRestore(timeoutMs: number = 1800): Promise<void> {
-    return ReaderHighlightOps.waitForReaderComicBoundaryRestore(this, timeoutMs);
-  }
+  async waitForReaderComicBoundaryRestore(timeoutMs: number = 1800): Promise<void> { return ReaderHighlightOps.waitForReaderComicBoundaryRestore(this, timeoutMs); }
 
   @Builder
   readerSlidingPageTurnSurface(currentText: string, currentRenderVersion: number, ttsRenderVersion: number) {
@@ -7213,13 +5317,8 @@ TtsGlobalCapsule({
     .alignItems(HorizontalAlign.Start)
   }
 
-  currentReaderSurfaceId(alternate: boolean, renderVersion: number, ttsRenderVersion: number): string {
-    return ReaderHighlightOps.currentReaderSurfaceId(this, alternate, renderVersion, ttsRenderVersion);
-  }
-
-  currentReaderSnapshotComponentId(): string {
-    return ReaderHighlightOps.currentReaderSnapshotComponentId(this);
-  }
+  currentReaderSurfaceId(alternate: boolean, renderVersion: number, ttsRenderVersion: number): string { return ReaderHighlightOps.currentReaderSurfaceId(this, alternate, renderVersion, ttsRenderVersion); }
+  currentReaderSnapshotComponentId(): string { return ReaderHighlightOps.currentReaderSnapshotComponentId(this); }
 
   @Builder
   readerCurrentPageSurface(renderVersion: number, text: string, ttsRenderVersion: number) {
@@ -7477,9 +5576,7 @@ TtsGlobalCapsule({
     return ReaderHighlightOps.currentReaderPageRenderIdentity(this, renderVersion, ttsRenderVersion);
   }
 
-  incomingReaderPageRenderIdentity(renderVersion: number, text: string): string {
-    return ReaderHighlightOps.incomingReaderPageRenderIdentity(this, renderVersion, text);
-  }
+  incomingReaderPageRenderIdentity(renderVersion: number, text: string): string { return ReaderHighlightOps.incomingReaderPageRenderIdentity(this, renderVersion, text); }
 
   effectiveReaderPageRenderIdentity(pageRenderIdentity: string, chapterIndex: number, renderVersion: number,
     ttsRenderVersion: number, text: string): string {
@@ -7542,13 +5639,8 @@ TtsGlobalCapsule({
     })
   }
 
-  getReaderTextParagraphGroups(text: string): ReaderTextParagraphGroup[] {
-    return ReaderStyledTextOps.getReaderTextParagraphGroups(this, text);
-  }
-
-  readerParagraphRendersAsIndependentComponent(text: string): boolean {
-    return ReaderStyledTextOps.readerParagraphRendersAsIndependentComponent(this, text);
-  }
+  getReaderTextParagraphGroups(text: string): ReaderTextParagraphGroup[] { return ReaderStyledTextOps.getReaderTextParagraphGroups(this, text); }
+  readerParagraphRendersAsIndependentComponent(text: string): boolean { return ReaderStyledTextOps.readerParagraphRendersAsIndependentComponent(this, text); }
 
   @Builder
   styledReaderParagraphGroup(group: ReaderTextParagraphGroup, chapterIndex: number,
@@ -7571,9 +5663,7 @@ TtsGlobalCapsule({
     }
   }
 
-  mergedReaderParagraphText(paragraphs: ReaderTextParagraph[]): string {
-    return ReaderStyledTextOps.mergedReaderParagraphText(this, paragraphs);
-  }
+  mergedReaderParagraphText(paragraphs: ReaderTextParagraph[]): string { return ReaderStyledTextOps.mergedReaderParagraphText(this, paragraphs); }
 
   @Builder
   styledMergedReaderParagraphs(paragraphs: ReaderTextParagraph[], chapterIndex: number,
@@ -7686,9 +5776,7 @@ TtsGlobalCapsule({
     ReaderStyledTextOps.rememberMergedReaderInlineSourceActionAreas(this, paragraphs, selectableKey, pageIdentity, area);
   }
 
-  registerMergedReaderInlineSourceActionBounds(task: ReaderMergedActionBoundsTask, visibleText: string): boolean {
-    return ReaderStyledTextOps.registerMergedReaderInlineSourceActionBounds(this, task, visibleText);
-  }
+  registerMergedReaderInlineSourceActionBounds(task: ReaderMergedActionBoundsTask, visibleText: string): boolean { return ReaderStyledTextOps.registerMergedReaderInlineSourceActionBounds(this, task, visibleText); }
 
   @Builder
   styledReaderParagraph(paragraph: ReaderTextParagraph, chapterIndex: number = this.currentChapterIndex,
@@ -7805,13 +5893,8 @@ TtsGlobalCapsule({
     }
   }
 
-  hasInlineReaderSourceAction(text: string): boolean {
-    return ReaderStyledTextOps.hasInlineReaderSourceAction(this, text);
-  }
-
-  readerInlineSourceActionMatch(text: string): ReaderActionMatch | null {
-    return ReaderStyledTextOps.readerInlineSourceActionMatch(this, text);
-  }
+  hasInlineReaderSourceAction(text: string): boolean { return ReaderStyledTextOps.hasInlineReaderSourceAction(this, text); }
+  readerInlineSourceActionMatch(text: string): ReaderActionMatch | null { return ReaderStyledTextOps.readerInlineSourceActionMatch(this, text); }
 
   @Builder
   readerInlineSourceActionParagraph(paragraph: ReaderTextParagraph, chapterIndex: number = this.currentChapterIndex,
@@ -7893,115 +5976,43 @@ TtsGlobalCapsule({
       contentRenderVersion, ttsRenderVersion, paragraph.text)}_${paragraph.key}`)
   }
 
-  readerInlineActionTextController(text: string): TextController {
-    return ReaderStyledTextOps.readerInlineActionTextController(this, text);
-  }
-
-  handleReaderInlineActionTextTouch(text: string, event: TouchEvent): void {
-    ReaderStyledTextOps.handleReaderInlineActionTextTouch(this, text, event);
-  }
-
-  isReaderInlineActionTextPoint(text: string, x: number, y: number): boolean {
-    return ReaderStyledTextOps.isReaderInlineActionTextPoint(this, text, x, y);
-  }
-
-  readerInlineActionExpectedWidth(): number {
-    return ReaderStyledTextOps.readerInlineActionExpectedWidth(this);
-  }
-
-  readerInlineActionLocalBounds(text: string, componentWidth: number, componentHeight: number): number[] {
-    return ReaderStyledTextOps.readerInlineActionLocalBounds(this, text, componentWidth, componentHeight);
-  }
-
-  rememberReaderInlineSourceActionArea(text: string, pageIdentity: string, area: Area): void {
-    ReaderStyledTextOps.rememberReaderInlineSourceActionArea(this, text, pageIdentity, area);
-  }
-
-  clearPendingReaderSourceActionBounds(): void {
-    ReaderStyledTextOps.clearPendingReaderSourceActionBounds(this);
-  }
-
-  scheduleReaderSourceActionBoundsFlush(delayMs: number = 0): void {
-    ReaderStyledTextOps.scheduleReaderSourceActionBoundsFlush(this, delayMs);
-  }
-
-  flushPendingReaderSourceActionBounds(): void {
-    ReaderStyledTextOps.flushPendingReaderSourceActionBounds(this);
-  }
+  readerInlineActionTextController(text: string): TextController { return ReaderStyledTextOps.readerInlineActionTextController(this, text); }
+  handleReaderInlineActionTextTouch(text: string, event: TouchEvent): void { ReaderStyledTextOps.handleReaderInlineActionTextTouch(this, text, event); }
+  isReaderInlineActionTextPoint(text: string, x: number, y: number): boolean { return ReaderStyledTextOps.isReaderInlineActionTextPoint(this, text, x, y); }
+  readerInlineActionExpectedWidth(): number { return ReaderStyledTextOps.readerInlineActionExpectedWidth(this); }
+  readerInlineActionLocalBounds(text: string, componentWidth: number, componentHeight: number): number[] { return ReaderStyledTextOps.readerInlineActionLocalBounds(this, text, componentWidth, componentHeight); }
+  rememberReaderInlineSourceActionArea(text: string, pageIdentity: string, area: Area): void { ReaderStyledTextOps.rememberReaderInlineSourceActionArea(this, text, pageIdentity, area); }
+  clearPendingReaderSourceActionBounds(): void { ReaderStyledTextOps.clearPendingReaderSourceActionBounds(this); }
+  scheduleReaderSourceActionBoundsFlush(delayMs: number = 0): void { ReaderStyledTextOps.scheduleReaderSourceActionBoundsFlush(this, delayMs); }
+  flushPendingReaderSourceActionBounds(): void { ReaderStyledTextOps.flushPendingReaderSourceActionBounds(this); }
 
   registerReaderInlineSourceActionBounds(text: string, marker: string, left: number, top: number,
     width: number, height: number): boolean {
     return ReaderStyledTextOps.registerReaderInlineSourceActionBounds(this, text, marker, left, top, width, height);
   }
 
-  readerInlineSourceActionParagraphData(paragraph: ReaderTextParagraph): ReaderTextParagraph {
-    return ReaderStyledTextOps.readerInlineSourceActionParagraphData(this, paragraph);
-  }
-
-  readerInlineSourceActionText(text: string): string {
-    return ReaderStyledTextOps.readerInlineSourceActionText(this, text);
-  }
-
-  readerInlineSourceActionLabel(text: string): string {
-    return ReaderStyledTextOps.readerInlineSourceActionLabel(this, text);
-  }
-
-  readerInlineSourceActionFontSize(text: string): number {
-    return ReaderStyledTextOps.readerInlineSourceActionFontSize(this, text);
-  }
-
-  readerInlineSourceActionFontColor(text: string): string {
-    return ReaderStyledTextOps.readerInlineSourceActionFontColor(this, text);
-  }
-
-  readerInlineSourceActionBackgroundColor(text: string): string {
-    return ReaderStyledTextOps.readerInlineSourceActionBackgroundColor(this, text);
-  }
-
-  readerInlineSourceActionRadius(text: string): number {
-    return ReaderStyledTextOps.readerInlineSourceActionRadius(this, text);
-  }
-
-  readerInlineSourceActionTextShadow(text: string): ShadowOptions {
-    return ReaderStyledTextOps.readerInlineSourceActionTextShadow(this, text);
-  }
-
-  readerUsesConfiguredCommentBubble(text: string): boolean {
-    return ReaderStyledTextOps.readerUsesConfiguredCommentBubble(this, text);
-  }
-
-  readerSourceSettingValue(key: string): string {
-    return ReaderStyledTextOps.readerSourceSettingValue(this, key);
-  }
-
-  ensureReaderSourceSettingCache(source: BookSource): void {
-    ReaderStyledTextOps.ensureReaderSourceSettingCache(this, source);
-  }
-
-  readerSourceSettingEnabled(key: string): boolean {
-    return ReaderStyledTextOps.readerSourceSettingEnabled(this, key);
-  }
-
-  readerSourceColorSetting(key: string, fallback: string): string {
-    return ReaderStyledTextOps.readerSourceColorSetting(this, key, fallback);
-  }
-
-  beginReaderInteractiveAction(): void {
-    ReaderStyledTextOps.beginReaderInteractiveAction(this);
-  }
-
-  setReaderTextSelectionActive(active: boolean): void {
-    ReaderStyledTextOps.setReaderTextSelectionActive(this, active);
-  }
+  readerInlineSourceActionParagraphData(paragraph: ReaderTextParagraph): ReaderTextParagraph { return ReaderStyledTextOps.readerInlineSourceActionParagraphData(this, paragraph); }
+  readerInlineSourceActionText(text: string): string { return ReaderStyledTextOps.readerInlineSourceActionText(this, text); }
+  readerInlineSourceActionLabel(text: string): string { return ReaderStyledTextOps.readerInlineSourceActionLabel(this, text); }
+  readerInlineSourceActionFontSize(text: string): number { return ReaderStyledTextOps.readerInlineSourceActionFontSize(this, text); }
+  readerInlineSourceActionFontColor(text: string): string { return ReaderStyledTextOps.readerInlineSourceActionFontColor(this, text); }
+  readerInlineSourceActionBackgroundColor(text: string): string { return ReaderStyledTextOps.readerInlineSourceActionBackgroundColor(this, text); }
+  readerInlineSourceActionRadius(text: string): number { return ReaderStyledTextOps.readerInlineSourceActionRadius(this, text); }
+  readerInlineSourceActionTextShadow(text: string): ShadowOptions { return ReaderStyledTextOps.readerInlineSourceActionTextShadow(this, text); }
+  readerUsesConfiguredCommentBubble(text: string): boolean { return ReaderStyledTextOps.readerUsesConfiguredCommentBubble(this, text); }
+  readerSourceSettingValue(key: string): string { return ReaderStyledTextOps.readerSourceSettingValue(this, key); }
+  ensureReaderSourceSettingCache(source: BookSource): void { ReaderStyledTextOps.ensureReaderSourceSettingCache(this, source); }
+  readerSourceSettingEnabled(key: string): boolean { return ReaderStyledTextOps.readerSourceSettingEnabled(this, key); }
+  readerSourceColorSetting(key: string, fallback: string): string { return ReaderStyledTextOps.readerSourceColorSetting(this, key, fallback); }
+  beginReaderInteractiveAction(): void { ReaderStyledTextOps.beginReaderInteractiveAction(this); }
+  setReaderTextSelectionActive(active: boolean): void { ReaderStyledTextOps.setReaderTextSelectionActive(this, active); }
 
   /**
    * A selection can be live in three shapes: the continuous-scroll flag, the V2 native selection host
    * mounted over the page, and the V2 painted overlay. All three must be treated as "selecting" so a
    * tap outside the selection dismisses instead of turning the page or opening the menu.
    */
-  hasReaderTextSelection(): boolean {
-    return ReaderStyledTextOps.hasReaderTextSelection(this);
-  }
+  hasReaderTextSelection(): boolean { return ReaderStyledTextOps.hasReaderTextSelection(this); }
 
   /**
    * Dismisses an active selection without running the action the tap would otherwise perform, so a tap
@@ -8010,105 +6021,30 @@ TtsGlobalCapsule({
    * for a pointer whose Down began while the selection was already live; the release of the press that
    * created the selection passes through here on Up and must never clear it.
    */
-  handleReaderSelectionDismissTouch(event: TouchEvent): boolean {
-    return ReaderStyledTextOps.handleReaderSelectionDismissTouch(this, event);
-  }
-
-  isReaderInteractiveActionActive(): boolean {
-    return ReaderStyledTextOps.isReaderInteractiveActionActive(this);
-  }
-
-  rememberReaderSourceActionArea(marker: string, area: Area): void {
-    ReaderStyledTextOps.rememberReaderSourceActionArea(this, marker, area);
-  }
-
-  rememberReaderSourceActionBounds(marker: string, left: number, top: number, right: number, bottom: number): void {
-    ReaderStyledTextOps.rememberReaderSourceActionBounds(this, marker, left, top, right, bottom);
-  }
-
-  rememberReaderTapLayerArea(area: Area): void {
-    ReaderStyledTextOps.rememberReaderTapLayerArea(this, area);
-  }
-
-
-
-  currentContinuousReaderScrollOffset(): number {
-    return ReaderStyledTextOps.currentContinuousReaderScrollOffset(this);
-  }
-
-  rememberContinuousReaderPointer(event: TouchEvent): void {
-    ReaderStyledTextOps.rememberContinuousReaderPointer(this, event);
-  }
-
-  handleContinuousReaderShortTap(globalX: number, globalY: number): void {
-    ReaderStyledTextOps.handleContinuousReaderShortTap(this, globalX, globalY);
-  }
-
-  cancelContinuousReaderSelectionTimer(): void {
-    ReaderStyledTextOps.cancelContinuousReaderSelectionTimer(this);
-  }
-
-  readerContinuousGesturePoint(event: GestureEvent): number[] {
-    return ReaderStyledTextOps.readerContinuousGesturePoint(this, event);
-  }
-
-  readerSourceActionAtPoint(globalX: number, globalY: number): string {
-    return ReaderStyledTextOps.readerSourceActionAtPoint(this, globalX, globalY);
-  }
-
-  openReaderSourceAction(marker: string): void {
-    ReaderStyledTextOps.openReaderSourceAction(this, marker);
-  }
-
-
-  async openReaderSourceScriptAction(source: BookSource, action: ReaderActionData, marker: string): Promise<void> {
-    return ReaderStyledTextOps.openReaderSourceScriptAction(this, source, action, marker);
-  }
-
-  openReaderCommentPanel(url: string, title: string, marker: string, sourceHtml: string = ''): void {
-    ReaderStyledTextOps.openReaderCommentPanel(this, url, title, marker, sourceHtml);
-  }
-
-  loadReaderCommentPanelHtmlIfNeeded(): boolean {
-    return ReaderStyledTextOps.loadReaderCommentPanelHtmlIfNeeded(this);
-  }
-
-  scheduleReaderCommentPanelHostReady(delayMs: number): void {
-    ReaderStyledTextOps.scheduleReaderCommentPanelHostReady(this, delayMs);
-  }
-
-  closeReaderCommentPanel(): void {
-    ReaderStyledTextOps.closeReaderCommentPanel(this);
-  }
-
-  async syncReaderCommentPanelWebTheme(): Promise<void> {
-    return ReaderStyledTextOps.syncReaderCommentPanelWebTheme(this);
-  }
-
-  readerCommentPanelHeight(): number {
-    return ReaderStyledTextOps.readerCommentPanelHeight(this);
-  }
-
-  readerCommentPanelHeightForRatio(ratio: number): number {
-    return ReaderStyledTextOps.readerCommentPanelHeightForRatio(this, ratio);
-  }
-
-  readerCommentPanelContentHeight(): number {
-    return ReaderStyledTextOps.readerCommentPanelContentHeight(this);
-  }
-
-
-  handleReaderCommentPanelDragTouch(event: TouchEvent): void {
-    ReaderStyledTextOps.handleReaderCommentPanelDragTouch(this, event);
-  }
-
-  getReaderSourceActionAnchorBottom(marker: string): number {
-    return ReaderStyledTextOps.getReaderSourceActionAnchorBottom(this, marker);
-  }
-
-  getReaderEpubImageHeight(): number {
-    return ReaderStyledTextOps.getReaderEpubImageHeight(this);
-  }
+  handleReaderSelectionDismissTouch(event: TouchEvent): boolean { return ReaderStyledTextOps.handleReaderSelectionDismissTouch(this, event); }
+  isReaderInteractiveActionActive(): boolean { return ReaderStyledTextOps.isReaderInteractiveActionActive(this); }
+  rememberReaderSourceActionArea(marker: string, area: Area): void { ReaderStyledTextOps.rememberReaderSourceActionArea(this, marker, area); }
+  rememberReaderSourceActionBounds(marker: string, left: number, top: number, right: number, bottom: number): void { ReaderStyledTextOps.rememberReaderSourceActionBounds(this, marker, left, top, right, bottom); }
+  rememberReaderTapLayerArea(area: Area): void { ReaderStyledTextOps.rememberReaderTapLayerArea(this, area); }
+  currentContinuousReaderScrollOffset(): number { return ReaderStyledTextOps.currentContinuousReaderScrollOffset(this); }
+  rememberContinuousReaderPointer(event: TouchEvent): void { ReaderStyledTextOps.rememberContinuousReaderPointer(this, event); }
+  handleContinuousReaderShortTap(globalX: number, globalY: number): void { ReaderStyledTextOps.handleContinuousReaderShortTap(this, globalX, globalY); }
+  cancelContinuousReaderSelectionTimer(): void { ReaderStyledTextOps.cancelContinuousReaderSelectionTimer(this); }
+  readerContinuousGesturePoint(event: GestureEvent): number[] { return ReaderStyledTextOps.readerContinuousGesturePoint(this, event); }
+  readerSourceActionAtPoint(globalX: number, globalY: number): string { return ReaderStyledTextOps.readerSourceActionAtPoint(this, globalX, globalY); }
+  openReaderSourceAction(marker: string): void { ReaderStyledTextOps.openReaderSourceAction(this, marker); }
+  async openReaderSourceScriptAction(source: BookSource, action: ReaderActionData, marker: string): Promise<void> { return ReaderStyledTextOps.openReaderSourceScriptAction(this, source, action, marker); }
+  openReaderCommentPanel(url: string, title: string, marker: string, sourceHtml: string = ''): void { ReaderStyledTextOps.openReaderCommentPanel(this, url, title, marker, sourceHtml); }
+  loadReaderCommentPanelHtmlIfNeeded(): boolean { return ReaderStyledTextOps.loadReaderCommentPanelHtmlIfNeeded(this); }
+  scheduleReaderCommentPanelHostReady(delayMs: number): void { ReaderStyledTextOps.scheduleReaderCommentPanelHostReady(this, delayMs); }
+  closeReaderCommentPanel(): void { ReaderStyledTextOps.closeReaderCommentPanel(this); }
+  async syncReaderCommentPanelWebTheme(): Promise<void> { return ReaderStyledTextOps.syncReaderCommentPanelWebTheme(this); }
+  readerCommentPanelHeight(): number { return ReaderStyledTextOps.readerCommentPanelHeight(this); }
+  readerCommentPanelHeightForRatio(ratio: number): number { return ReaderStyledTextOps.readerCommentPanelHeightForRatio(this, ratio); }
+  readerCommentPanelContentHeight(): number { return ReaderStyledTextOps.readerCommentPanelContentHeight(this); }
+  handleReaderCommentPanelDragTouch(event: TouchEvent): void { ReaderStyledTextOps.handleReaderCommentPanelDragTouch(this, event); }
+  getReaderSourceActionAnchorBottom(marker: string): number { return ReaderStyledTextOps.getReaderSourceActionAnchorBottom(this, marker); }
+  getReaderEpubImageHeight(): number { return ReaderStyledTextOps.getReaderEpubImageHeight(this); }
 
   @Builder
   regexReaderText(paragraph: ReaderTextParagraph, ttsHighlightActive: boolean = true,
@@ -8149,42 +6085,20 @@ TtsGlobalCapsule({
   }
 
 
-  readerSelectableTextController(key: string): TextController {
-    return ReaderStyledTextOps.readerSelectableTextController(this, key);
-  }
+  readerSelectableTextController(key: string): TextController { return ReaderStyledTextOps.readerSelectableTextController(this, key); }
 
   rememberReaderSelectableText(key: string, text: string, area: Area,
     controller: TextController | null = null): void {
     ReaderStyledTextOps.rememberReaderSelectableText(this, key, text, area, controller);
   }
 
-  selectReaderTextAtGlobalPoint(event: GestureEvent): void {
-    ReaderStyledTextOps.selectReaderTextAtGlobalPoint(this, event);
-  }
-
-  selectReaderTextAtPoint(globalX: number, globalY: number): void {
-    ReaderStyledTextOps.selectReaderTextAtPoint(this, globalX, globalY);
-  }
-
-  selectLegacyReaderTextAtGlobalPoint(globalX: number, globalY: number, serial: number, attempt: number): void {
-    ReaderStyledTextOps.selectLegacyReaderTextAtGlobalPoint(this, globalX, globalY, serial, attempt);
-  }
-
-  isVisibleContinuousSelectionKey(key: string): boolean {
-    return ReaderStyledTextOps.isVisibleContinuousSelectionKey(this, key);
-  }
-
-  retryReaderTextSelection(serial: number, attempt: number, action: (attempt: number) => void): void {
-    ReaderStyledTextOps.retryReaderTextSelection(this, serial, attempt, action);
-  }
-
-  continuousSelectionPageIndexForKey(key: string): number {
-    return ReaderStyledTextOps.continuousSelectionPageIndexForKey(this, key);
-  }
-
-  showReaderTextSelection(key: string, text: string, localX: number, localY: number): boolean {
-    return ReaderStyledTextOps.showReaderTextSelection(this, key, text, localX, localY);
-  }
+  selectReaderTextAtGlobalPoint(event: GestureEvent): void { ReaderStyledTextOps.selectReaderTextAtGlobalPoint(this, event); }
+  selectReaderTextAtPoint(globalX: number, globalY: number): void { ReaderStyledTextOps.selectReaderTextAtPoint(this, globalX, globalY); }
+  selectLegacyReaderTextAtGlobalPoint(globalX: number, globalY: number, serial: number, attempt: number): void { ReaderStyledTextOps.selectLegacyReaderTextAtGlobalPoint(this, globalX, globalY, serial, attempt); }
+  isVisibleContinuousSelectionKey(key: string): boolean { return ReaderStyledTextOps.isVisibleContinuousSelectionKey(this, key); }
+  retryReaderTextSelection(serial: number, attempt: number, action: (attempt: number) => void): void { ReaderStyledTextOps.retryReaderTextSelection(this, serial, attempt, action); }
+  continuousSelectionPageIndexForKey(key: string): number { return ReaderStyledTextOps.continuousSelectionPageIndexForKey(this, key); }
+  showReaderTextSelection(key: string, text: string, localX: number, localY: number): boolean { return ReaderStyledTextOps.showReaderTextSelection(this, key, text, localX, localY); }
 
   @Builder
   styledRegexSlice(slice: ReadTextSlice) {
@@ -8224,75 +6138,23 @@ TtsGlobalCapsule({
     }
   }
 
-  shouldUseFullThemeRegexDecoration(slice: ReadTextSlice): boolean {
-    return ReaderStyledTextOps.shouldUseFullThemeRegexDecoration(this, slice);
-  }
-
-  getRegexSliceBubbleStyleId(slice: ReadTextSlice): string {
-    return ReaderStyledTextOps.getRegexSliceBubbleStyleId(this, slice);
-  }
-
-  getRegexBubbleCapSize(slice: ReadTextSlice): number {
-    return ReaderStyledTextOps.getRegexBubbleCapSize(this, slice);
-  }
-
-  shouldUseRegexParagraphFrame(paragraph: ReaderTextParagraph, pageStart: number = -1): boolean {
-    return ReaderStyledTextOps.shouldUseRegexParagraphFrame(this, paragraph, pageStart);
-  }
-
-  getRegexParagraphFrame(paragraph: ReaderTextParagraph, pageStart: number = -1): ResourceStr {
-    return ReaderStyledTextOps.getRegexParagraphFrame(this, paragraph, pageStart);
-  }
-
-  getRegexParagraphFrameStyleId(paragraph: ReaderTextParagraph, pageStart: number = -1): string {
-    return ReaderStyledTextOps.getRegexParagraphFrameStyleId(this, paragraph, pageStart);
-  }
-
-  getRegexParagraphFrameStyleIdForText(text: string): string {
-    return ReaderStyledTextOps.getRegexParagraphFrameStyleIdForText(this, text);
-  }
-
-  getRegexFrameStyleIdFromSlices(slices: ReadTextSlice[]): string {
-    return ReaderStyledTextOps.getRegexFrameStyleIdFromSlices(this, slices);
-  }
-
-  getRegexFrameHorizontalPadding(paragraph: ReaderTextParagraph, pageStart: number = -1): number {
-    return ReaderStyledTextOps.getRegexFrameHorizontalPadding(this, paragraph, pageStart);
-  }
-
-
-  getRegexFrameVerticalPadding(paragraph: ReaderTextParagraph, pageStart: number = -1): number {
-    return ReaderStyledTextOps.getRegexFrameVerticalPadding(this, paragraph, pageStart);
-  }
-
-
-  getRegexFrameBackgroundColor(paragraph: ReaderTextParagraph, pageStart: number = -1): string {
-    return ReaderStyledTextOps.getRegexFrameBackgroundColor(this, paragraph, pageStart);
-  }
-
-  getRegexFrameBorderColor(paragraph: ReaderTextParagraph, pageStart: number = -1): string {
-    return ReaderStyledTextOps.getRegexFrameBorderColor(this, paragraph, pageStart);
-  }
-
-  getRegexFrameBorderWidth(paragraph: ReaderTextParagraph, pageStart: number = -1): number {
-    return ReaderStyledTextOps.getRegexFrameBorderWidth(this, paragraph, pageStart);
-  }
-
-  getRegexFrameBorderStyle(paragraph: ReaderTextParagraph, pageStart: number = -1): BorderStyle {
-    return ReaderStyledTextOps.getRegexFrameBorderStyle(this, paragraph, pageStart);
-  }
-
-  getRegexFrameBorderRadius(paragraph: ReaderTextParagraph, pageStart: number = -1): number {
-    return ReaderStyledTextOps.getRegexFrameBorderRadius(this, paragraph, pageStart);
-  }
-
-  getRegexFrameHorizontalSlice(paragraph: ReaderTextParagraph, pageStart: number = -1): number {
-    return ReaderStyledTextOps.getRegexFrameHorizontalSlice(this, paragraph, pageStart);
-  }
-
-  getRegexFrameVerticalSlice(paragraph: ReaderTextParagraph, pageStart: number = -1): number {
-    return ReaderStyledTextOps.getRegexFrameVerticalSlice(this, paragraph, pageStart);
-  }
+  shouldUseFullThemeRegexDecoration(slice: ReadTextSlice): boolean { return ReaderStyledTextOps.shouldUseFullThemeRegexDecoration(this, slice); }
+  getRegexSliceBubbleStyleId(slice: ReadTextSlice): string { return ReaderStyledTextOps.getRegexSliceBubbleStyleId(this, slice); }
+  getRegexBubbleCapSize(slice: ReadTextSlice): number { return ReaderStyledTextOps.getRegexBubbleCapSize(this, slice); }
+  shouldUseRegexParagraphFrame(paragraph: ReaderTextParagraph, pageStart: number = -1): boolean { return ReaderStyledTextOps.shouldUseRegexParagraphFrame(this, paragraph, pageStart); }
+  getRegexParagraphFrame(paragraph: ReaderTextParagraph, pageStart: number = -1): ResourceStr { return ReaderStyledTextOps.getRegexParagraphFrame(this, paragraph, pageStart); }
+  getRegexParagraphFrameStyleId(paragraph: ReaderTextParagraph, pageStart: number = -1): string { return ReaderStyledTextOps.getRegexParagraphFrameStyleId(this, paragraph, pageStart); }
+  getRegexParagraphFrameStyleIdForText(text: string): string { return ReaderStyledTextOps.getRegexParagraphFrameStyleIdForText(this, text); }
+  getRegexFrameStyleIdFromSlices(slices: ReadTextSlice[]): string { return ReaderStyledTextOps.getRegexFrameStyleIdFromSlices(this, slices); }
+  getRegexFrameHorizontalPadding(paragraph: ReaderTextParagraph, pageStart: number = -1): number { return ReaderStyledTextOps.getRegexFrameHorizontalPadding(this, paragraph, pageStart); }
+  getRegexFrameVerticalPadding(paragraph: ReaderTextParagraph, pageStart: number = -1): number { return ReaderStyledTextOps.getRegexFrameVerticalPadding(this, paragraph, pageStart); }
+  getRegexFrameBackgroundColor(paragraph: ReaderTextParagraph, pageStart: number = -1): string { return ReaderStyledTextOps.getRegexFrameBackgroundColor(this, paragraph, pageStart); }
+  getRegexFrameBorderColor(paragraph: ReaderTextParagraph, pageStart: number = -1): string { return ReaderStyledTextOps.getRegexFrameBorderColor(this, paragraph, pageStart); }
+  getRegexFrameBorderWidth(paragraph: ReaderTextParagraph, pageStart: number = -1): number { return ReaderStyledTextOps.getRegexFrameBorderWidth(this, paragraph, pageStart); }
+  getRegexFrameBorderStyle(paragraph: ReaderTextParagraph, pageStart: number = -1): BorderStyle { return ReaderStyledTextOps.getRegexFrameBorderStyle(this, paragraph, pageStart); }
+  getRegexFrameBorderRadius(paragraph: ReaderTextParagraph, pageStart: number = -1): number { return ReaderStyledTextOps.getRegexFrameBorderRadius(this, paragraph, pageStart); }
+  getRegexFrameHorizontalSlice(paragraph: ReaderTextParagraph, pageStart: number = -1): number { return ReaderStyledTextOps.getRegexFrameHorizontalSlice(this, paragraph, pageStart); }
+  getRegexFrameVerticalSlice(paragraph: ReaderTextParagraph, pageStart: number = -1): number { return ReaderStyledTextOps.getRegexFrameVerticalSlice(this, paragraph, pageStart); }
 
   getTitleTextSlices(paragraph: ReaderTextParagraph, chapterIndex: number,
     ttsHighlightActive: boolean = true): ReadTextSlice[] {
@@ -8305,13 +6167,8 @@ TtsGlobalCapsule({
     return ReaderStyledTextOps.getTitleBodyTextSlices(this, paragraph, chapterIndex, ttsHighlightActive, pageStart, documentSource);
   }
 
-  handleTocCurrentPositionClick(): void {
-    ReaderStyledTextOps.handleTocCurrentPositionClick(this);
-  }
-
-  submitTocQuickJump(): void {
-    ReaderStyledTextOps.submitTocQuickJump(this);
-  }
+  handleTocCurrentPositionClick(): void { ReaderStyledTextOps.handleTocCurrentPositionClick(this); }
+  submitTocQuickJump(): void { ReaderStyledTextOps.submitTocQuickJump(this); }
 
   getStyledParagraphTextSlices(paragraph: ReaderTextParagraph, ttsHighlightActive: boolean = true,
     pageStart: number = -1, documentSource: string = this.pagedContentText): ReadTextSlice[] {
@@ -8328,51 +6185,17 @@ TtsGlobalCapsule({
     return ReaderStyledTextOps.splitSliceByTtsHighlight(this, slice, paragraphStart, segmentOffset, ttsHighlightActive);
   }
 
-  getStyledSliceFontColor(slice: ReadTextSlice): string {
-    return ReaderStyledTextOps.getStyledSliceFontColor(this, slice);
-  }
-
-  getStyledSliceBackgroundStyle(slice: ReadTextSlice): TextBackgroundStyle {
-    return ReaderStyledTextOps.getStyledSliceBackgroundStyle(this, slice);
-  }
-
-  getStyledSliceTextShadow(slice: ReadTextSlice): ShadowOptions | ShadowOptions[] {
-    return ReaderStyledTextOps.getStyledSliceTextShadow(this, slice);
-  }
-
-  shouldUseTitleStyle(text: string, chapterIndex: number = this.currentChapterIndex): boolean {
-    return ReaderStyledTextOps.shouldUseTitleStyle(this, text, chapterIndex);
-  }
-
-  shouldUseRegexStyle(text: string): boolean {
-    return ReaderStyledTextOps.shouldUseRegexStyle(this, text);
-  }
-
-  hasRegexMatch(text: string): boolean {
-    return ReaderStyledTextOps.hasRegexMatch(this, text);
-  }
-
-  getRegexRules(): ReaderRegexFontRule[] {
-    return ReaderStyledTextOps.getRegexRules(this);
-  }
-
-
-
-  themeRegexEmphasisColor(): string {
-    return ReaderStyledTextOps.themeRegexEmphasisColor(this);
-  }
-
-  readerRegexEmphasisContext(): ReaderRegexEmphasisContext {
-    return ReaderStyledTextOps.readerRegexEmphasisContext(this);
-  }
-
-  resolvedRegexEmphasis(rule: ReaderRegexFontRule | null): ReaderResolvedRegexEmphasis {
-    return ReaderStyledTextOps.resolvedRegexEmphasis(this, rule);
-  }
-
-  getRegexTextSlices(text: string): ReadTextSlice[] {
-    return ReaderStyledTextOps.getRegexTextSlices(this, text);
-  }
+  getStyledSliceFontColor(slice: ReadTextSlice): string { return ReaderStyledTextOps.getStyledSliceFontColor(this, slice); }
+  getStyledSliceBackgroundStyle(slice: ReadTextSlice): TextBackgroundStyle { return ReaderStyledTextOps.getStyledSliceBackgroundStyle(this, slice); }
+  getStyledSliceTextShadow(slice: ReadTextSlice): ShadowOptions | ShadowOptions[] { return ReaderStyledTextOps.getStyledSliceTextShadow(this, slice); }
+  shouldUseTitleStyle(text: string, chapterIndex: number = this.currentChapterIndex): boolean { return ReaderStyledTextOps.shouldUseTitleStyle(this, text, chapterIndex); }
+  shouldUseRegexStyle(text: string): boolean { return ReaderStyledTextOps.shouldUseRegexStyle(this, text); }
+  hasRegexMatch(text: string): boolean { return ReaderStyledTextOps.hasRegexMatch(this, text); }
+  getRegexRules(): ReaderRegexFontRule[] { return ReaderStyledTextOps.getRegexRules(this); }
+  themeRegexEmphasisColor(): string { return ReaderStyledTextOps.themeRegexEmphasisColor(this); }
+  readerRegexEmphasisContext(): ReaderRegexEmphasisContext { return ReaderStyledTextOps.readerRegexEmphasisContext(this); }
+  resolvedRegexEmphasis(rule: ReaderRegexFontRule | null): ReaderResolvedRegexEmphasis { return ReaderStyledTextOps.resolvedRegexEmphasis(this, rule); }
+  getRegexTextSlices(text: string): ReadTextSlice[] { return ReaderStyledTextOps.getRegexTextSlices(this, text); }
 
   /**
    * 从整章的正则匹配结果中截取当前页面/段落。这样匹配范围即使跨过分页点，
@@ -8389,66 +6212,21 @@ TtsGlobalCapsule({
   }
 
 
-  getRegexRuleBySlice(slice: ReadTextSlice): ReaderRegexFontRule | null {
-    return ReaderStyledTextOps.getRegexRuleBySlice(this, slice);
-  }
-
-  getRegexSliceFontSize(slice: ReadTextSlice): number {
-    return ReaderStyledTextOps.getRegexSliceFontSize(this, slice);
-  }
-
-  getRegexSliceFontFamily(slice: ReadTextSlice): string {
-    return ReaderStyledTextOps.getRegexSliceFontFamily(this, slice);
-  }
-
-  getReadingTextSlices(text: string): ReadTextSlice[] {
-    return ReaderStyledTextOps.getReadingTextSlices(this, text);
-  }
-
-  getReadingTextSlicesInRange(text: string, start: number, end: number): ReadTextSlice[] {
-    return ReaderStyledTextOps.getReadingTextSlicesInRange(this, text, start, end);
-  }
-
-  hasActiveTtsHighlight(text: string): boolean {
-    return ReaderStyledTextOps.hasActiveTtsHighlight(this, text);
-  }
-
-  getReadingRenderText(text: string): string {
-    return ReaderStyledTextOps.getReadingRenderText(this, text);
-  }
-
-
-  getTtsHighlightColor(): string {
-    return ReaderStyledTextOps.getTtsHighlightColor(this);
-  }
-
-  getTtsHighlightTextColor(): string {
-    return ReaderStyledTextOps.getTtsHighlightTextColor(this);
-  }
-
-  hideReaderPanels() {
-    ReaderStyledTextOps.hideReaderPanels(this);
-  }
-
-  shouldUseReaderLayoutV2(source: string = this.pagedContentText || this.content): boolean {
-    return ReaderStyledTextOps.shouldUseReaderLayoutV2(this, source);
-  }
-
-  buildReaderV2Snapshot(): ReaderV2LayoutSnapshot {
-    return ReaderStyledTextOps.buildReaderV2Snapshot(this);
-  }
-
-  readerV2CommentRadius(): number {
-    return ReaderStyledTextOps.readerV2CommentRadius(this);
-  }
-
-  buildReaderV2RegexStyles(document: ReaderV2Document): ReaderV2SpanStyleRange[] {
-    return ReaderStyledTextOps.buildReaderV2RegexStyles(this, document);
-  }
-
-  buildReaderV2Pagination(source: string, chapterIndex: number): ReaderPaginationResult {
-    return ReaderStyledTextOps.buildReaderV2Pagination(this, source, chapterIndex);
-  }
+  getRegexRuleBySlice(slice: ReadTextSlice): ReaderRegexFontRule | null { return ReaderStyledTextOps.getRegexRuleBySlice(this, slice); }
+  getRegexSliceFontSize(slice: ReadTextSlice): number { return ReaderStyledTextOps.getRegexSliceFontSize(this, slice); }
+  getRegexSliceFontFamily(slice: ReadTextSlice): string { return ReaderStyledTextOps.getRegexSliceFontFamily(this, slice); }
+  getReadingTextSlices(text: string): ReadTextSlice[] { return ReaderStyledTextOps.getReadingTextSlices(this, text); }
+  getReadingTextSlicesInRange(text: string, start: number, end: number): ReadTextSlice[] { return ReaderStyledTextOps.getReadingTextSlicesInRange(this, text, start, end); }
+  hasActiveTtsHighlight(text: string): boolean { return ReaderStyledTextOps.hasActiveTtsHighlight(this, text); }
+  getReadingRenderText(text: string): string { return ReaderStyledTextOps.getReadingRenderText(this, text); }
+  getTtsHighlightColor(): string { return ReaderStyledTextOps.getTtsHighlightColor(this); }
+  getTtsHighlightTextColor(): string { return ReaderStyledTextOps.getTtsHighlightTextColor(this); }
+  hideReaderPanels() { ReaderStyledTextOps.hideReaderPanels(this); }
+  shouldUseReaderLayoutV2(source: string = this.pagedContentText || this.content): boolean { return ReaderStyledTextOps.shouldUseReaderLayoutV2(this, source); }
+  buildReaderV2Snapshot(): ReaderV2LayoutSnapshot { return ReaderStyledTextOps.buildReaderV2Snapshot(this); }
+  readerV2CommentRadius(): number { return ReaderStyledTextOps.readerV2CommentRadius(this); }
+  buildReaderV2RegexStyles(document: ReaderV2Document): ReaderV2SpanStyleRange[] { return ReaderStyledTextOps.buildReaderV2RegexStyles(this, document); }
+  buildReaderV2Pagination(source: string, chapterIndex: number): ReaderPaginationResult { return ReaderStyledTextOps.buildReaderV2Pagination(this, source, chapterIndex); }
 
   createIncrementalReaderV2Pagination(source: string, chapterIndex: number,
     initialPageCount: number): ReaderPaginationResult {
@@ -8461,17 +6239,9 @@ TtsGlobalCapsule({
   }
 
 
-  readerV2PageSet(chapterIndex: number, source: string): ReaderV2PageSet | null {
-    return ReaderStyledTextOps.readerV2PageSet(this, chapterIndex, source);
-  }
-
-  readerV2Document(chapterIndex: number, source: string): ReaderV2Document | null {
-    return ReaderStyledTextOps.readerV2Document(this, chapterIndex, source);
-  }
-
-  readerV2Page(chapterIndex: number, pageIndex: number, source: string): ReaderV2PageLayout | null {
-    return ReaderStyledTextOps.readerV2Page(this, chapterIndex, pageIndex, source);
-  }
+  readerV2PageSet(chapterIndex: number, source: string): ReaderV2PageSet | null { return ReaderStyledTextOps.readerV2PageSet(this, chapterIndex, source); }
+  readerV2Document(chapterIndex: number, source: string): ReaderV2Document | null { return ReaderStyledTextOps.readerV2Document(this, chapterIndex, source); }
+  readerV2Page(chapterIndex: number, pageIndex: number, source: string): ReaderV2PageLayout | null { return ReaderStyledTextOps.readerV2Page(this, chapterIndex, pageIndex, source); }
 
   readerV2Controller(role: string, chapterIndex: number, pageIndex: number,
     source: string): ReaderV2PageNodeController {
@@ -8488,13 +6258,8 @@ TtsGlobalCapsule({
     return controller;
   }
 
-  readerTextEditMenuOptions(textProvider: () => string): EditMenuOptions {
-    return ReaderStyledTextOps.readerTextEditMenuOptions(this, textProvider);
-  }
-
-  scheduleReaderTextSelectionClear(): void {
-    ReaderStyledTextOps.scheduleReaderTextSelectionClear(this);
-  }
+  readerTextEditMenuOptions(textProvider: () => string): EditMenuOptions { return ReaderStyledTextOps.readerTextEditMenuOptions(this, textProvider); }
+  scheduleReaderTextSelectionClear(): void { ReaderStyledTextOps.scheduleReaderTextSelectionClear(this); }
 
   refreshCurrentReaderV2RetainedPages(forceRebuild: boolean = false): void {
     if (!this.shouldUseReaderLayoutV2(this.pagedContentText)) return;
@@ -8512,9 +6277,7 @@ TtsGlobalCapsule({
     }
   }
 
-  republishCurrentReaderPageAfterBackground(): void {
-    ReaderStyledTextOps.republishCurrentReaderPageAfterBackground(this);
-  }
+  republishCurrentReaderPageAfterBackground(): void { ReaderStyledTextOps.republishCurrentReaderPageAfterBackground(this); }
 
   readerV2TtsHighlightRects(chapterIndex: number, pageIndex: number, source: string,
     _paintVersion: number = this.readerV2TtsPaintVersion): ReaderV2HighlightRect[] {
@@ -8609,17 +6372,9 @@ TtsGlobalCapsule({
     .hitTestBehavior(HitTestMode.None)
   }
 
-  currentReaderV2TtsOverlayKeys(paintVersion: number): string[] {
-    return ReaderStyledTextOps.currentReaderV2TtsOverlayKeys(this, paintVersion);
-  }
-
-  currentReaderV2SelectionSurfaceKeys(hostVersion: number): string[] {
-    return ReaderStyledTextOps.currentReaderV2SelectionSurfaceKeys(this, hostVersion);
-  }
-
-  currentReaderV2SelectionOverlayKeys(paintVersion: number): string[] {
-    return ReaderStyledTextOps.currentReaderV2SelectionOverlayKeys(this, paintVersion);
-  }
+  currentReaderV2TtsOverlayKeys(paintVersion: number): string[] { return ReaderStyledTextOps.currentReaderV2TtsOverlayKeys(this, paintVersion); }
+  currentReaderV2SelectionSurfaceKeys(hostVersion: number): string[] { return ReaderStyledTextOps.currentReaderV2SelectionSurfaceKeys(this, hostVersion); }
+  currentReaderV2SelectionOverlayKeys(paintVersion: number): string[] { return ReaderStyledTextOps.currentReaderV2SelectionOverlayKeys(this, paintVersion); }
 
   @Builder
   readerCurrentV2SelectionSurface() {
@@ -9021,13 +6776,8 @@ TtsGlobalCapsule({
     .hitTestBehavior(HitTestMode.None)
   }
 
-  readerV2SurfaceTopOffset(): number {
-    return ReaderStyledTextOps.readerV2SurfaceTopOffset(this);
-  }
-
-  clearReaderV2SelectionOverlay(): void {
-    ReaderStyledTextOps.clearReaderV2SelectionOverlay(this);
-  }
+  readerV2SurfaceTopOffset(): number { return ReaderStyledTextOps.readerV2SurfaceTopOffset(this); }
+  clearReaderV2SelectionOverlay(): void { ReaderStyledTextOps.clearReaderV2SelectionOverlay(this); }
 
   readerV2ActionAtLocalPoint(xVp: number, yVp: number): string {
     const located = this.readerV2LocatedPagePoint(xVp, yVp);
@@ -9041,9 +6791,7 @@ TtsGlobalCapsule({
     return hit.kind === 'action' ? hit.marker : '';
   }
 
-  readerV2LocatedPagePoint(xVp: number, yVp: number): number[] {
-    return ReaderStyledTextOps.readerV2LocatedPagePoint(this, xVp, yVp);
-  }
+  readerV2LocatedPagePoint(xVp: number, yVp: number): number[] { return ReaderStyledTextOps.readerV2LocatedPagePoint(this, xVp, yVp); }
 
   selectReaderV2TextAtGlobalPoint(globalX: number, globalY: number, serial: number, attempt: number): void {
     if (serial !== this.readerTextSelectionSerial) return;
@@ -9129,28 +6877,15 @@ TtsGlobalCapsule({
         globalX, globalY, serial, nextAttempt));
   }
 
-  readerV2TtsSourceOffset(speechOffset: number): number {
-    return ReaderStyledTextOps.readerV2TtsSourceOffset(this, speechOffset);
-  }
-
-  refreshReaderV2TtsOverlay(): void {
-    ReaderStyledTextOps.refreshReaderV2TtsOverlay(this);
-  }
-
-  async exitReaderPage(): Promise<void> {
-    return ReaderStyledTextOps.exitReaderPage(this);
-  }
+  readerV2TtsSourceOffset(speechOffset: number): number { return ReaderStyledTextOps.readerV2TtsSourceOffset(this, speechOffset); }
+  refreshReaderV2TtsOverlay(): void { ReaderStyledTextOps.refreshReaderV2TtsOverlay(this); }
+  async exitReaderPage(): Promise<void> { return ReaderStyledTextOps.exitReaderPage(this); }
 //endregion
 //region 分页缓存 / 翻页·预载·自动翻页 / 翻页动画·卷曲 / 换章
 // [map] 契约: 写 currentPageIndex / 翻页动画状态 / 预载; 与 TTS 翻页、镜像手动翻页交织
 
-  paginateReaderSourceText(source: string, chapterIndex: number = this.currentChapterIndex): ReaderPaginationResult {
-    return ReaderPageTurnOps.paginateReaderSourceText(this, source, chapterIndex);
-  }
-
-  getStyledSliceDecoration(slice: ReadTextSlice): DecorationStyleInterface {
-    return ReaderPageTurnOps.getStyledSliceDecoration(this, slice);
-  }
+  paginateReaderSourceText(source: string, chapterIndex: number = this.currentChapterIndex): ReaderPaginationResult { return ReaderPageTurnOps.paginateReaderSourceText(this, source, chapterIndex); }
+  getStyledSliceDecoration(slice: ReadTextSlice): DecorationStyleInterface { return ReaderPageTurnOps.getStyledSliceDecoration(this, slice); }
 
   paginateReaderImageSourceText(source: string,
     chapterIndex: number = this.currentChapterIndex): ReaderPaginationResult {
@@ -9162,17 +6897,9 @@ TtsGlobalCapsule({
     ReaderPageTurnOps.appendReaderTextSegmentPages(this, source, start, end, chapterIndex, pages, starts, ends);
   }
 
-  buildReaderPaginationCacheKey(chapterIndex: number, source: string): string {
-    return ReaderPageTurnOps.buildReaderPaginationCacheKey(this, chapterIndex, source);
-  }
-
-  readerTypographyCacheIdentity(): string {
-    return ReaderPageTurnOps.readerTypographyCacheIdentity(this);
-  }
-
-  getCachedReaderPagination(chapterIndex: number, source: string): ReaderPaginationResult | null {
-    return ReaderPageTurnOps.getCachedReaderPagination(this, chapterIndex, source);
-  }
+  buildReaderPaginationCacheKey(chapterIndex: number, source: string): string { return ReaderPageTurnOps.buildReaderPaginationCacheKey(this, chapterIndex, source); }
+  readerTypographyCacheIdentity(): string { return ReaderPageTurnOps.readerTypographyCacheIdentity(this); }
+  getCachedReaderPagination(chapterIndex: number, source: string): ReaderPaginationResult | null { return ReaderPageTurnOps.getCachedReaderPagination(this, chapterIndex, source); }
 
   getOrCreateReaderPagination(chapterIndex: number, source: string,
     preferredInitialPageCount: number = 0): ReaderPaginationResult {
@@ -9194,63 +6921,34 @@ TtsGlobalCapsule({
     ReaderPageTurnOps.scheduleReaderPaginationCompletion(this, chapterIndex, key, result);
   }
 
-  isReaderPaginationInteractionBusy(): boolean {
-    return ReaderPageTurnOps.isReaderPaginationInteractionBusy(this);
-  }
-
-  deferReaderPaginationForInteraction(idleDelayMs: number = 420): void {
-    ReaderPageTurnOps.deferReaderPaginationForInteraction(this, idleDelayMs);
-  }
-
-  publishCurrentReaderPagination(result: ReaderPaginationResult): void {
-    ReaderPageTurnOps.publishCurrentReaderPagination(this, result);
-  }
-
-  persistReaderPagination(chapterIndex: number, key: string, result: ReaderPaginationResult): void {
-    ReaderPageTurnOps.persistReaderPagination(this, chapterIndex, key, result);
-  }
-
-  applyPreparedReaderPagination(content: string, chapterIndex: number, createIfMissing: boolean): boolean {
-    return ReaderPageTurnOps.applyPreparedReaderPagination(this, content, chapterIndex, createIfMissing);
-  }
-
-  async restorePersistedReaderPagination(content: string, chapterIndex: number): Promise<boolean> {
-    return ReaderPageTurnOps.restorePersistedReaderPagination(this, content, chapterIndex);
-  }
+  isReaderPaginationInteractionBusy(): boolean { return ReaderPageTurnOps.isReaderPaginationInteractionBusy(this); }
+  deferReaderPaginationForInteraction(idleDelayMs: number = 420): void { ReaderPageTurnOps.deferReaderPaginationForInteraction(this, idleDelayMs); }
+  publishCurrentReaderPagination(result: ReaderPaginationResult): void { ReaderPageTurnOps.publishCurrentReaderPagination(this, result); }
+  persistReaderPagination(chapterIndex: number, key: string, result: ReaderPaginationResult): void { ReaderPageTurnOps.persistReaderPagination(this, chapterIndex, key, result); }
+  applyPreparedReaderPagination(content: string, chapterIndex: number, createIfMissing: boolean): boolean { return ReaderPageTurnOps.applyPreparedReaderPagination(this, content, chapterIndex, createIfMissing); }
+  async restorePersistedReaderPagination(content: string, chapterIndex: number): Promise<boolean> { return ReaderPageTurnOps.restorePersistedReaderPagination(this, content, chapterIndex); }
 
   /**
    * 连续朗读（含锁屏/后台）时 onPageHide 置 false 的 readerPageVisible 不能挡住下一章预排版，
    * 否则每到章末切换都要现场联网取文加排版，听书出现长静默。
    */
-  isReaderPreloadBlockedByVisibility(): boolean {
-    return ReaderPageTurnOps.isReaderPreloadBlockedByVisibility(this);
-  }
-
-  preloadNextChapterPaginationLater(delayMs: number = 520): void {
-    ReaderPageTurnOps.preloadNextChapterPaginationLater(this, delayMs);
-  }
+  isReaderPreloadBlockedByVisibility(): boolean { return ReaderPageTurnOps.isReaderPreloadBlockedByVisibility(this); }
+  preloadNextChapterPaginationLater(delayMs: number = 520): void { ReaderPageTurnOps.preloadNextChapterPaginationLater(this, delayMs); }
 
   scheduleNextChapterPaginationCompletion(sourceChapterIndex: number, targetChapterIndex: number, key: string,
     result: ReaderPaginationResult, serial: number): void {
     ReaderPageTurnOps.scheduleNextChapterPaginationCompletion(this, sourceChapterIndex, targetChapterIndex, key, result, serial);
   }
 
-  preloadPreviousChapterPaginationLater(delayMs: number = 760): void {
-    ReaderPageTurnOps.preloadPreviousChapterPaginationLater(this, delayMs);
-  }
+  preloadPreviousChapterPaginationLater(delayMs: number = 760): void { ReaderPageTurnOps.preloadPreviousChapterPaginationLater(this, delayMs); }
 
   schedulePreviousChapterPaginationCompletion(sourceChapterIndex: number, targetChapterIndex: number, key: string,
     result: ReaderPaginationResult, serial: number): void {
     ReaderPageTurnOps.schedulePreviousChapterPaginationCompletion(this, sourceChapterIndex, targetChapterIndex, key, result, serial);
   }
 
-  paginateContent(sourceContent?: string, chapterIndex: number = this.currentChapterIndex) {
-    ReaderPageTurnOps.paginateContent(this, sourceContent, chapterIndex);
-  }
-
-  applyReaderPaginationResult(result: ReaderPaginationResult, fallbackContent: string): void {
-    ReaderPageTurnOps.applyReaderPaginationResult(this, result, fallbackContent);
-  }
+  paginateContent(sourceContent?: string, chapterIndex: number = this.currentChapterIndex) { ReaderPageTurnOps.paginateContent(this, sourceContent, chapterIndex); }
+  applyReaderPaginationResult(result: ReaderPaginationResult, fallbackContent: string): void { ReaderPageTurnOps.applyReaderPaginationResult(this, result, fallbackContent); }
 
   async turnNext() {
     this.resetAutoPageTurnCountdown();
@@ -9270,9 +6968,7 @@ TtsGlobalCapsule({
     await this.runPageTurnAnimation(-1, this.readerEffectivePageTurnMode() === 1 ? 'slide' : 'tap');
   }
 
-  setAutoPageTurnActive(enabled: boolean): void {
-    ReaderPageTurnOps.setAutoPageTurnActive(this, enabled);
-  }
+  setAutoPageTurnActive(enabled: boolean): void { ReaderPageTurnOps.setAutoPageTurnActive(this, enabled); }
 
   onAutoPageTurnActiveChanged(): void {
     if (this.autoPageTurnActive) {
@@ -9288,33 +6984,13 @@ TtsGlobalCapsule({
     }
   }
 
-  configureAutoPageTurnController(): void {
-    ReaderPageTurnOps.configureAutoPageTurnController(this);
-  }
-
-  startAutoPageTurn(): void {
-    ReaderPageTurnOps.startAutoPageTurn(this);
-  }
-
-  stopAutoPageTurn(showToast: boolean): void {
-    ReaderPageTurnOps.stopAutoPageTurn(this, showToast);
-  }
-
-  resetAutoPageTurnCountdown(): void {
-    ReaderPageTurnOps.resetAutoPageTurnCountdown(this);
-  }
-
-  isAutoPageTurnBlocked(): boolean {
-    return ReaderPageTurnOps.isAutoPageTurnBlocked(this);
-  }
-
-  isAtReaderBookEnd(): boolean {
-    return ReaderPageTurnOps.isAtReaderBookEnd(this);
-  }
-
-  handleAutoPageTurnExpire(): void {
-    ReaderPageTurnOps.handleAutoPageTurnExpire(this);
-  }
+  configureAutoPageTurnController(): void { ReaderPageTurnOps.configureAutoPageTurnController(this); }
+  startAutoPageTurn(): void { ReaderPageTurnOps.startAutoPageTurn(this); }
+  stopAutoPageTurn(showToast: boolean): void { ReaderPageTurnOps.stopAutoPageTurn(this, showToast); }
+  resetAutoPageTurnCountdown(): void { ReaderPageTurnOps.resetAutoPageTurnCountdown(this); }
+  isAutoPageTurnBlocked(): boolean { return ReaderPageTurnOps.isAutoPageTurnBlocked(this); }
+  isAtReaderBookEnd(): boolean { return ReaderPageTurnOps.isAtReaderBookEnd(this); }
+  handleAutoPageTurnExpire(): void { ReaderPageTurnOps.handleAutoPageTurnExpire(this); }
 
   presentAutoPageTurnIntervalDialog(): void {
     this.showAutoPageTurnIntervalDialog = true;
@@ -9332,61 +7008,24 @@ TtsGlobalCapsule({
     });
   }
 
-  scrollReaderComicByPage(direction: number): void {
-    ReaderPageTurnOps.scrollReaderComicByPage(this, direction);
-  }
-
-  preloadReaderContent(): void {
-    ReaderPageTurnOps.preloadReaderContent(this);
-  }
-
-  isTtsContinuousPreloadActive(): boolean {
-    return ReaderPageTurnOps.isTtsContinuousPreloadActive(this);
-  }
-
-
-  preloadReaderContentLater(delayMs: number = 240): void {
-    ReaderPageTurnOps.preloadReaderContentLater(this, delayMs);
-  }
-
-  canTurnPage(direction: number): boolean {
-    return ReaderPageTurnOps.canTurnPage(this, direction);
-  }
-
-  isPreviousChapterTurnReady(): boolean {
-    return ReaderPageTurnOps.isPreviousChapterTurnReady(this);
-  }
-
-  resumeDeferredPreviousChapterTurn(sourceChapterIndex: number): void {
-    ReaderPageTurnOps.resumeDeferredPreviousChapterTurn(this, sourceChapterIndex);
-  }
+  scrollReaderComicByPage(direction: number): void { ReaderPageTurnOps.scrollReaderComicByPage(this, direction); }
+  preloadReaderContent(): void { ReaderPageTurnOps.preloadReaderContent(this); }
+  isTtsContinuousPreloadActive(): boolean { return ReaderPageTurnOps.isTtsContinuousPreloadActive(this); }
+  preloadReaderContentLater(delayMs: number = 240): void { ReaderPageTurnOps.preloadReaderContentLater(this, delayMs); }
+  canTurnPage(direction: number): boolean { return ReaderPageTurnOps.canTurnPage(this, direction); }
+  isPreviousChapterTurnReady(): boolean { return ReaderPageTurnOps.isPreviousChapterTurnReady(this); }
+  resumeDeferredPreviousChapterTurn(sourceChapterIndex: number): void { ReaderPageTurnOps.resumeDeferredPreviousChapterTurn(this, sourceChapterIndex); }
 
   // 向前跨章提交后等待增量排版补齐真实的最后一页（pendingRestorePageIndex 复位）。有界等待 + 兜底落页，
   // 任何情况（网络 hang、排版中断、页面隐藏）下都不会把用户留在提示页上；后台排版完成时会原地补齐边界。
-  async waitForReaderChapterTailSettled(timeoutMs: number = 12000): Promise<void> {
-    return ReaderPageTurnOps.waitForReaderChapterTailSettled(this, timeoutMs);
-  }
+  async waitForReaderChapterTailSettled(timeoutMs: number = 12000): Promise<void> { return ReaderPageTurnOps.waitForReaderChapterTailSettled(this, timeoutMs); }
 
   // 提交跨章前翻后，若提示页仍是通用“正在加载章节内容...”，按内容是否已在本地改为更明确的文案。
-  showReaderTailWaitingLeafIfGeneric(): void {
-    ReaderPageTurnOps.showReaderTailWaitingLeafIfGeneric(this);
-  }
-
-  ensureCurrentReaderPaginationAhead(requiredPageCount: number): void {
-    ReaderPageTurnOps.ensureCurrentReaderPaginationAhead(this, requiredPageCount);
-  }
-
-  currentReaderPaginationResult(): ReaderPaginationResult | null {
-    return ReaderPageTurnOps.currentReaderPaginationResult(this);
-  }
-
-  createContinuousReaderPagination(source: string): ReaderPaginationResult {
-    return ReaderPageTurnOps.createContinuousReaderPagination(this, source);
-  }
-
-  isCurrentReaderPaginationComplete(): boolean {
-    return ReaderPageTurnOps.isCurrentReaderPaginationComplete(this);
-  }
+  showReaderTailWaitingLeafIfGeneric(): void { ReaderPageTurnOps.showReaderTailWaitingLeafIfGeneric(this); }
+  ensureCurrentReaderPaginationAhead(requiredPageCount: number): void { ReaderPageTurnOps.ensureCurrentReaderPaginationAhead(this, requiredPageCount); }
+  currentReaderPaginationResult(): ReaderPaginationResult | null { return ReaderPageTurnOps.currentReaderPaginationResult(this); }
+  createContinuousReaderPagination(source: string): ReaderPaginationResult { return ReaderPageTurnOps.createContinuousReaderPagination(this, source); }
+  isCurrentReaderPaginationComplete(): boolean { return ReaderPageTurnOps.isCurrentReaderPaginationComplete(this); }
 
   async applyPageTurn(direction: number, targetPreview: PageTurnPreview | null = null,
     commitText: boolean = true): Promise<void> {
@@ -9398,91 +7037,38 @@ TtsGlobalCapsule({
     ReaderPageTurnOps.applyLocalPageTurnTarget(this, targetPageIndex, targetPreview, commitText);
   }
 
-  capturePageTurnCommitTarget(direction: number): PageTurnPreview | null {
-    return ReaderPageTurnOps.capturePageTurnCommitTarget(this, direction);
-  }
+  capturePageTurnCommitTarget(direction: number): PageTurnPreview | null { return ReaderPageTurnOps.capturePageTurnCommitTarget(this, direction); }
   async runPageTurnAnimation(direction: number, style: string, fromQueue: boolean = false,
     releaseVelocity: number = 0): Promise<void> {
     return ReaderPageTurnOps.runPageTurnAnimation(this, direction, style, fromQueue, releaseVelocity);
   }
 
-  prepareMirroredTtsManualPageTurn(): void {
-    ReaderPageTurnOps.prepareMirroredTtsManualPageTurn(this);
-  }
-
-  scheduleMirroredTtsResumeAfterManualPageTurn(): void {
-    ReaderPageTurnOps.scheduleMirroredTtsResumeAfterManualPageTurn(this);
-  }
-
-  cancelMirroredTtsManualPageTurn(): void {
-    ReaderPageTurnOps.cancelMirroredTtsManualPageTurn(this);
-  }
+  prepareMirroredTtsManualPageTurn(): void { ReaderPageTurnOps.prepareMirroredTtsManualPageTurn(this); }
+  scheduleMirroredTtsResumeAfterManualPageTurn(): void { ReaderPageTurnOps.scheduleMirroredTtsResumeAfterManualPageTurn(this); }
+  cancelMirroredTtsManualPageTurn(): void { ReaderPageTurnOps.cancelMirroredTtsManualPageTurn(this); }
 
   // 手动翻页的“脱离跟随”冷却结束后的平滑重新跟随：回到朗读当前句，而不是一直停在人翻的位置。
-  scheduleMirroredTtsResumeAfterSuppress(): void {
-    ReaderPageTurnOps.scheduleMirroredTtsResumeAfterSuppress(this);
-  }
-
-  runQueuedPageTurnLater(): void {
-    ReaderPageTurnOps.runQueuedPageTurnLater(this);
-  }
-
-  clearQueuedReaderPageTurns(): void {
-    ReaderPageTurnOps.clearQueuedReaderPageTurns(this);
-  }
-
-  async runNoAnimationPageTurn(direction: number): Promise<void> {
-    return ReaderPageTurnOps.runNoAnimationPageTurn(this, direction);
-  }
-
-  commitVisibleCurrentPageText(text: string = this.visibleCurrentPageText(), forceRender: boolean = false): void {
-    ReaderPageTurnOps.commitVisibleCurrentPageText(this, text, forceRender);
-  }
-
-  commitVisibleCurrentPageTextLater(chapterIndex: number, pageIndex: number): void {
-    ReaderPageTurnOps.commitVisibleCurrentPageTextLater(this, chapterIndex, pageIndex);
-  }
-
-  commitCurrentPageTextLater(chapterIndex: number, pageIndex: number, expectedText: string): void {
-    ReaderPageTurnOps.commitCurrentPageTextLater(this, chapterIndex, pageIndex, expectedText);
-  }
-
-  commitCurrentPageTextAfterDelay(chapterIndex: number, pageIndex: number, expectedText: string, delayMs: number): void {
-    ReaderPageTurnOps.commitCurrentPageTextAfterDelay(this, chapterIndex, pageIndex, expectedText, delayMs);
-  }
-
-  async runLegacyPageTurn(direction: number): Promise<void> {
-    return ReaderPageTurnOps.runLegacyPageTurn(this, direction);
-  }
-
-  async runTapPageTurn(direction: number): Promise<void> {
-    return ReaderPageTurnOps.runTapPageTurn(this, direction);
-  }
+  scheduleMirroredTtsResumeAfterSuppress(): void { ReaderPageTurnOps.scheduleMirroredTtsResumeAfterSuppress(this); }
+  runQueuedPageTurnLater(): void { ReaderPageTurnOps.runQueuedPageTurnLater(this); }
+  clearQueuedReaderPageTurns(): void { ReaderPageTurnOps.clearQueuedReaderPageTurns(this); }
+  async runNoAnimationPageTurn(direction: number): Promise<void> { return ReaderPageTurnOps.runNoAnimationPageTurn(this, direction); }
+  commitVisibleCurrentPageText(text: string = this.visibleCurrentPageText(), forceRender: boolean = false): void { ReaderPageTurnOps.commitVisibleCurrentPageText(this, text, forceRender); }
+  commitVisibleCurrentPageTextLater(chapterIndex: number, pageIndex: number): void { ReaderPageTurnOps.commitVisibleCurrentPageTextLater(this, chapterIndex, pageIndex); }
+  commitCurrentPageTextLater(chapterIndex: number, pageIndex: number, expectedText: string): void { ReaderPageTurnOps.commitCurrentPageTextLater(this, chapterIndex, pageIndex, expectedText); }
+  commitCurrentPageTextAfterDelay(chapterIndex: number, pageIndex: number, expectedText: string, delayMs: number): void { ReaderPageTurnOps.commitCurrentPageTextAfterDelay(this, chapterIndex, pageIndex, expectedText, delayMs); }
+  async runLegacyPageTurn(direction: number): Promise<void> { return ReaderPageTurnOps.runLegacyPageTurn(this, direction); }
+  async runTapPageTurn(direction: number): Promise<void> { return ReaderPageTurnOps.runTapPageTurn(this, direction); }
 
   async runSlidePageTurn(direction: number, queuedGesture: boolean = false,
     releaseVelocity: number = 0): Promise<void> {
     return ReaderPageTurnOps.runSlidePageTurn(this, direction, queuedGesture, releaseVelocity);
   }
 
-  async finishAnimatedPageTurn(): Promise<void> {
-    return ReaderPageTurnOps.finishAnimatedPageTurn(this);
-  }
-
-  prepareIncomingPageTurn(direction: number): void {
-    ReaderPageTurnOps.prepareIncomingPageTurn(this, direction);
-  }
-
-  prepareSlidePageTurn(direction: number, offset: number): void {
-    ReaderPageTurnOps.prepareSlidePageTurn(this, direction, offset);
-  }
-
-  finishPageTurnAnimation(releaseTurnLock: boolean = true): void {
-    ReaderPageTurnOps.finishPageTurnAnimation(this, releaseTurnLock);
-  }
-
-  finishPageTurnAnimationLater(): void {
-    ReaderPageTurnOps.finishPageTurnAnimationLater(this);
-  }
+  async finishAnimatedPageTurn(): Promise<void> { return ReaderPageTurnOps.finishAnimatedPageTurn(this); }
+  prepareIncomingPageTurn(direction: number): void { ReaderPageTurnOps.prepareIncomingPageTurn(this, direction); }
+  prepareSlidePageTurn(direction: number, offset: number): void { ReaderPageTurnOps.prepareSlidePageTurn(this, direction, offset); }
+  finishPageTurnAnimation(releaseTurnLock: boolean = true): void { ReaderPageTurnOps.finishPageTurnAnimation(this, releaseTurnLock); }
+  finishPageTurnAnimationLater(): void { ReaderPageTurnOps.finishPageTurnAnimationLater(this); }
 
   setPageTurnIncomingState(pageIndex: number, text: string, animating: boolean = true,
     chapterIndex: number = this.currentChapterIndex, secondaryText: string = '', pageStart: number = -1,
@@ -9490,242 +7076,76 @@ TtsGlobalCapsule({
     ReaderPageTurnOps.setPageTurnIncomingState(this, pageIndex, text, animating, chapterIndex, secondaryText, pageStart, secondaryPageStart, documentSource);
   }
 
-  getPageTurnTargetText(direction: number): string {
-    return ReaderPageTurnOps.getPageTurnTargetText(this, direction);
-  }
-
-  getPageTurnTargetPageIndex(direction: number = 0): number {
-    return ReaderPageTurnOps.getPageTurnTargetPageIndex(this, direction);
-  }
-
-  getLocalPageTurnTargetPageIndex(direction: number): number {
-    return ReaderPageTurnOps.getLocalPageTurnTargetPageIndex(this, direction);
-  }
-
-  getAdjacentPageTurnChapterIndex(direction: number): number {
-    return ReaderPageTurnOps.getAdjacentPageTurnChapterIndex(this, direction);
-  }
-
-  updatePageTurnIncomingForDirection(direction: number): void {
-    ReaderPageTurnOps.updatePageTurnIncomingForDirection(this, direction);
-  }
-
-  buildPageTurnPreviewKey(direction: number, chapterIndex: number): string {
-    return ReaderPageTurnOps.buildPageTurnPreviewKey(this, direction, chapterIndex);
-  }
-
-  buildCachedAdjacentPageTurnPreview(direction: number, chapterIndex: number): PageTurnPreview {
-    return ReaderPageTurnOps.buildCachedAdjacentPageTurnPreview(this, direction, chapterIndex);
-  }
-
-  buildAdjacentPageTurnPreview(direction: number, chapterIndex: number, preparedBody: string): PageTurnPreview {
-    return ReaderPageTurnOps.buildAdjacentPageTurnPreview(this, direction, chapterIndex, preparedBody);
-  }
-
-  getPageTurnLoadingText(chapterIndex: number): string {
-    return ReaderPageTurnOps.getPageTurnLoadingText(this, chapterIndex);
-  }
-
-  applyPageTurnPreview(preview: PageTurnPreview): void {
-    ReaderPageTurnOps.applyPageTurnPreview(this, preview);
-  }
-
-  loadAdjacentPageTurnPreview(direction: number, chapterIndex: number, key: string): void {
-    ReaderPageTurnOps.loadAdjacentPageTurnPreview(this, direction, chapterIndex, key);
-  }
-
-  isCurrentReaderEngineBook(expectedBookUrl: string = this.book?.bookUrl || this.bookUrl): boolean {
-    return ReaderPageTurnOps.isCurrentReaderEngineBook(this, expectedBookUrl);
-  }
-
-  updateSlidePageEffect(offset: number): void {
-    ReaderPageTurnOps.updateSlidePageEffect(this, offset);
-  }
-
-  updateLegacySlidePageEffect(offset: number): void {
-    ReaderPageTurnOps.updateLegacySlidePageEffect(this, offset);
-  }
-
-  rollbackSlidePageEffect(): void {
-    ReaderPageTurnOps.rollbackSlidePageEffect(this);
-  }
-
-  async rollbackReaderPageCurl(duration: number, serial: number): Promise<void> {
-    return ReaderPageTurnOps.rollbackReaderPageCurl(this, duration, serial);
-  }
-
-  resetSlidePageEffect(): void {
-    ReaderPageTurnOps.resetSlidePageEffect(this);
-  }
-
-  getVisiblePageTurnIncomingText(): string {
-    return ReaderPageTurnOps.getVisiblePageTurnIncomingText(this);
-  }
-
-  getVisiblePageTurnIncomingOpacity(): number {
-    return ReaderPageTurnOps.getVisiblePageTurnIncomingOpacity(this);
-  }
-
-  getPageTurnWidth(): number {
-    return ReaderPageTurnOps.getPageTurnWidth(this);
-  }
-
-  getPageTurnHeight(): number {
-    return ReaderPageTurnOps.getPageTurnHeight(this);
-  }
-
-  isVerticalPageTurnAnimation(): boolean {
-    return ReaderPageTurnOps.isVerticalPageTurnAnimation(this);
-  }
+  getPageTurnTargetText(direction: number): string { return ReaderPageTurnOps.getPageTurnTargetText(this, direction); }
+  getPageTurnTargetPageIndex(direction: number = 0): number { return ReaderPageTurnOps.getPageTurnTargetPageIndex(this, direction); }
+  getLocalPageTurnTargetPageIndex(direction: number): number { return ReaderPageTurnOps.getLocalPageTurnTargetPageIndex(this, direction); }
+  getAdjacentPageTurnChapterIndex(direction: number): number { return ReaderPageTurnOps.getAdjacentPageTurnChapterIndex(this, direction); }
+  updatePageTurnIncomingForDirection(direction: number): void { ReaderPageTurnOps.updatePageTurnIncomingForDirection(this, direction); }
+  buildPageTurnPreviewKey(direction: number, chapterIndex: number): string { return ReaderPageTurnOps.buildPageTurnPreviewKey(this, direction, chapterIndex); }
+  buildCachedAdjacentPageTurnPreview(direction: number, chapterIndex: number): PageTurnPreview { return ReaderPageTurnOps.buildCachedAdjacentPageTurnPreview(this, direction, chapterIndex); }
+  buildAdjacentPageTurnPreview(direction: number, chapterIndex: number, preparedBody: string): PageTurnPreview { return ReaderPageTurnOps.buildAdjacentPageTurnPreview(this, direction, chapterIndex, preparedBody); }
+  getPageTurnLoadingText(chapterIndex: number): string { return ReaderPageTurnOps.getPageTurnLoadingText(this, chapterIndex); }
+  applyPageTurnPreview(preview: PageTurnPreview): void { ReaderPageTurnOps.applyPageTurnPreview(this, preview); }
+  loadAdjacentPageTurnPreview(direction: number, chapterIndex: number, key: string): void { ReaderPageTurnOps.loadAdjacentPageTurnPreview(this, direction, chapterIndex, key); }
+  isCurrentReaderEngineBook(expectedBookUrl: string = this.book?.bookUrl || this.bookUrl): boolean { return ReaderPageTurnOps.isCurrentReaderEngineBook(this, expectedBookUrl); }
+  updateSlidePageEffect(offset: number): void { ReaderPageTurnOps.updateSlidePageEffect(this, offset); }
+  updateLegacySlidePageEffect(offset: number): void { ReaderPageTurnOps.updateLegacySlidePageEffect(this, offset); }
+  rollbackSlidePageEffect(): void { ReaderPageTurnOps.rollbackSlidePageEffect(this); }
+  async rollbackReaderPageCurl(duration: number, serial: number): Promise<void> { return ReaderPageTurnOps.rollbackReaderPageCurl(this, duration, serial); }
+  resetSlidePageEffect(): void { ReaderPageTurnOps.resetSlidePageEffect(this); }
+  getVisiblePageTurnIncomingText(): string { return ReaderPageTurnOps.getVisiblePageTurnIncomingText(this); }
+  getVisiblePageTurnIncomingOpacity(): number { return ReaderPageTurnOps.getVisiblePageTurnIncomingOpacity(this); }
+  getPageTurnWidth(): number { return ReaderPageTurnOps.getPageTurnWidth(this); }
+  getPageTurnHeight(): number { return ReaderPageTurnOps.getPageTurnHeight(this); }
+  isVerticalPageTurnAnimation(): boolean { return ReaderPageTurnOps.isVerticalPageTurnAnimation(this); }
 
   // 3D 仿真在单页与左右双页下都走卷曲画布管线；双页时由 ReaderEmulationFlipPainter 处理半页纸的卷起与落地。
-  effectivePageTurnAnimationType(): number {
-    return ReaderPageTurnOps.effectivePageTurnAnimationType(this);
-  }
-
-  isStackPageTurnAnimation(): boolean {
-    return ReaderPageTurnOps.isStackPageTurnAnimation(this);
-  }
-
-  isSimulationPageTurnAnimation(): boolean {
-    return ReaderPageTurnOps.isSimulationPageTurnAnimation(this);
-  }
-
-  is3DPageTurnAnimation(): boolean {
-    return ReaderPageTurnOps.is3DPageTurnAnimation(this);
-  }
+  effectivePageTurnAnimationType(): number { return ReaderPageTurnOps.effectivePageTurnAnimationType(this); }
+  isStackPageTurnAnimation(): boolean { return ReaderPageTurnOps.isStackPageTurnAnimation(this); }
+  isSimulationPageTurnAnimation(): boolean { return ReaderPageTurnOps.isSimulationPageTurnAnimation(this); }
+  is3DPageTurnAnimation(): boolean { return ReaderPageTurnOps.is3DPageTurnAnimation(this); }
 
   // 仿真与 3D 仿真都依赖同一个卷曲画布管线：截图当前页、底层铺目标页、由 Canvas 绘制翻页。
-  usesReaderPageCurlCanvas(): boolean {
-    return ReaderPageTurnOps.usesReaderPageCurlCanvas(this);
-  }
+  usesReaderPageCurlCanvas(): boolean { return ReaderPageTurnOps.usesReaderPageCurlCanvas(this); }
 
   // 对应官方示例 initPanPositionX：按手指落点决定卷曲从上角/下角/中部开始。
   // 折页背面的纸张底色：取主题背景色；背景图主题的背景色常为全透明，此时退回白纸避免透出下层。
-  readerFlapPaperColor(): string {
-    return ReaderPageTurnOps.readerFlapPaperColor(this);
-  }
-
-  captureReaderCurlStartRegion(event: GestureEvent): void {
-    ReaderPageTurnOps.captureReaderCurlStartRegion(this, event);
-  }
-
-  pageTurnAnimationCurve(): Curve {
-    return ReaderPageTurnOps.pageTurnAnimationCurve(this);
-  }
-
-  getReaderPageCurlCanvasHeight(): number {
-    return ReaderPageTurnOps.getReaderPageCurlCanvasHeight(this);
-  }
-
-  readerPageCurlKey(): string {
-    return ReaderPageTurnOps.readerPageCurlKey(this);
-  }
-
-  drawReaderPageCurl(): void {
-    ReaderPageTurnOps.drawReaderPageCurl(this);
-  }
-
-  requestReaderPageCurlCapture(): void {
-    ReaderPageTurnOps.requestReaderPageCurlCapture(this);
-  }
-
-  async captureReaderPageCurlSnapshots(serial: number, key: string): Promise<void> {
-    return ReaderPageTurnOps.captureReaderPageCurlSnapshots(this, serial, key);
-  }
-
-  async cropReaderPageCurlFrontToTurningLeaf(front: image.PixelMap): Promise<void> {
-    return ReaderPageTurnOps.cropReaderPageCurlFrontToTurningLeaf(this, front);
-  }
-
-  async ensureReaderPageCurlReady(): Promise<boolean> {
-    return ReaderPageTurnOps.ensureReaderPageCurlReady(this);
-  }
-
-  async completeSimulationPageTurnMotion(direction: number): Promise<void> {
-    return ReaderPageTurnOps.completeSimulationPageTurnMotion(this, direction);
-  }
-
-  resetReaderPageCurl(): void {
-    ReaderPageTurnOps.resetReaderPageCurl(this);
-  }
+  readerFlapPaperColor(): string { return ReaderPageTurnOps.readerFlapPaperColor(this); }
+  captureReaderCurlStartRegion(event: GestureEvent): void { ReaderPageTurnOps.captureReaderCurlStartRegion(this, event); }
+  pageTurnAnimationCurve(): Curve { return ReaderPageTurnOps.pageTurnAnimationCurve(this); }
+  getReaderPageCurlCanvasHeight(): number { return ReaderPageTurnOps.getReaderPageCurlCanvasHeight(this); }
+  readerPageCurlKey(): string { return ReaderPageTurnOps.readerPageCurlKey(this); }
+  drawReaderPageCurl(): void { ReaderPageTurnOps.drawReaderPageCurl(this); }
+  requestReaderPageCurlCapture(): void { ReaderPageTurnOps.requestReaderPageCurlCapture(this); }
+  async captureReaderPageCurlSnapshots(serial: number, key: string): Promise<void> { return ReaderPageTurnOps.captureReaderPageCurlSnapshots(this, serial, key); }
+  async cropReaderPageCurlFrontToTurningLeaf(front: image.PixelMap): Promise<void> { return ReaderPageTurnOps.cropReaderPageCurlFrontToTurningLeaf(this, front); }
+  async ensureReaderPageCurlReady(): Promise<boolean> { return ReaderPageTurnOps.ensureReaderPageCurlReady(this); }
+  async completeSimulationPageTurnMotion(direction: number): Promise<void> { return ReaderPageTurnOps.completeSimulationPageTurnMotion(this, direction); }
+  resetReaderPageCurl(): void { ReaderPageTurnOps.resetReaderPageCurl(this); }
 
   animateReaderPageCurlOffset(targetOffset: number, duration: number,
     completingPageTurn: boolean = false): Promise<void> {
     return ReaderPageTurnOps.animateReaderPageCurlOffset(this, targetOffset, duration, completingPageTurn);
   }
 
-  getSimulationSpineColor(): string {
-    return ReaderPageTurnOps.getSimulationSpineColor(this);
-  }
-
-  getPageTurnDistance(): number {
-    return ReaderPageTurnOps.getPageTurnDistance(this);
-  }
-
-  getPageSlideAxisOffset(): number {
-    return ReaderPageTurnOps.getPageSlideAxisOffset(this);
-  }
-
-  setPageSlideAxisOffset(offset: number): void {
-    ReaderPageTurnOps.setPageSlideAxisOffset(this, offset);
-  }
-
-  shouldRenderSlidingPageTurn(): boolean {
-    return ReaderPageTurnOps.shouldRenderSlidingPageTurn(this);
-  }
-
-  getPageTurnProgress(): number {
-    return ReaderPageTurnOps.getPageTurnProgress(this);
-  }
-
-  getCurrentPageTurnX(): number {
-    return ReaderPageTurnOps.getCurrentPageTurnX(this);
-  }
-
-  getCurrentPageTurnY(): number {
-    return ReaderPageTurnOps.getCurrentPageTurnY(this);
-  }
-
-  getCurrentPageTurnOpacity(): number {
-    return ReaderPageTurnOps.getCurrentPageTurnOpacity(this);
-  }
-
-  getSlideIncomingX(direction: number, offsetX: number, width: number = this.getPageTurnWidth()): number {
-    return ReaderPageTurnOps.getSlideIncomingX(this, direction, offsetX, width);
-  }
-
-  getIncomingSlideX(): number {
-    return ReaderPageTurnOps.getIncomingSlideX(this);
-  }
-
-  getSlideIncomingY(direction: number, offsetY: number, height: number = this.getPageTurnHeight()): number {
-    return ReaderPageTurnOps.getSlideIncomingY(this, direction, offsetY, height);
-  }
-
-  getIncomingSlideY(): number {
-    return ReaderPageTurnOps.getIncomingSlideY(this);
-  }
-
-  resetSlidePageState(): void {
-    ReaderPageTurnOps.resetSlidePageState(this);
-  }
-
-  clearPageTurnPreviewState(): void {
-    ReaderPageTurnOps.clearPageTurnPreviewState(this);
-  }
-
-  buildBookPreview(): string {
-    return ReaderPageTurnOps.buildBookPreview(this);
-  }
-
-  async jumpToAdjacentChapterFirstPage(direction: number): Promise<void> {
-    return ReaderPageTurnOps.jumpToAdjacentChapterFirstPage(this, direction);
-  }
-
-  async loadNextChapter(showLoading: boolean = false, showBoundaryToast: boolean = false): Promise<void> {
-    return ReaderPageTurnOps.loadNextChapter(this, showLoading, showBoundaryToast);
-  }
+  getSimulationSpineColor(): string { return ReaderPageTurnOps.getSimulationSpineColor(this); }
+  getPageTurnDistance(): number { return ReaderPageTurnOps.getPageTurnDistance(this); }
+  getPageSlideAxisOffset(): number { return ReaderPageTurnOps.getPageSlideAxisOffset(this); }
+  setPageSlideAxisOffset(offset: number): void { ReaderPageTurnOps.setPageSlideAxisOffset(this, offset); }
+  shouldRenderSlidingPageTurn(): boolean { return ReaderPageTurnOps.shouldRenderSlidingPageTurn(this); }
+  getPageTurnProgress(): number { return ReaderPageTurnOps.getPageTurnProgress(this); }
+  getCurrentPageTurnX(): number { return ReaderPageTurnOps.getCurrentPageTurnX(this); }
+  getCurrentPageTurnY(): number { return ReaderPageTurnOps.getCurrentPageTurnY(this); }
+  getCurrentPageTurnOpacity(): number { return ReaderPageTurnOps.getCurrentPageTurnOpacity(this); }
+  getSlideIncomingX(direction: number, offsetX: number, width: number = this.getPageTurnWidth()): number { return ReaderPageTurnOps.getSlideIncomingX(this, direction, offsetX, width); }
+  getIncomingSlideX(): number { return ReaderPageTurnOps.getIncomingSlideX(this); }
+  getSlideIncomingY(direction: number, offsetY: number, height: number = this.getPageTurnHeight()): number { return ReaderPageTurnOps.getSlideIncomingY(this, direction, offsetY, height); }
+  getIncomingSlideY(): number { return ReaderPageTurnOps.getIncomingSlideY(this); }
+  resetSlidePageState(): void { ReaderPageTurnOps.resetSlidePageState(this); }
+  clearPageTurnPreviewState(): void { ReaderPageTurnOps.clearPageTurnPreviewState(this); }
+  buildBookPreview(): string { return ReaderPageTurnOps.buildBookPreview(this); }
+  async jumpToAdjacentChapterFirstPage(direction: number): Promise<void> { return ReaderPageTurnOps.jumpToAdjacentChapterFirstPage(this, direction); }
+  async loadNextChapter(showLoading: boolean = false, showBoundaryToast: boolean = false): Promise<void> { return ReaderPageTurnOps.loadNextChapter(this, showLoading, showBoundaryToast); }
 
   async loadPrevChapter(toLastPage: boolean = false, showLoading: boolean = false,
     showBoundaryToast: boolean = false): Promise<void> {

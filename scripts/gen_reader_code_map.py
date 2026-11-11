@@ -217,9 +217,11 @@ w("")
 w("> 由 `scripts/gen_reader_code_map.py` 生成，**请勿手工改行号**。文件变动后在仓库根执行 "
   "`python scripts/gen_reader_code_map.py --apply` 重算（幂等，只增删注释行，保留所有代码原字节）。")
 w("> 面向 AI / 新人：先读本表定位职责域，再跳到 `entry/src/main/ets/pages/ReadBook.ets` 对应行号，"
-  "避免把 2.4 万行整篇塞进上下文。")
+  "避免把单文件整篇塞进上下文。")
 w("")
-_DELEGATE_RE = re.compile(r"^    (?:return )?Reader\w+Ops\.")
+# 委托壳有两种形态：P0.5 外移时保留的 3 行转发体，以及被折叠成单行
+# `{ return XxxOps.name(this, ...); }` 的紧凑形式；两者都要计入业务方法数。
+_DELEGATE_RE = re.compile(r"\bReader\w+Ops\.\w+\(this\b")
 _OPS_STATS = []
 for _path in sorted(glob.glob("entry/src/main/ets/reader/*Ops.ets")):
     try:
@@ -239,7 +241,7 @@ w("- 响应式字段（`@State` / `@StorageLink` / `@StorageProp`）见下方「
   "struct 内只保留 1 行委托；整个 `ets/` 目录 **0 个** "
   "`@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。"
   % (sum(1 for ln in out if ln.startswith("  @Builder")),
-     sum(1 for ln in out if _DELEGATE_RE.match(ln))))
+     sum(1 for ln in out if _DELEGATE_RE.search(ln))))
 w("- 文件内唯一分区手段是本工具写入的 `//region` / `//endregion`（VS Code 与 IntelliJ/DevEco Studio "
   "都能折叠）；每个区块头还带一行 `// [map] 契约:` 说明本区允许读写哪些状态。")
 w("- 已存在的可复用范式：`reader/ReaderPureUtils.ets`（纯函数）、"
