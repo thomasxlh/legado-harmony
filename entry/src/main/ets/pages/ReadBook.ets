@@ -104,6 +104,8 @@ import {
 } from '../components/ReaderSettingsRows';
 import { ReaderCommentPanel } from '../components/ReaderCommentPanel';
 import { ReaderTtsExpandedControlsBar, ReaderTtsExpandedControlsCompat } from '../components/ReaderTtsExpandedControls';
+import { ReaderTocPanelSummary } from '../components/ReaderTocPanelSummary';
+import { ReaderSimulationHalfPaperBackground } from '../components/ReaderSimulationHalfPaperBackground';
 import { ReaderBookmarkActionMenu } from '../components/ReaderMenuItems';
 import { ReaderTocChapterList } from '../components/ReaderTocChapterList';
 import { ReaderActionMenuItem, ReaderCommentPanelDragOverlay, ReaderFloatingIconMenuItem, ReaderHdsMenuItem, ReaderReplaceRulesEntryItem, ReaderActionMenuPanel } from '../components/ReaderMenuItems';
@@ -3246,7 +3248,47 @@ TtsGlobalCapsule({
         .margin({ left: 20, right: 20 })
 
         if (this.tocPanelTab === 0) {
-          this.tocPanelSummary()
+          ReaderTocPanelSummary({
+            chapterCount: this.chapters.length,
+            quickJumpInputVisible: this.tocQuickJumpInputVisible,
+            quickJumpDraft: this.tocQuickJumpDraft,
+            quickJumpArmed: this.tocQuickJumpArmed,
+            searchActive: this.isTocSearchActive(),
+            searchMatchCount: this.tocSearchChapterIndexes.length,
+            reverseOrder: this.tocReverseOrder,
+            searchVisible: this.tocSearchVisible,
+            searchQuery: this.tocSearchQuery,
+            searchLoading: this.tocSearchLoading,
+            textColor: this.getTextColor(),
+            subTextColor: this.getSubTextColor(),
+            accentColor: this.accentColor(),
+            iconColor: this.readerControlIconColor(),
+            darkMode: this.isReaderThemeDark(),
+            onQuickJumpDraftChange: (value: string): void => {
+              this.tocQuickJumpDraft = value;
+            },
+            onSubmitQuickJump: (): void => {
+              this.submitTocQuickJump();
+            },
+            onCurrentPositionClick: (): void => {
+              this.handleTocCurrentPositionClick();
+            },
+            onToggleOrder: (): void => {
+              this.toggleTocOrder();
+            },
+            onRefreshToc: (): void => {
+              this.refreshTocFromPanel();
+            },
+            onToggleSearch: (): void => {
+              this.toggleTocSearch();
+            },
+            onSearchQueryChange: (value: string): void => {
+              this.tocSearchQuery = value;
+            },
+            onClearSearch: (): void => {
+              this.clearTocSearchResult();
+            }
+          })
           ReaderTocChapterList({
             chapters: this.tocVisibleChapters,
             currentChapterIndex: this.currentChapterIndex,
@@ -3406,169 +3448,6 @@ TtsGlobalCapsule({
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  tocPanelSummary() {
-    Column({ space: 8 }) {
-      Row() {
-        if (this.tocQuickJumpInputVisible && !this.isTocSearchActive()) {
-          TextInput({ text: this.tocQuickJumpDraft, placeholder: `1-${this.chapters.length}` })
-            .type(InputType.Normal)
-            .enterKeyType(EnterKeyType.Go)
-            .key('tocQuickJumpChapterInput')
-            .defaultFocus(true)
-            .fontSize(13)
-            .fontColor(this.getTextColor())
-            .textAlign(TextAlign.Center)
-            .width(92)
-            .height(34)
-            .padding({ left: 8, right: 8 })
-            .borderRadius(17)
-            .backgroundColor(this.isReaderThemeDark() ? '#2BFFFFFF' : '#14000000')
-            .accessibilityText('输入目标章节序号，按回车定位')
-            .onChange((value: string) => {
-              this.tocQuickJumpDraft = value.replace(/[^0-9]/g, '').substring(0, 6);
-            })
-            .onSubmit(() => {
-              this.submitTocQuickJump();
-            })
-        } else if (this.isTocSearchActive()) {
-          Text(`找到 ${this.tocSearchChapterIndexes.length} 章`)
-            .fontSize(14)
-            .fontColor(this.getSubTextColor())
-            .margin({ left: 6 })
-        } else {
-          Text(`共 ${this.chapters.length} 章`)
-            .fontSize(14)
-            .fontColor(this.getSubTextColor())
-            .margin({ left: 6 })
-            .padding({ left: 8, right: 8 })
-            .height(34)
-            .textAlign(TextAlign.Center)
-            .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
-            .accessibilityText(this.tocQuickJumpArmed ? '再次点击输入目标章节' : '点击回到当前章节')
-            .onClick(() => {
-              this.handleTocCurrentPositionClick();
-            })
-        }
-        Stack({ alignContent: Alignment.Center }) {
-          Column({ space: 0 }) {
-            SymbolGlyph($r('sys.symbol.chevron_up'))
-              .fontSize(11)
-              .fontColor([this.tocReverseOrder ? this.accentColor() : this.getTextColor()])
-            SymbolGlyph($r('sys.symbol.chevron_down'))
-              .fontSize(11)
-              .fontColor([this.tocReverseOrder ? this.accentColor() : this.getTextColor()])
-          }
-          .alignItems(HorizontalAlign.Center)
-        }
-          .width(34)
-          .height(34)
-          .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
-          .borderRadius(17)
-          .backgroundColor(this.tocReverseOrder ?
-            (this.isReaderThemeDark() ? '#24384A' : '#E8F1FF') :
-            (this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000'))
-          .accessibilityText(this.tocReverseOrder ? '切换为正序目录' : '切换为倒序目录')
-          .onClick(() => this.toggleTocOrder())
-          .margin({ left: 4 })
-        Blank()
-          .layoutWeight(1)
-        if (this.isTocSearchActive()) {
-          Text(`匹配 ${this.tocSearchChapterIndexes.length}`)
-            .fontSize(12)
-            .fontColor(this.getTextColor())
-            .height(34)
-            .padding({ left: 12, right: 12 })
-            .textAlign(TextAlign.Center)
-            .borderRadius(16)
-            .backgroundColor(this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000')
-        }
-        ImmersiveBackButton({
-          icon: $r('sys.symbol.arrow_clockwise'),
-          iconOffsetX: 0,
-          iconColor: this.readerControlIconColor(),
-          darkMode: this.isReaderThemeDark(),
-          buttonSize: 34,
-          containerWidth: 34,
-          containerHeight: 34,
-          startInset: 0,
-          materialScale: 0.7,
-          compactLayout: true,
-          accessibilityLabel: '刷新目录',
-          onBack: () => {
-            this.refreshTocFromPanel();
-          }
-        })
-          .margin({ left: 8 })
-        ImmersiveBackButton({
-          icon: $r('sys.symbol.magnifyingglass'),
-          iconOffsetX: 0,
-          iconColor: this.tocSearchVisible ? this.accentColor() : this.getTextColor(),
-          darkMode: this.isReaderThemeDark(),
-          buttonSize: 34,
-          containerWidth: 34,
-          containerHeight: 34,
-          startInset: 0,
-          materialScale: 0.7,
-          compactLayout: true,
-          accessibilityLabel: '搜索目录',
-          onBack: () => {
-            this.toggleTocSearch();
-          }
-        })
-          .margin({ left: 8 })
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-
-      if (this.tocSearchVisible) {
-        Row({ space: 8 }) {
-          SymbolGlyph($r('sys.symbol.magnifyingglass'))
-            .fontSize(18)
-            .fontColor([this.getSubTextColor()])
-          TextInput({ text: this.tocSearchQuery,
-            placeholder: this.tocSearchLoading ? '正在载入完整目录…' : '搜索章节名称' })
-            .key('tocChapterSearchInput')
-            .defaultFocus(true)
-            .fontSize(14)
-            .fontColor(this.getTextColor())
-            .layoutWeight(1)
-            .height(38)
-            .padding({ left: 0, right: 0 })
-            .backgroundColor(Color.Transparent)
-            .enterKeyType(EnterKeyType.Search)
-            .onChange((value: string) => {
-              this.tocSearchQuery = value;
-            })
-            .onSubmit(() => {
-              this.submitTocSearch();
-            })
-          if (this.tocSearchQuery) {
-            Text('×')
-              .fontSize(22)
-              .fontColor(this.getSubTextColor())
-              .width(32)
-              .height(38)
-              .textAlign(TextAlign.Center)
-              .accessibilityText('清空目录搜索')
-              .onClick(() => {
-                this.clearTocSearchResult();
-                setTimeout(() => focusControl.requestFocus('tocChapterSearchInput'), 30);
-              })
-          }
-        }
-        .width('100%')
-        .height(40)
-        .padding({ left: 12, right: 8 })
-        .borderRadius(20)
-        .backgroundColor(this.isReaderThemeDark() ? '#2BFFFFFF' : '#14000000')
-      }
-    }
-    .width('100%')
-    .padding({ left: 20, right: 16, top: 18, bottom: 10 })
-    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
@@ -7502,7 +7381,7 @@ TtsGlobalCapsule({
         // The back of the turning leaf belongs to the opposite half of the target spread.
         // Crop it from one spread-sized background instead of fitting a second wallpaper
         // inside this half-width snapshot.
-        this.readerSimulationHalfPaperBackground(this.pageSlideDirection < 0)
+        ReaderSimulationHalfPaperBackground({ rightHalf: this.pageSlideDirection < 0, surfaceColor: this.getBackgroundColor(), backgroundAssetId: this.getBackgroundAssetId(), customImage: this.currentReaderTheme().backgroundImageUri, customImageFit: this.getBackgroundImageFit(), viewportWidthHint: this.getPageTurnWidth(), viewportHeightHint: this.getReaderBackgroundViewportHeight(), rightOrigin: this.getReaderDoublePageRightOrigin() })
         if (this.pageSlideDirection > 0) {
           this.readerSimulationIncomingHalfPage(this.pageTurnIncomingText, this.pageTurnIncomingPageIndex,
             this.pageTurnIncomingPageStart, this.pageTurnIncomingRenderVersion,
@@ -7523,7 +7402,7 @@ TtsGlobalCapsule({
       // second native Paragraph controller made it jump by a fractional layout pixel whenever the snapshot
       // became ready. Only the destination half that really changes needs an opaque paper and正文 layer here.
       Stack() {
-        this.readerSimulationHalfPaperBackground(this.pageSlideDirection > 0)
+        ReaderSimulationHalfPaperBackground({ rightHalf: this.pageSlideDirection > 0, surfaceColor: this.getBackgroundColor(), backgroundAssetId: this.getBackgroundAssetId(), customImage: this.currentReaderTheme().backgroundImageUri, customImageFit: this.getBackgroundImageFit(), viewportWidthHint: this.getPageTurnWidth(), viewportHeightHint: this.getReaderBackgroundViewportHeight(), rightOrigin: this.getReaderDoublePageRightOrigin() })
         if (this.pageSlideDirection > 0) {
           this.readerSimulationIncomingHalfPage(this.pageTurnIncomingSecondaryText,
             this.pageTurnIncomingPageIndex + 1, this.pageTurnIncomingSecondaryPageStart,
@@ -7567,28 +7446,6 @@ TtsGlobalCapsule({
         this.readerPageCurlCanvasReady = true;
         this.drawReaderPageCurl();
       })
-  }
-
-  @Builder
-  readerSimulationHalfPaperBackground(rightHalf: boolean) {
-    Stack() {
-      ReaderThemeBackground({
-        surfaceColor: this.getBackgroundColor(),
-        backgroundAssetId: this.getBackgroundAssetId(),
-        customImage: this.currentReaderTheme().backgroundImageUri,
-        customImageFit: this.getBackgroundImageFit(),
-        viewportWidthHint: this.getPageTurnWidth(),
-        viewportHeightHint: this.getReaderBackgroundViewportHeight()
-      })
-        .width(this.getPageTurnWidth())
-        .height('100%')
-        .position({ x: rightHalf ? -this.getReaderDoublePageRightOrigin() : 0, y: 0 })
-        .hitTestBehavior(HitTestMode.None)
-    }
-    .width('100%')
-    .height('100%')
-    .clip(true)
-    .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
