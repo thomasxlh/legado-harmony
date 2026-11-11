@@ -84,6 +84,15 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
+import { ReaderMenuDismissLayer, ReaderSettingsDismissLayer } from '../components/ReaderDismissLayers';
+import {
+  ReaderCommentPanelDragHandle,
+  ReaderFontEntryItem,
+  ReaderBookmarkDeleteAction,
+  ReaderBookmarkMultiSelectAction
+} from '../components/ReaderStaticItems';
+import { ReaderBookmarkActionItem } from '../components/ReaderBookmarkActionItem';
+import { ReaderV2TtsHighlightRect, ReaderV2SelectionHighlightRect } from '../components/ReaderV2HighlightRects';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
 import { ReaderContentPreprocessor } from '../core/concurrency/ReaderContentPreprocessor';
 import { CooperativeScheduler } from '../core/concurrency/CooperativeScheduler';
@@ -2256,11 +2265,20 @@ export struct ReadBookPage {
       }
 
       if (this.showMenu && !this.showToc && !this.showSettings) {
-        this.menuDismissLayer()
+        ReaderMenuDismissLayer({
+          onDismiss: (): void => {
+            this.hideReaderPanels();
+          }
+        })
       }
 
       if (this.showSettings) {
-        this.settingsDismissLayer()
+        ReaderSettingsDismissLayer({
+          panelHeight: this.readerSettingsPanelHeight(),
+          onDismiss: (): void => {
+            this.closeSettingsPanelKeepMenu();
+          }
+        })
       }
 
       if (this.showMenu) {
@@ -2404,7 +2422,10 @@ export struct ReadBookPage {
 
       Stack() {
         Column() {
-          this.readerCommentPanelDragHandle()
+          ReaderCommentPanelDragHandle({
+            dark: this.isReaderThemeDark(),
+            handleHeight: LeafFns.readerCommentPanelDragHandleHeight()
+          })
           Stack() {
             Web({ src: this.readerCommentPanelUrl, controller: this.readerCommentPanelController })
             .width('100%')
@@ -2467,31 +2488,6 @@ export struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  readerCommentPanelDragHandle() {
-    Stack({ alignContent: Alignment.Bottom }) {
-      Row()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(this.isReaderThemeDark() ? '#52000000' : '#26000000')
-        .hitTestBehavior(HitTestMode.None)
-
-      Row()
-        .width(34)
-        .height(3)
-        .borderRadius(1.5)
-        .borderWidth(0)
-        .backgroundColor(this.isReaderThemeDark() ? '#66FFFFFF' : '#33000000')
-        .hitTestBehavior(HitTestMode.None)
-    }
-    .width('100%')
-    .height(LeafFns.readerCommentPanelDragHandleHeight())
-    .borderWidth(0)
-    .zIndex(2)
-    .accessibilityText('上滑展开评论面板')
-    .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
@@ -3542,26 +3538,6 @@ export struct ReadBookPage {
   }
 
   @Builder
-  bookmarkDeleteAction(bookmark: Bookmark) {
-    Column({ space: 4 }) {
-      SymbolGlyph($r('sys.symbol.trash'))
-        .fontSize(22)
-        .fontColor(['#FFFFFF'])
-      Text('删除')
-        .fontSize(11)
-        .fontColor('#FFFFFF')
-    }
-    .width(64)
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor('#D94841')
-    .onClick(() => {
-      this.deleteBookmark(bookmark);
-    })
-  }
-
-  @Builder
   readerActionMenu() {
     Column() {
       this.readerActionMenuItem(
@@ -3738,8 +3714,17 @@ export struct ReadBookPage {
   @Builder
   bookmarkFallbackSwipeActions(bookmark: Bookmark) {
     Row() {
-      this.bookmarkMultiSelectAction(bookmark)
-      this.bookmarkDeleteAction(bookmark)
+      ReaderBookmarkMultiSelectAction({
+        accent: this.accentColor(),
+        onClickAction: (): void => {
+          this.enterBookmarkMultiSelect(bookmark.bookmarkUrl);
+        }
+      })
+      ReaderBookmarkDeleteAction({
+        onClickAction: (): void => {
+          this.deleteBookmark(bookmark);
+        }
+      })
     }
     .height('100%')
   }
@@ -4464,26 +4449,6 @@ export struct ReadBookPage {
     return ReaderTextPrepOps.ttsQuickProgress(this);
   }
 
-  @Builder
-  bookmarkMultiSelectAction(bookmark: Bookmark) {
-    Column({ space: 4 }) {
-      SymbolGlyph($r('sys.symbol.checkmark_circle'))
-        .fontSize(22)
-        .fontColor(['#FFFFFF'])
-      Text('多选')
-        .fontSize(11)
-        .fontColor('#FFFFFF')
-    }
-    .width(64)
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor(this.accentColor())
-    .onClick(() => {
-      this.enterBookmarkMultiSelect(bookmark.bookmarkUrl);
-    })
-  }
-
   showBookmarkActions(bookmark: Bookmark, event: GestureEvent): void {
     ReaderTextPrepOps.showBookmarkActions(this, bookmark, event);
   }
@@ -4513,18 +4478,28 @@ export struct ReadBookPage {
         })
 
       Column() {
-        this.bookmarkContextActionItem($r('sys.symbol.checkmark_circle'), '多选', this.getTextColor(), () => {
-          if (this.pendingBookmarkAction) {
-            const bookmarkUrl = this.pendingBookmarkAction.bookmarkUrl;
-            this.closeBookmarkActionMenu();
-            this.enterBookmarkMultiSelect(bookmarkUrl);
+        ReaderBookmarkActionItem({
+          icon: $r('sys.symbol.checkmark_circle'),
+          label: '多选',
+          color: this.getTextColor(),
+          action: (): void => {
+            if (this.pendingBookmarkAction) {
+              const bookmarkUrl = this.pendingBookmarkAction.bookmarkUrl;
+              this.closeBookmarkActionMenu();
+              this.enterBookmarkMultiSelect(bookmarkUrl);
+            }
           }
         })
-        this.bookmarkContextActionItem($r('sys.symbol.trash'), '删除', this.dangerColor(), () => {
-          if (this.pendingBookmarkAction) {
-            const bookmark = this.pendingBookmarkAction;
-            this.closeBookmarkActionMenu();
-            this.deleteBookmark(bookmark);
+        ReaderBookmarkActionItem({
+          icon: $r('sys.symbol.trash'),
+          label: '删除',
+          color: this.dangerColor(),
+          action: (): void => {
+            if (this.pendingBookmarkAction) {
+              const bookmark = this.pendingBookmarkAction;
+              this.closeBookmarkActionMenu();
+              this.deleteBookmark(bookmark);
+            }
           }
         })
       }
@@ -4539,25 +4514,6 @@ export struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  bookmarkContextActionItem(icon: Resource, label: string, color: string, action: () => void) {
-    Row({ space: 12 }) {
-      SymbolGlyph(icon)
-        .fontSize(21)
-        .fontColor([color])
-        .width(26)
-      Text(label)
-        .fontSize(15)
-        .fontColor(color)
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(44)
-    .padding({ left: 14, right: 14 })
-    .alignItems(VerticalAlign.Center)
-    .onClick(action)
   }
 
   getTocCover(): string {
@@ -6755,7 +6711,13 @@ export struct ReadBookPage {
           this.setReaderTextAlignByIndex(index);
         }, 'reader_text_align_select')
       this.readerHeaderFooterSettingsPanel()
-      this.readerFontEntryItem()
+      ReaderFontEntryItem({
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        onOpen: (): void => {
+          router.pushUrl({ url: 'pages/ReaderFontSettings' });
+        }
+      })
 
       this.readerSwitchSettingItem('正文扩展至状态栏', '开启后正文同时延伸到顶部状态栏和底部系统安全区', this.readerExtendToStatusBar,
         (checked: boolean) => {
@@ -7178,32 +7140,6 @@ export struct ReadBookPage {
       this.readerPreloadSettingItem()
     }
     .width('100%')
-  }
-
-  @Builder
-  readerFontEntryItem() {
-    Row() {
-      Column() {
-        Text('阅读字体')
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-        Text('正文 / 标题 / 正则样式设置')
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-          .margin({ top: 4 })
-      }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(18)
-        .fontColor([this.getSubTextColor()])
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      router.pushUrl({ url: 'pages/ReaderFontSettings' });
-    })
   }
 
   @Builder
@@ -10600,41 +10536,6 @@ export struct ReadBookPage {
     return ReaderStyledTextOps.getTtsHighlightTextColor(this);
   }
 
-  @Builder
-  menuDismissLayer() {
-    Blank()
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Color.Transparent)
-      .onClick(() => {
-        this.hideReaderPanels();
-      })
-      .gesture(
-        PanGesture({ direction: PanDirection.Horizontal })
-          .onActionStart(() => {
-            this.hideReaderPanels();
-          })
-      )
-  }
-
-  @Builder
-  settingsDismissLayer() {
-    Column() {
-      Blank()
-        .width('100%')
-        .layoutWeight(1)
-        .onClick(() => {
-          this.closeSettingsPanelKeepMenu();
-        })
-      Blank()
-        .width('100%')
-        .height(this.readerSettingsPanelHeight())
-    }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Color.Transparent)
-  }
-
   hideReaderPanels() {
     ReaderStyledTextOps.hideReaderPanels(this);
   }
@@ -10746,30 +10647,6 @@ export struct ReadBookPage {
     if (!page) return [];
     return LeafFns.readerV2DisplayHighlightRects(page, this.readerV2SelectionDisplayStart,
       this.readerV2SelectionDisplayEnd, 'selection');
-  }
-
-  @Builder
-  readerV2TtsHighlightRect(rect: ReaderV2HighlightRect) {
-    Row() {
-    }
-    .width(px2vp(rect.widthPx))
-    .height(px2vp(rect.heightPx))
-    .backgroundColor(0x55FFE58A)
-    .position({ x: px2vp(rect.leftPx), y: px2vp(rect.topPx) })
-    .zIndex(1)
-    .hitTestBehavior(HitTestMode.None)
-  }
-
-  @Builder
-  readerV2SelectionHighlightRect(rect: ReaderV2HighlightRect) {
-    Row() {
-    }
-    .width(px2vp(rect.widthPx))
-    .height(px2vp(rect.heightPx))
-    .backgroundColor(0x663B82F6)
-    .position({ x: px2vp(rect.leftPx), y: px2vp(rect.topPx) })
-    .zIndex(2)
-    .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
@@ -10927,7 +10804,12 @@ export struct ReadBookPage {
       ForEach(this.readerV2SelectionHighlightRects(
         this.currentChapterIndex, pageIndex, this.pagedContentText, paintVersion),
       (rect: ReaderV2HighlightRect) => {
-        this.readerV2SelectionHighlightRect(rect)
+        ReaderV2SelectionHighlightRect({
+          rectLeftPx: rect.leftPx,
+          rectTopPx: rect.topPx,
+          rectWidthPx: rect.widthPx,
+          rectHeightPx: rect.heightPx
+        })
       }, (rect: ReaderV2HighlightRect) => rect.key)
     }
     .width(halfWidth ? this.getReaderPageColumnWidth() : '100%')
@@ -10967,7 +10849,12 @@ export struct ReadBookPage {
       ForEach(this.readerV2TtsHighlightRects(
         this.currentChapterIndex, pageIndex, this.pagedContentText, paintVersion),
       (rect: ReaderV2HighlightRect) => {
-        this.readerV2TtsHighlightRect(rect)
+        ReaderV2TtsHighlightRect({
+          rectLeftPx: rect.leftPx,
+          rectTopPx: rect.topPx,
+          rectWidthPx: rect.widthPx,
+          rectHeightPx: rect.heightPx
+        })
       }, (rect: ReaderV2HighlightRect) => rect.key)
     }
     .width(halfWidth ? this.getReaderPageColumnWidth() : '100%')
@@ -10978,40 +10865,6 @@ export struct ReadBookPage {
   readerV2PageFragments(chapterIndex: number, pageIndex: number, source: string): ReaderV2PageFragment[] {
     const page = this.readerV2Page(chapterIndex, pageIndex, source);
     return page ? page.fragments : [];
-  }
-
-  @Builder
-  readerV2RegexBubbleSegment(segment: ReaderV2RegexBubbleSegment) {
-    Row({ space: 0 }) {
-      if (segment.leading && segment.leadingCapWidthPx > 0.5) {
-        Image(ThemeAssetRegistry.regexBubbleCap(segment.styleId))
-          .width(px2vp(segment.leadingCapWidthPx))
-          .height(px2vp(segment.capSizePx))
-          .objectFit(ImageFit.Contain)
-      }
-      Blank()
-        .layoutWeight(1)
-      if (segment.trailing && segment.trailingCapWidthPx > 0.5) {
-        Image(ThemeAssetRegistry.regexBubbleCap(segment.styleId))
-          .width(px2vp(segment.trailingCapWidthPx))
-          .height(px2vp(segment.capSizePx))
-          .objectFit(ImageFit.Contain)
-          .rotate({ angle: 180 })
-      }
-    }
-    .alignItems(VerticalAlign.Center)
-    .width(px2vp(Math.max(1, segment.rect.width())))
-    .height(px2vp(Math.max(1, segment.rect.height())))
-    .backgroundColor(segment.backgroundColor)
-    .borderRadius({
-      topLeft: px2vp(segment.radiusTopLeftPx),
-      topRight: px2vp(segment.radiusTopRightPx),
-      bottomRight: px2vp(segment.radiusBottomRightPx),
-      bottomLeft: px2vp(segment.radiusBottomLeftPx)
-    })
-    .shadow(LeafFns.readerV2RegexBubbleShadow(segment))
-    .position({ x: px2vp(segment.rect.left), y: px2vp(segment.rect.top) })
-    .hitTestBehavior(HitTestMode.None)
   }
 
   readerV2NativeSelectionKey(role: string, chapterIndex: number, pageIndex: number,
