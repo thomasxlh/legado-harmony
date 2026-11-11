@@ -151,6 +151,7 @@ import { ReaderComicBoundaryHint, ReaderComicInteractionLayer,
 import { ReaderFloatingDayNightMenuItem, ReaderHdsDayNightMenuItem, ReaderBookmarkSwipeCard,
   ReaderSimulationPaperBackground, ReaderParagraphGap, ReaderTapLayer } from '../components/ReaderPageFrameItems';
 import { ReaderV2PageHighlightOverlay } from '../components/ReaderV2PageHighlightOverlay';
+import { ReaderV2HighlightOverlayPage } from '../components/ReaderV2HighlightOverlayPage';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
 import { ReaderContentPreprocessor } from '../core/concurrency/ReaderContentPreprocessor';
 import { CooperativeScheduler } from '../core/concurrency/CooperativeScheduler';
@@ -2105,14 +2106,42 @@ export struct ReadBookPage {
             // native Paragraph node across same-page updates, and some ArkUI builds consequently skip nested
             // ForEach evaluation. Rekey only this lightweight rectangle layer for every audible chunk.
             ForEach(this.currentReaderV2TtsOverlayKeys(this.readerV2TtsPaintVersion), (_focusKey: string) => {
-              this.readerCurrentV2TtsOverlay(this.readerV2TtsPaintVersion)
+              ReaderV2HighlightOverlayPage({
+                currentRects: this.readerV2TtsHighlightRects(
+                  this.currentChapterIndex, this.currentPageIndex, this.pagedContentText,
+                  this.readerV2TtsPaintVersion),
+                secondaryRects: this.readerV2TtsHighlightRects(
+                  this.currentChapterIndex, this.currentPageIndex + 1, this.pagedContentText,
+                  this.readerV2TtsPaintVersion),
+                doublePage: this.isLandscapeDoublePageActive(),
+                columnWidth: this.getReaderPageColumnWidth(),
+                contentTopPadding: this.getReaderPageContentTopPadding(),
+                translateX: this.getCurrentPageTurnX(),
+                translateY: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY,
+                layerOpacity: this.getCurrentPageTurnOpacity(),
+                kind: 'tts'
+              })
             }, (focusKey: string) => focusKey)
             // Native Text supplies selection handles and the system menu, but its line boxes do not exactly match
             // the Paragraph glyph boxes used to paint正文. Paint the range from Paragraph geometry so text stays
             // vertically centered in the blue selection in every page-turn mode.
             ForEach(this.currentReaderV2SelectionOverlayKeys(this.readerV2SelectionPaintVersion),
               (_selectionPaintKey: string) => {
-              this.readerCurrentV2SelectionOverlay(this.readerV2SelectionPaintVersion)
+              ReaderV2HighlightOverlayPage({
+                currentRects: this.readerV2SelectionHighlightRects(
+                  this.currentChapterIndex, this.currentPageIndex, this.pagedContentText,
+                  this.readerV2SelectionPaintVersion),
+                secondaryRects: this.readerV2SelectionHighlightRects(
+                  this.currentChapterIndex, this.currentPageIndex + 1, this.pagedContentText,
+                  this.readerV2SelectionPaintVersion),
+                doublePage: this.isLandscapeDoublePageActive(),
+                columnWidth: this.getReaderPageColumnWidth(),
+                contentTopPadding: this.getReaderPageContentTopPadding(),
+                translateX: this.getCurrentPageTurnX(),
+                translateY: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY,
+                layerOpacity: this.getCurrentPageTurnOpacity(),
+                kind: 'selection'
+              })
             }, (selectionPaintKey: string) => selectionPaintKey)
             // The retained V2 host above only updates its native canvas during same-chapter turns. Selection Text
             // must be page-keyed outside that host; otherwise its content advances while its paragraph coordinates
@@ -8907,92 +8936,6 @@ TtsGlobalCapsule({
         this.readerV2NativeSelectionPage(
           `${this.currentReaderSurfaceIndex() === 0 ? 'current_primary' : 'current_alternate'}_single`,
           this.currentChapterIndex, this.currentPageIndex, this.pagedContentText)
-      }
-    }
-    .width('100%')
-    .height('100%')
-    .padding({ top: this.getReaderPageContentTopPadding() })
-    .translate({ x: this.getCurrentPageTurnX(), y: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY })
-    .opacity(this.getCurrentPageTurnOpacity())
-    .hitTestBehavior(HitTestMode.None)
-  }
-
-  @Builder
-  readerCurrentV2SelectionOverlay(paintVersion: number) {
-    Column() {
-      if (this.isLandscapeDoublePageActive()) {
-        Row() {
-          ReaderV2PageHighlightOverlay({
-            rects: this.readerV2SelectionHighlightRects(
-              this.currentChapterIndex, this.currentPageIndex, this.pagedContentText, paintVersion),
-            halfWidth: true,
-            columnWidth: this.getReaderPageColumnWidth(),
-            kind: 'selection'
-          })
-          Blank()
-            .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
-            .height('100%')
-          ReaderV2PageHighlightOverlay({
-            rects: this.readerV2SelectionHighlightRects(
-              this.currentChapterIndex, this.currentPageIndex + 1, this.pagedContentText, paintVersion),
-            halfWidth: true,
-            columnWidth: this.getReaderPageColumnWidth(),
-            kind: 'selection'
-          })
-        }
-        .width('100%')
-        .height('100%')
-        .alignItems(VerticalAlign.Center)
-      } else {
-        ReaderV2PageHighlightOverlay({
-          rects: this.readerV2SelectionHighlightRects(
-            this.currentChapterIndex, this.currentPageIndex, this.pagedContentText, paintVersion),
-          columnWidth: this.getReaderPageColumnWidth(),
-          kind: 'selection'
-        })
-      }
-    }
-    .width('100%')
-    .height('100%')
-    .padding({ top: this.getReaderPageContentTopPadding() })
-    .translate({ x: this.getCurrentPageTurnX(), y: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY })
-    .opacity(this.getCurrentPageTurnOpacity())
-    .hitTestBehavior(HitTestMode.None)
-  }
-
-  @Builder
-  readerCurrentV2TtsOverlay(paintVersion: number) {
-    Column() {
-      if (this.isLandscapeDoublePageActive()) {
-        Row() {
-          ReaderV2PageHighlightOverlay({
-            rects: this.readerV2TtsHighlightRects(
-              this.currentChapterIndex, this.currentPageIndex, this.pagedContentText, paintVersion),
-            halfWidth: true,
-            columnWidth: this.getReaderPageColumnWidth(),
-            kind: 'tts'
-          })
-          Blank()
-            .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
-            .height('100%')
-          ReaderV2PageHighlightOverlay({
-            rects: this.readerV2TtsHighlightRects(
-              this.currentChapterIndex, this.currentPageIndex + 1, this.pagedContentText, paintVersion),
-            halfWidth: true,
-            columnWidth: this.getReaderPageColumnWidth(),
-            kind: 'tts'
-          })
-        }
-        .width('100%')
-        .height('100%')
-        .alignItems(VerticalAlign.Center)
-      } else {
-        ReaderV2PageHighlightOverlay({
-          rects: this.readerV2TtsHighlightRects(
-            this.currentChapterIndex, this.currentPageIndex, this.pagedContentText, paintVersion),
-          columnWidth: this.getReaderPageColumnWidth(),
-          kind: 'tts'
-        })
       }
     }
     .width('100%')
