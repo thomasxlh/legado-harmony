@@ -108,6 +108,7 @@ import { ReaderTocPanelSummary } from '../components/ReaderTocPanelSummary';
 import { ReaderSimulationHalfPaperBackground } from '../components/ReaderSimulationHalfPaperBackground';
 import { ReaderBookmarkActionMenu } from '../components/ReaderMenuItems';
 import { ReaderBookmarkList } from '../components/ReaderBookmarkList';
+import { ReaderHdsBottomMenu, ReaderHdsFloatingActionBar } from '../components/ReaderHdsMenuBars';
 import { ReaderTocChapterList } from '../components/ReaderTocChapterList';
 import { ReaderActionMenuItem, ReaderCommentPanelDragOverlay, ReaderFloatingIconMenuItem, ReaderHdsMenuItem, ReaderReplaceRulesEntryItem, ReaderActionMenuPanel } from '../components/ReaderMenuItems';
 import {
@@ -2353,11 +2354,52 @@ export struct ReadBookPage {
 
       if (this.showMenu && !this.showToc && !this.showSettings && this.chapters.length > 0) {
         if (LeafFns.supportsReaderImmersiveMaterial()) {
-          if (this.hdsMaterialRenderBranch) {
-            this.readerHdsFloatingBottomMenu()
-          } else {
-            this.readerHdsFloatingBottomMenu()
-          }
+          ReaderHdsBottomMenu({
+            useChapterQuickJump: this.readerUseChapterQuickJump,
+            chapterSliderValue: this.getMenuChapterDisplayIndex(),
+            chapterSliderMax: Math.max(0, this.chapters.length - 1),
+            canGoPrevChapter: this.currentChapterIndex > 0 && !this.isLoading,
+            canGoNextChapter: this.currentChapterIndex < this.chapters.length - 1 && !this.isLoading,
+            chapterTooltipVisible: this.menuChapterTooltipVisible,
+            chapterTooltipTitle: this.getChapterTitle(this.getMenuChapterDisplayIndex()),
+            chapterTooltipProgress: `${this.getMenuChapterDisplayIndex() + 1}/${this.chapters.length}`,
+            chapterTooltipWidth: this.readerChapterTooltipWidth(),
+            chapterTooltipLeft: this.readerChapterTooltipCenteredLeft(),
+            settingsTabEnabled: !this.isReaderComicModeActive(),
+            typographyTabEnabled: !this.isReaderComicModeActive(),
+            dayNightIcon: this.readerDayNightIcon(),
+            themeRevision: this.themeRevision,
+            darkMode: this.isReaderThemeDark(),
+            barWidth: this.readerFloatingBarWidth(),
+            overlayHeight: this.readerBottomMenuOverlayHeight(),
+            bottomMargin: this.readerFloatingBarBottomMargin(),
+            translateX: this.readerFloatingBarTranslateX(),
+            textColor: this.getTextColor(),
+            subTextColor: this.getSubTextColor(),
+            accentColor: this.accentColor(),
+            trackColor: this.readerChapterTrackColor(),
+            blockColor: this.readerSolidPanelColor(),
+            glassPanelColor: this.readerGlassPanelColor(),
+            iconColor: this.readerControlIconColor(),
+            onPrevChapter: (): void => {
+              this.jumpToAdjacentChapterFromMenu(-1);
+            },
+            onNextChapter: (): void => {
+              this.jumpToAdjacentChapterFromMenu(1);
+            },
+            onChapterSliderChange: (value: number, mode: SliderChangeMode): void => {
+              this.handleMenuChapterSliderChange(value, mode);
+            },
+            onActionTabClick: (index: number): void => {
+              this.handleReaderHdsAction(index, false, false);
+            },
+            onDayNightActivate: (): void => {
+              this.handleReaderDayNightClick();
+            },
+            onDayNightLongPress: (): void => {
+              this.handleReaderDayNightLongPress();
+            }
+          })
         } else {
           ReaderFloatingBottomMenu({
             useChapterQuickJump: this.readerUseChapterQuickJump,
@@ -2489,11 +2531,30 @@ export struct ReadBookPage {
       if (this.showToc) {
         this.readerFloatingTocPanel()
         if (LeafFns.supportsReaderImmersiveMaterial()) {
-          if (this.hdsMaterialRenderBranch) {
-            this.readerHdsFloatingActionBar(true)
-          } else {
-            this.readerHdsFloatingActionBar(true)
-          }
+          ReaderHdsFloatingActionBar({
+            fromToc: true,
+            fromSettings: false,
+            settingsTabEnabled: !this.isReaderComicModeActive(),
+            typographyTabEnabled: !this.isReaderComicModeActive(),
+            dayNightIcon: this.readerDayNightIcon(),
+            themeRevision: this.themeRevision,
+            darkMode: this.isReaderThemeDark(),
+            barWidth: this.readerFloatingBarWidth(),
+            overlayHeight: this.readerBottomActionOverlayHeight(),
+            bottomMargin: this.readerFloatingBarBottomMargin(),
+            translateX: this.readerFloatingBarTranslateX(),
+            glassPanelColor: this.readerGlassPanelColor(),
+            iconColor: this.readerControlIconColor(),
+            onTabBarClick: (index: number): void => {
+              this.handleReaderHdsAction(index, true, false);
+            },
+            onDayNightActivate: (): void => {
+              this.handleReaderDayNightClick();
+            },
+            onDayNightLongPress: (): void => {
+              this.handleReaderDayNightLongPress();
+            }
+          })
         }
       }
 
@@ -2551,11 +2612,30 @@ export struct ReadBookPage {
           })
         }
         if (LeafFns.supportsReaderImmersiveMaterial()) {
-          if (this.hdsMaterialRenderBranch) {
-            this.readerHdsFloatingActionBar(false, true)
-          } else {
-            this.readerHdsFloatingActionBar(false, true)
-          }
+          ReaderHdsFloatingActionBar({
+            fromToc: false,
+            fromSettings: true,
+            settingsTabEnabled: !this.isReaderComicModeActive(),
+            typographyTabEnabled: !this.isReaderComicModeActive(),
+            dayNightIcon: this.readerDayNightIcon(),
+            themeRevision: this.themeRevision,
+            darkMode: this.isReaderThemeDark(),
+            barWidth: this.readerFloatingBarWidth(),
+            overlayHeight: this.readerBottomActionOverlayHeight(),
+            bottomMargin: this.readerFloatingBarBottomMargin(),
+            translateX: this.readerFloatingBarTranslateX(),
+            glassPanelColor: this.readerGlassPanelColor(),
+            iconColor: this.readerControlIconColor(),
+            onTabBarClick: (index: number): void => {
+              this.handleReaderHdsAction(index, false, true);
+            },
+            onDayNightActivate: (): void => {
+              this.handleReaderDayNightClick();
+            },
+            onDayNightLongPress: (): void => {
+              this.handleReaderDayNightLongPress();
+            }
+          })
         }
       }
 
@@ -2780,221 +2860,6 @@ TtsGlobalCapsule({
         this.refreshReaderScreenTimeout();
       }
     })
-  }
-
-
-  @Builder
-  readerHdsChapterBarTab() {
-    ReaderChapterSliderBar({
-      sliderValue: this.getMenuChapterDisplayIndex(),
-      sliderMax: Math.max(0, this.chapters.length - 1),
-      textColor: this.getTextColor(),
-      subTextColor: this.getSubTextColor(),
-      accentColor: this.accentColor(),
-      trackColor: this.readerChapterTrackColor(),
-      blockColor: this.readerSolidPanelColor(),
-      canGoPrevious: this.currentChapterIndex > 0 && !this.isLoading,
-      canGoNext: this.currentChapterIndex < this.chapters.length - 1 && !this.isLoading,
-      onPrevious: (): void => {
-        this.jumpToAdjacentChapterFromMenu(-1);
-      },
-      onNext: (): void => {
-        this.jumpToAdjacentChapterFromMenu(1);
-      },
-      onSliderChange: (value: number, mode: SliderChangeMode): void => {
-        this.handleMenuChapterSliderChange(value, mode);
-      }
-    })
-  }
-
-  @Builder
-  readerHdsFloatingBottomMenu() {
-    Column({ space: 4 }) {
-      if (this.readerUseChapterQuickJump) {
-        this.readerHdsChapterTabBar()
-      }
-      this.readerHdsActionBar(false)
-    }
-    .width('100%')
-    .height(this.readerBottomMenuOverlayHeight())
-    .padding({ bottom: this.readerFloatingBarBottomMargin() })
-    .justifyContent(FlexAlign.End)
-    .alignItems(HorizontalAlign.Center)
-    .position({ x: 0, y: '100%' })
-    .translate({
-      x: this.readerFloatingBarTranslateX(),
-      y: -this.readerBottomMenuOverlayHeight()
-    })
-  }
-
-  @Builder
-  readerHdsChapterTabBar() {
-    Stack({ alignContent: Alignment.Center }) {
-      HdsTabs({ barPosition: BarPosition.End, index: 0 }) {
-        TabContent() {
-          Column()
-        }
-        .height(56)
-        .tabBar(this.readerHdsChapterBarTab())
-      }
-      .key(`reader_hds_chapter_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`)
-      .barBackgroundColor(this.readerGlassPanelColor())
-      .barMode(BarMode.Fixed)
-      .barHeight(48)
-      .barOverlap(true)
-      .barFloatingStyle({
-        barWidth: {
-          smallWidth: this.readerFloatingBarWidth(),
-          mediumWidth: this.readerFloatingBarWidth(),
-          largeWidth: this.readerFloatingBarWidth()
-        },
-        systemMaterialEffect: {
-          materialType: ImmersiveMaterialRuntime.materialType(),
-          materialLevel: ImmersiveMaterialRuntime.materialLevel()
-        },
-        barSideMargin: 0,
-        barBottomMargin: 4,
-        gradientMask: {
-          maskColor: '#00000000',
-          maskHeight: 56
-        },
-        adaptToHandedness: false,
-        thermoCtrl: true,
-        barOpacity: 1
-      })
-      .scrollable(false)
-      .width('100%')
-      .height(56)
-
-      if (this.menuChapterTooltipVisible) {
-        Column({ space: 2 }) {
-          Text(this.getChapterTitle(this.getMenuChapterDisplayIndex()))
-            .fontSize(12)
-            .fontColor('#FFFFFFFF')
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text(`${this.getMenuChapterDisplayIndex() + 1}/${this.chapters.length}`)
-            .fontSize(11)
-            .fontColor('#CCFFFFFF')
-        }
-        .width(this.readerChapterTooltipWidth())
-        .height(44)
-        .padding({ left: 14, right: 14, top: 5, bottom: 5 })
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-        .borderRadius(22)
-        .backgroundColor(this.isReaderThemeDark() ? '#E63A3C40' : '#D94B4D52')
-        .shadow({ radius: 10, color: '#50000000', offsetX: 0, offsetY: 3 })
-        .position({ x: this.readerChapterTooltipCenteredLeft(), y: -48 })
-      }
-    }
-    .width('100%')
-    .height(56)
-  }
-
-  @Builder
-  readerHdsFloatingActionBar(fromToc: boolean, fromSettings: boolean = false) {
-    Column() {
-      this.readerHdsActionBar(fromToc, fromSettings)
-    }
-    .width('100%')
-    .height(this.readerBottomActionOverlayHeight())
-    .padding({ bottom: this.readerFloatingBarBottomMargin() })
-    .justifyContent(FlexAlign.End)
-    .position({ x: 0, y: '100%' })
-    .translate({
-      x: this.readerFloatingBarTranslateX(),
-      y: -this.readerBottomActionOverlayHeight()
-    })
-  }
-
-  @Builder
-  readerHdsDayNightTab() {
-    ReaderHdsDayNightMenuItem({
-      icon: this.readerDayNightIcon(),
-      iconColor: this.readerControlIconColor(),
-      onActivate: (): void => {
-        this.handleReaderDayNightClick();
-      },
-      onLongPress: (): void => {
-        this.handleReaderDayNightLongPress();
-      }
-    })
-  }
-
-  @Builder
-  readerHdsTabMenuItem(icon: Resource, menuEnabled: boolean) {
-    Row() {
-      ReaderHdsMenuItem({
-        icon: icon,
-        iconColor: this.readerControlIconColor(),
-        showAddBadge: false,
-        menuEnabled: menuEnabled,
-      })
-    }
-    .layoutWeight(1)
-    .height(56)
-  }
-
-  @Builder
-  readerHdsActionBar(fromToc: boolean, fromSettings: boolean = false) {
-    HdsTabs({ barPosition: BarPosition.End, index: 0 }) {
-      TabContent() {
-        Column()
-      }
-      .height(56)
-      .tabBar(this.readerHdsTabMenuItem($r('sys.symbol.list_bullet'), true))
-
-      TabContent() {
-        Column()
-      }
-      .height(56)
-      .tabBar(this.readerHdsTabMenuItem($r('sys.symbol.gearshape'), !this.isReaderComicModeActive()))
-
-      TabContent() {
-        Column()
-      }
-      .height(56)
-      .tabBar(this.readerHdsTabMenuItem($r('sys.symbol.textformat'), !this.isReaderComicModeActive()))
-
-      TabContent() {
-        Column()
-      }
-      .height(56)
-      .tabBar(this.readerHdsDayNightTab())
-    }
-    .key(`reader_hds_action_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`)
-    .barBackgroundColor(this.readerGlassPanelColor())
-    .barMode(BarMode.Fixed)
-    .barHeight(48)
-    .barOverlap(true)
-    .barFloatingStyle({
-      barWidth: {
-        smallWidth: this.readerFloatingBarWidth(),
-        mediumWidth: this.readerFloatingBarWidth(),
-        largeWidth: this.readerFloatingBarWidth()
-      },
-      systemMaterialEffect: {
-        materialType: ImmersiveMaterialRuntime.materialType(),
-        materialLevel: ImmersiveMaterialRuntime.materialLevel()
-      },
-      barSideMargin: 0,
-      barBottomMargin: 4,
-      gradientMask: {
-        maskColor: '#00000000',
-        maskHeight: 56
-      },
-      adaptToHandedness: false,
-      thermoCtrl: true,
-      barOpacity: 1
-    })
-    .scrollable(false)
-    .onContentWillChange(() => false)
-    .onTabBarClick((index: number) => {
-      this.handleReaderHdsAction(index, fromToc, fromSettings);
-    })
-    .width('100%')
-    .height(56)
   }
 
   handleReaderHdsAction(index: number, fromToc: boolean, fromSettings: boolean = false): void { ReaderMenuBuildOps.handleReaderHdsAction(this, index, fromToc, fromSettings); }
