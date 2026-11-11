@@ -159,7 +159,7 @@ region_start = [j for j, ln in enumerate(out, 1) if ln.startswith("//region ")]
 ANCHORS = [
     "aboutToAppear", "onPageShow", "onBackPress", "aboutToDisappear", "onPageHide", "build",
     "loadBook", "loadContent", "saveReadingProgress", "enterReaderImmersive",
-    "ttsMiniPlayer", "globalTtsMiniPlayer", "ttsExpandedMediaControlsBar",
+    "ttsExpandedMediaControlsBar", "readerQuickSettingsPanel", "readerTtsQuickActionButton",
     "ttsQuickSettingsPanel", "ttsVoiceDropdownPanel", "settingsPanel",
     "publishTtsFloatingSession", "publishTtsFloatingVoices", "updateTtsFloatingSession",
     "stopTtsFloatingSession", "toggleTtsReading", "startTtsReadingFromCurrentPosition",
@@ -459,7 +459,7 @@ w("- **P0.5（已完成）**：%d 个业务方法按 //region 抽到 12 个 `rea
   "`export struct ReadBookPage` 供 ops 模块做纯类型导入。ReadBook.ets 从 24417 → %d 行（-%d）。"
   "核验：真 ArkTS 编译通过 + 941/941 方法体逐字回环一致 + 6 轮真机前后台回归 0 错误。"
   % (sum(c for _m, c in _OPS_STATS), len(out), 24417 - len(out)))
-w("- **P1（未做）**：127 个 `@Builder` 按面板提独立 `@Component`（`ttsMiniPlayer`、"
+w("- **P1（进行中）**：127 个 `@Builder` 按面板提独立 `@Component`（`readerTtsQuickActionButton`、"
   "`ttsExpandedMediaControlsBar`、`ttsQuickSettingsPanel` 等）。这会切断 ArkUI V1 的隐式联动，"
   "须用 `@Link/@Prop` 或 `@StorageLink` 重建数据通路，且只能靠真机视觉回归验证。")
 w("- **P2（未做）**：分页测量引擎 / TTS 编排 / 焦点·镜像 各自提 Controller+Host 类；"

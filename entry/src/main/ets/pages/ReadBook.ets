@@ -125,6 +125,7 @@ import {
   ReaderBookmarkPanelSummary,
   ReaderFloatingTopMenu,
   ReaderPreloadSettingItem,
+  ReaderTtsQuickActionButton,
   ReaderTocVirtualScrollbar
 } from '../components/ReaderPanelChromeItems';
 import { ReaderMenuDismissLayer, ReaderSettingsDismissLayer } from '../components/ReaderDismissLayers';
@@ -2358,7 +2359,18 @@ export struct ReadBookPage {
         }
         if (this.readerUseTtsQuickAction && !this.isReaderComicModeActive() && !this.ttsMediaControlsExpanded &&
           !this.isTtsSpeaking && !this.ttsReader.isSpeaking() && !this.globalTtsActive) {
-          this.readerTtsQuickActionButton()
+          ReaderTtsQuickActionButton({
+          iconColor: this.readerControlIconColor(),
+          accentColor: this.accentColor(),
+          surfaceColor: this.readerContentLayerColor(),
+          darkMode: this.isReaderThemeDark(),
+          speaking: this.isTtsSpeaking || this.ttsReader.isSpeaking(),
+          offsetX: this.readerTtsQuickActionLeft(),
+          offsetY: -(this.readerBottomMenuOverlayHeight() + 62),
+          onActivate: (): void => {
+            this.handleTtsQuickAction();
+          }
+        })
         }
         if (this.readerUseTtsQuickAction && this.shouldShowTtsMediaControls()) {
           if (LeafFns.supportsReaderImmersiveMaterial()) {
@@ -2399,9 +2411,41 @@ export struct ReadBookPage {
       }
 
       if (this.readerUseTtsQuickAction && this.shouldShowTtsMiniPlayer()) {
-        this.ttsMiniPlayer()
+TtsGlobalCapsule({
+          darkMode: this.isReaderThemeDark(),
+          accentColor: this.accentColor(),
+          showOpenReader: false,
+          viewportWidth: this.pageViewWidth > 0 ? this.pageViewWidth : 360,
+          viewportHeight: this.pageViewHeight > 0 ? this.pageViewHeight : 720,
+          topInset: this.getReaderTopSafePadding(),
+          bottomInset: this.navBarHeight,
+          onOpenCatalog: (): void => {
+            this.openGlobalTtsCatalog();
+          },
+          onOpenReader: (): void => {
+            this.jumpToGlobalTtsPosition().catch((error: Error) => {
+              console.warn('跳转后台朗读位置失败:', error);
+            });
+          }
+        })
       } else if (this.readerUseTtsQuickAction && this.shouldShowGlobalTtsMiniPlayer()) {
-        this.globalTtsMiniPlayer()
+TtsGlobalCapsule({
+          darkMode: this.isReaderThemeDark(),
+          accentColor: this.accentColor(),
+          showOpenReader: true,
+          viewportWidth: this.pageViewWidth > 0 ? this.pageViewWidth : 360,
+          viewportHeight: this.pageViewHeight > 0 ? this.pageViewHeight : 720,
+          topInset: this.getReaderTopSafePadding(),
+          bottomInset: this.navBarHeight,
+          onOpenCatalog: (): void => {
+            this.openGlobalTtsCatalog();
+          },
+          onOpenReader: (): void => {
+            this.jumpToGlobalTtsPosition().catch((error: Error) => {
+              console.warn('跳转后台朗读位置失败:', error);
+            });
+          }
+        })
       }
 
       if (this.showGlobalTtsCatalog) {
@@ -3693,24 +3737,6 @@ export struct ReadBookPage {
     return ReaderMenuBuildOps.bookmarkSwipeActions(this, bookmark);
   }
 
-  @Builder
-  bookmarkFallbackSwipeActions(bookmark: Bookmark) {
-    Row() {
-      ReaderBookmarkMultiSelectAction({
-        accent: this.accentColor(),
-        onClickAction: (): void => {
-          this.enterBookmarkMultiSelect(bookmark.bookmarkUrl);
-        }
-      })
-      ReaderBookmarkDeleteAction({
-        onClickAction: (): void => {
-          this.deleteBookmark(bookmark);
-        }
-      })
-    }
-    .height('100%')
-  }
-
 
   onSystemDialogFlagChanged(): void {
     if (!this.showTxtCharsetDialog) this.txtCharsetDialogSession.close(this.getUIContext());
@@ -3726,22 +3752,17 @@ export struct ReadBookPage {
   presentTapZoneSettings(): void {
     this.showTapZoneSettings = true;
     this.tapZoneDialogSession.open(this.getUIContext(), (): void => {
-      this.tapZoneSettingsContent();
+      TapZoneSettingsDialogContent({
+        onDone: (): void => {
+          this.showTapZoneSettings = false;
+          this.tapZoneDialogSession.close(this.getUIContext());
+        }
+      })
     }, {
       autoCancel: false,
       maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
       warnTag: '显示点击区域设置弹窗失败:'
     });
-  }
-
-  @Builder
-  tapZoneSettingsContent() {
-    TapZoneSettingsDialogContent({
-      onDone: (): void => {
-        this.showTapZoneSettings = false;
-        this.tapZoneDialogSession.close(this.getUIContext());
-      }
-    })
   }
 
   async openChangeSourceDialog(): Promise<void> {
@@ -4135,44 +4156,6 @@ export struct ReadBookPage {
     ReaderTextPrepOps.retryReaderContent(this);
   }
 
-  @Builder
-  readerTtsQuickActionButton() {
-    Stack({ alignContent: Alignment.Center }) {
-      ImmersiveBackButton({
-        icon: $r('sys.symbol.play'),
-        iconOffsetX: 0,
-        iconColor: this.readerControlIconColor(),
-        darkMode: this.isReaderThemeDark(),
-        buttonSize: 48,
-        containerWidth: 48,
-        containerHeight: 48,
-        startInset: 0,
-        compactLayout: true,
-        accessibilityLabel: '开始朗读',
-        onBack: () => {
-          this.handleTtsQuickAction();
-        }
-      })
-
-      if (this.isTtsSpeaking || this.ttsReader.isSpeaking()) {
-        Circle()
-          .width(9)
-          .height(9)
-          .fill(this.accentColor())
-          .stroke(this.readerContentLayerColor())
-          .strokeWidth(2)
-          .position({ x: 38, y: 3 })
-          .hitTestBehavior(HitTestMode.None)
-      }
-    }
-    .width(48)
-    .height(48)
-    .position({ x: this.readerTtsQuickActionLeft(), y: '100%' })
-    .translate({
-      y: -(this.readerBottomMenuOverlayHeight() + 62)
-    })
-  }
-
   async handleTtsQuickAction(): Promise<void> {
     return ReaderTextPrepOps.handleTtsQuickAction(this);
   }
@@ -4236,47 +4219,6 @@ export struct ReadBookPage {
 
   toggleGlobalTtsCatalogOrder(): void {
     ReaderTextPrepOps.toggleGlobalTtsCatalogOrder(this);
-  }
-
-  @Builder
-  ttsMiniPlayer() {
-    // 当前朗读页内的浮标：展示与书架一致的共享胶囊，但不显示“回到阅读页”书本按钮
-    //（人就在朗读页里，该按钮无意义）。播放/暂停、停止由共享组件统一路由到会话宿主。
-    TtsGlobalCapsule({
-      darkMode: this.isReaderThemeDark(),
-      accentColor: this.accentColor(),
-      showOpenReader: false,
-      viewportWidth: this.pageViewWidth > 0 ? this.pageViewWidth : 360,
-      viewportHeight: this.pageViewHeight > 0 ? this.pageViewHeight : 720,
-      topInset: this.getReaderTopSafePadding(),
-      bottomInset: this.navBarHeight,
-      onOpenCatalog: () => this.openGlobalTtsCatalog(),
-      onOpenReader: () => {
-        this.jumpToGlobalTtsPosition().catch((error: Error) => {
-          console.warn('跳转后台朗读位置失败:', error);
-        });
-      }
-    })
-  }
-
-  @Builder
-  globalTtsMiniPlayer() {
-    // 他书/后台会话浮标：与书架完全一致的共享胶囊，书本按钮跳回朗读位置。
-    TtsGlobalCapsule({
-      darkMode: this.isReaderThemeDark(),
-      accentColor: this.accentColor(),
-      showOpenReader: true,
-      viewportWidth: this.pageViewWidth > 0 ? this.pageViewWidth : 360,
-      viewportHeight: this.pageViewHeight > 0 ? this.pageViewHeight : 720,
-      topInset: this.getReaderTopSafePadding(),
-      bottomInset: this.navBarHeight,
-      onOpenCatalog: () => this.openGlobalTtsCatalog(),
-      onOpenReader: () => {
-        this.jumpToGlobalTtsPosition().catch((error: Error) => {
-          console.warn('跳转后台朗读位置失败:', error);
-        });
-      }
-    })
   }
 
   openGlobalTtsReaderPage(): void {
@@ -8813,30 +8755,6 @@ export struct ReadBookPage {
   }
 
   @Builder
-  readerSimulationCurrentHalfPage(text: string, pageIndex: number, renderVersion: number,
-    ttsRenderVersion: number, identity: string, halfWidth: boolean = false) {
-    Column() {
-      if (this.shouldUseReaderLayoutV2(this.pagedContentText) &&
-        this.readerV2Page(this.currentChapterIndex, pageIndex, this.pagedContentText)) {
-        this.readerV2PageSurface(`simulation_current_${identity}`, this.currentChapterIndex,
-          pageIndex, this.pagedContentText)
-      } else {
-        this.styledCurrentReaderText(text, this.getReaderContentBottomPadding(), this.currentChapterIndex,
-          ttsRenderVersion, renderVersion,
-          `${this.currentReaderPageRenderIdentity(renderVersion, ttsRenderVersion)}_simulation_${identity}`,
-          pageIndex)
-      }
-    }
-    .width(halfWidth ? this.getReaderPageColumnWidth() : '100%')
-    .height('100%')
-    // Current, incoming and curl-capture leaves share this wrapper coordinate system. Keeping the
-    // status-bar inset here prevents a rapidly recycled V2 leaf from briefly losing its local translate.
-    .padding({ top: this.getReaderPageContentTopPadding() })
-    .justifyContent(FlexAlign.Start)
-    .alignItems(HorizontalAlign.Start)
-  }
-
-  @Builder
   readerSimulationIncomingHalfPage(text: string, pageIndex: number, pageStart: number,
     renderVersion: number, identity: string, halfWidth: boolean = false) {
     Column() {
@@ -8913,10 +8831,37 @@ export struct ReadBookPage {
   }
 
   @Builder
+  bookmarkFallbackSwipeActions(bookmark: Bookmark) {
+    Row() {
+      ReaderBookmarkMultiSelectAction({
+        accent: this.accentColor(),
+        onClickAction: (): void => {
+          this.enterBookmarkMultiSelect(bookmark.bookmarkUrl);
+        }
+      })
+      ReaderBookmarkDeleteAction({
+        onClickAction: (): void => {
+          this.deleteBookmark(bookmark);
+        }
+      })
+    }
+    .height('100%')
+  }
+
+  @Builder
   readerIncomingPageSurface(renderVersion: number, text: string, controllerRole: string = 'incoming') {
     Stack() {
       if (this.isStackPageTurnAnimation() || this.is3DPageTurnAnimation()) {
-        this.readerIncomingPageBackground()
+        ReaderThemeBackground({
+          surfaceColor: this.getBackgroundColor(),
+          backgroundAssetId: this.getBackgroundAssetId(),
+          customImage: this.currentReaderTheme().backgroundImageUri,
+          customImageFit: this.getBackgroundImageFit(),
+          viewportWidthHint: this.pageViewWidth,
+          viewportHeightHint: this.getReaderBackgroundViewportHeight()
+        })
+          .id('reader_incoming_theme_background')
+          .hitTestBehavior(HitTestMode.None)
       }
       Column() {
         this.readerIncomingPageLayer(renderVersion, text, controllerRole)
@@ -8934,20 +8879,6 @@ export struct ReadBookPage {
     .opacity(this.getVisiblePageTurnIncomingOpacity())
     .clip(true)
     .hitTestBehavior(HitTestMode.None)
-  }
-
-  @Builder
-  readerIncomingPageBackground() {
-    ReaderThemeBackground({
-      surfaceColor: this.getBackgroundColor(),
-      backgroundAssetId: this.getBackgroundAssetId(),
-      customImage: this.currentReaderTheme().backgroundImageUri,
-      customImageFit: this.getBackgroundImageFit(),
-      viewportWidthHint: this.pageViewWidth,
-      viewportHeightHint: this.getReaderBackgroundViewportHeight()
-    })
-      .id('reader_incoming_theme_background')
-      .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
@@ -9857,84 +9788,6 @@ export struct ReadBookPage {
 
   getRegexBubbleCapSize(slice: ReadTextSlice): number {
     return ReaderStyledTextOps.getRegexBubbleCapSize(this, slice);
-  }
-
-  @Builder
-  framedRegexReaderText(paragraph: ReaderTextParagraph, ttsHighlightActive: boolean = true,
-    ttsRenderVersion: number = this.ttsHighlightRenderVersion, contentRenderVersion: number = this.pageRenderVersion,
-    pageRenderIdentity: string = '', pageStart: number = -1,
-    documentSource: string = this.pagedContentText, pageLineHeight: number = this.getEffectiveReaderLineHeight()) {
-    Text('', { controller: this.readerSelectableTextController(
-      LeafFns.readerSelectableTextKey('frame', pageRenderIdentity, contentRenderVersion, ttsRenderVersion,
-        paragraph)) }) {
-      ForEach(this.getStyledParagraphTextSlices(paragraph, ttsHighlightActive, pageStart, documentSource),
-        (slice: ReadTextSlice) => {
-        Span(slice.text)
-          .fontSize(slice.highlighted ? this.getRegexSliceFontSize(slice) : this.readerFontSize)
-          .fontFamily(slice.highlighted ? this.getRegexSliceFontFamily(slice) : this.getBodyReaderFontFamily())
-          .fontColor(this.getStyledSliceFontColor(slice))
-          .textBackgroundStyle(slice.ttsHighlighted ? {
-            color: this.getTtsHighlightColor(),
-            radius: 4
-          } : {})
-          .textShadow(this.getStyledSliceTextShadow(slice))
-          .decoration({ type: TextDecorationType.None })
-      }, (slice: ReadTextSlice) =>
-        `framed_${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, this.currentChapterIndex,
-          contentRenderVersion, ttsRenderVersion, paragraph.text)}_${paragraph.key}_${slice.key}`)
-    }
-    .lineSpacing(LengthMetrics.vp(this.getReaderPageLineSpacing(pageLineHeight)), { onlyBetweenLines: true })
-    .halfLeading(false)
-    .includeFontPadding(false)
-    .fontColor(this.getTextColor())
-    .letterSpacing(this.getReaderAdaptiveLetterSpacing())
-    .textAlign(this.readerTextAlignValue())
-    .wordBreak(WordBreak.BREAK_WORD)
-    .lineBreakStrategy(LineBreakStrategy.GREEDY)
-    .copyOption(CopyOptions.LocalDevice)
-    .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
-    .editMenuOptions(this.readerTextEditMenuOptions(() => paragraph.text))
-    .onCopy(() => this.scheduleReaderTextSelectionClear())
-    .width('100%')
-    .padding({
-      left: this.getRegexFrameHorizontalPadding(paragraph, pageStart),
-      right: this.getRegexFrameHorizontalPadding(paragraph, pageStart),
-      top: this.getRegexFrameVerticalPadding(paragraph, pageStart),
-      bottom: this.getRegexFrameVerticalPadding(paragraph, pageStart)
-    })
-    .backgroundColor(this.getRegexFrameBackgroundColor(paragraph, pageStart))
-    .border({
-      width: this.getRegexFrameBorderWidth(paragraph, pageStart),
-      color: this.getRegexFrameBorderColor(paragraph, pageStart),
-      style: this.getRegexFrameBorderStyle(paragraph, pageStart)
-    })
-    .borderRadius(this.getRegexFrameBorderRadius(paragraph, pageStart))
-    .onAreaChange((_oldValue: Area, newValue: Area) => {
-      this.rememberReaderSelectableText(
-        LeafFns.readerSelectableTextKey('frame', pageRenderIdentity, contentRenderVersion, ttsRenderVersion,
-          paragraph),
-        paragraph.text,
-        newValue
-      );
-    })
-    .overlay(() => {
-      Image(this.getRegexParagraphFrame(paragraph, pageStart))
-        .width('100%')
-        .height('100%')
-        .objectFit(ImageFit.Fill)
-        .resizable({
-          slice: {
-            left: this.getRegexFrameHorizontalSlice(paragraph, pageStart),
-            right: this.getRegexFrameHorizontalSlice(paragraph, pageStart),
-            top: this.getRegexFrameVerticalSlice(paragraph, pageStart),
-            bottom: this.getRegexFrameVerticalSlice(paragraph, pageStart)
-          }
-        })
-        .draggable(false)
-        .hitTestBehavior(HitTestMode.None)
-    }, { align: Alignment.Center })
-    .id(`reader_regex_frame_${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, this.currentChapterIndex,
-      contentRenderVersion, ttsRenderVersion, paragraph.text)}_${paragraph.key}`)
   }
 
   shouldUseRegexParagraphFrame(paragraph: ReaderTextParagraph, pageStart: number = -1): boolean {
@@ -11111,22 +10964,17 @@ export struct ReadBookPage {
   presentAutoPageTurnIntervalDialog(): void {
     this.showAutoPageTurnIntervalDialog = true;
     this.autoPageTurnIntervalDialogSession.open(this.getUIContext(), (): void => {
-      this.autoPageTurnIntervalDialogContent();
+      AutoPageTurnIntervalDialogContent({
+        onDone: (): void => {
+          this.showAutoPageTurnIntervalDialog = false;
+          this.autoPageTurnIntervalDialogSession.close(this.getUIContext());
+        }
+      })
     }, {
       autoCancel: true,
       maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
       warnTag: '显示自动翻页间隔设置弹窗失败:'
     });
-  }
-
-  @Builder
-  autoPageTurnIntervalDialogContent() {
-    AutoPageTurnIntervalDialogContent({
-      onDone: (): void => {
-        this.showAutoPageTurnIntervalDialog = false;
-        this.autoPageTurnIntervalDialogSession.close(this.getUIContext());
-      }
-    })
   }
 
   scrollReaderComicByPage(direction: number): void {

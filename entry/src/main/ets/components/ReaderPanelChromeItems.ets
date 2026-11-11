@@ -319,3 +319,48 @@ export struct ReaderPreloadSettingItem {
     .constraintSize({ minHeight: 56 })
   }
 }
+@Component
+export struct ReaderTtsQuickActionButton {
+  @Prop iconColor: ResourceColor;
+  @Prop accentColor: ResourceColor;
+  @Prop surfaceColor: ResourceColor;
+  @Prop darkMode: boolean = false;
+  @Prop speaking: boolean = false;
+  @Prop offsetX: number = 0;
+  @Prop offsetY: number = 0;
+  onActivate: () => void = () => {};
+
+  build() {
+    Stack({ alignContent: Alignment.Center }) {
+      ImmersiveBackButton({
+        icon: $r('sys.symbol.play'),
+        iconOffsetX: 0,
+        iconColor: this.iconColor,
+        darkMode: this.darkMode,
+        buttonSize: 48,
+        containerWidth: 48,
+        containerHeight: 48,
+        startInset: 0,
+        compactLayout: true,
+        accessibilityLabel: '开始朗读',
+        onBack: () => {
+          this.onActivate();
+        }
+      })
+      if (this.speaking) {
+        Circle()
+          .width(9)
+          .height(9)
+          .fill(this.accentColor)
+          .stroke(this.surfaceColor)
+          .strokeWidth(2)
+          .position({ x: 38, y: 3 })
+          .hitTestBehavior(HitTestMode.None)
+      }
+    }
+    .width(48)
+    .height(48)
+    .position({ x: this.offsetX, y: '100%' })
+    .translate({ y: this.offsetY })
+  }
+}
