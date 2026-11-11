@@ -118,6 +118,7 @@ import {
   ReaderTtsSpeedChip
 } from '../components/ReaderOverlayItems';
 import { ReaderTtsQuickSettingsPanel } from '../components/ReaderTtsQuickSettingsPanel';
+import { ReaderCustomThemeEditor } from '../components/ReaderCustomThemeEditor';
 import {
   ReaderTtsMediaSymbolControl,
   ReaderTtsMediaSpeedControl,
@@ -5922,154 +5923,56 @@ TtsGlobalCapsule({
       .width('100%')
 
       if (this.currentReaderThemeIndex() === ReaderThemeHelper.CUSTOM_THEME_INDEX) {
-        Column({ space: 10 }) {
-          Row({ space: 8 }) {
-            Select(this.customThemeOptions())
-              .selected(this.currentCustomThemeSelectedIndex())
-              .value(this.currentCustomThemeScheme().name)
-              .font({ size: 14 })
-              .fontColor(this.getTextColor())
-              .backgroundColor(this.customThemeFieldColor())
-              .borderRadius(16)
-              .border({ width: 0 })
-              .layoutWeight(1)
-              .divider(null)
-              .optionBgColor(Color.Transparent)
-              .optionFontColor(this.getTextColor())
-              .selectedOptionFontColor(this.accentColor())
-              .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
-              .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
-              .menuBackgroundBlurStyle(BlurStyle.NONE)
-              .attributeModifier(new SelectMenuMaterialModifier())
-              .onSelect((index: number) => {
-                this.selectCustomTheme(index);
-              })
-            Button('新增')
-              .height(36)
-              .fontSize(13)
-              .backgroundColor(this.accentColor())
-              .fontColor('#FFFFFF')
-              .onClick(() => {
-                this.addCustomTheme();
-              })
-            Button('删除')
-              .height(36)
-              .fontSize(13)
-              .backgroundColor(this.customThemeFieldColor())
-              .fontColor(this.getTextColor())
-              .onClick(() => {
-                this.openReaderCustomThemeDeleteConfirm();
-              })
+        ReaderCustomThemeEditor({
+          schemeName: this.currentCustomThemeScheme().name,
+          nameDraft: this.customThemeNameDraft,
+          selectedIndex: this.currentCustomThemeSelectedIndex(),
+          options: this.customThemeOptions(),
+          backgroundTypeIndex: this.currentCustomThemeBackgroundTypeIndex(),
+          surfaceColor: this.currentCustomThemeBackgroundColor(),
+          backgroundImageUri: this.currentCustomThemeScheme().backgroundImageUri,
+          imageFitIndex: this.customThemeFitSelectedIndex(),
+          textColorValue: this.currentCustomThemeTextColor(),
+          textColor: this.getTextColor(),
+          fieldColor: this.customThemeFieldColor(),
+          accentColor: this.accentColor(),
+          darkMode: this.isReaderThemeDark(),
+          appDarkMode: this.appDarkMode,
+          panelColor: this.getBackgroundColor(),
+          onSelectScheme: (index: number): void => {
+            this.selectCustomTheme(index);
+          },
+          onAdd: (): void => {
+            this.addCustomTheme();
+          },
+          onDelete: (): void => {
+            this.openReaderCustomThemeDeleteConfirm();
+          },
+          onNameDraftChange: (value: string): void => {
+            this.customThemeNameDraft = value;
+          },
+          onCommitName: (value: string): void => {
+            this.renameCurrentCustomTheme(value);
+          },
+          onBackgroundTypeChange: (index: number): void => {
+            this.setCurrentCustomThemeBackgroundType(index);
+          },
+          onBackgroundColorChange: (value: string): void => {
+            this.setCurrentThemeBackgroundColor(value);
+          },
+          onChooseImage: (): void => {
+            this.chooseCurrentCustomThemeImage();
+          },
+          onClearImage: (): void => {
+            this.clearCurrentCustomThemeImage();
+          },
+          onImageFitChange: (index: number): void => {
+            this.setCurrentCustomThemeImageFit(index);
+          },
+          onTextColorChange: (value: string): void => {
+            this.setCurrentThemeTextColor(value);
           }
-          .width('100%')
-          TextInput({ text: this.customThemeNameDraft, placeholder: '输入方案名称' })
-            .fontSize(14)
-            .fontColor(this.getTextColor())
-            .height(36)
-            .padding({ left: 10, right: 10 })
-            .backgroundColor(this.customThemeFieldColor())
-            .borderRadius(8)
-            .onChange((value: string) => {
-              this.customThemeNameDraft = value.substring(0, 20);
-            })
-            .onSubmit(() => {
-              this.renameCurrentCustomTheme(this.customThemeNameDraft);
-            })
-            .onBlur(() => {
-              this.renameCurrentCustomTheme(this.customThemeNameDraft);
-            })
-          Row() {
-            Text('背景设置')
-              .fontSize(14)
-              .fontColor(this.getTextColor())
-            Blank()
-            Select([{ value: '背景色' }, { value: '背景图片' }])
-              .selected(this.currentCustomThemeBackgroundTypeIndex())
-              .value(this.currentCustomThemeBackgroundTypeIndex() === 1 ? '背景图片' : '背景色')
-              .font({ size: 14 })
-              .fontColor(this.getTextColor())
-              .backgroundColor(this.customThemeFieldColor())
-              .borderRadius(16)
-              .border({ width: 0 })
-              .optionBgColor(Color.Transparent)
-              .divider(null)
-              .optionFontColor(this.getTextColor())
-              .selectedOptionFontColor(this.accentColor())
-              .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
-              .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
-              .menuBackgroundBlurStyle(BlurStyle.NONE)
-              .attributeModifier(new SelectMenuMaterialModifier())
-              .onSelect((index: number) => {
-                this.setCurrentCustomThemeBackgroundType(index);
-              })
-          }
-          .width('100%')
-          if (this.currentCustomThemeBackgroundTypeIndex() === 0) {
-            AdaptiveColorPicker({
-              value: this.currentCustomThemeBackgroundColor(),
-              placeholder: this.currentCustomThemeBackgroundColor(),
-              appDarkMode: this.appDarkMode,
-              accentColor: this.accentColor(),
-              optionTitle: '背景颜色',
-              onColorChange: (value: string) => {
-                this.setCurrentThemeBackgroundColor(value);
-              }
-            })
-          } else {
-            Row({ space: 8 }) {
-              Button(this.currentCustomThemeScheme().backgroundImageUri ? '更换背景图片' : '选择背景图片')
-                .height(36)
-                .fontSize(13)
-                .backgroundColor(this.accentColor())
-                .fontColor('#FFFFFF')
-                .onClick(() => {
-                  this.chooseCurrentCustomThemeImage();
-                })
-              if (this.currentCustomThemeScheme().backgroundImageUri) {
-                Button('移除图片')
-                  .height(36)
-                  .fontSize(13)
-                  .backgroundColor(this.customThemeFieldColor())
-                  .fontColor(this.getTextColor())
-                  .onClick(() => {
-                    this.clearCurrentCustomThemeImage();
-                  })
-                Select([{ value: '裁剪填充' }, { value: '完整显示' }, { value: '拉伸铺满' }])
-                  .selected(this.customThemeFitSelectedIndex())
-                  .value(['裁剪填充', '完整显示', '拉伸铺满'][this.customThemeFitSelectedIndex()])
-                  .font({ size: 13 })
-                  .fontColor(this.getTextColor())
-                  .backgroundColor(this.customThemeFieldColor())
-                  .borderRadius(16)
-                  .border({ width: 0 })
-                  .layoutWeight(1)
-                  .divider(null)
-                  .optionBgColor(Color.Transparent)
-                  .optionFontColor(this.getTextColor())
-                  .selectedOptionFontColor(this.accentColor())
-                  .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
-                  .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
-                  .menuBackgroundBlurStyle(BlurStyle.NONE)
-                  .attributeModifier(new SelectMenuMaterialModifier())
-                  .onSelect((index: number) => {
-                    this.setCurrentCustomThemeImageFit(index);
-                  })
-              }
-            }
-            .width('100%')
-          }
-          AdaptiveColorPicker({
-            value: this.currentCustomThemeTextColor(),
-            placeholder: this.currentCustomThemeTextColor(),
-            appDarkMode: this.appDarkMode,
-            accentColor: this.accentColor(),
-            optionTitle: '文字颜色',
-            onColorChange: (value: string) => {
-              this.setCurrentThemeTextColor(value);
-            }
-          })
-        }
-        .width('100%')
+        })
       }
 
       ReaderPreloadSettingItem({
