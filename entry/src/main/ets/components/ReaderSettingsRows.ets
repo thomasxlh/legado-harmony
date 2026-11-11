@@ -2,7 +2,10 @@ import { SelectMenuMaterialModifier } from './SelectMenuMaterialModifier';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import * as LeafFns from '../reader/ReaderLeafFns';
 import { ImmersiveBackButton } from './ImmersiveBackButton';
-import { ReaderLayoutElementToggle } from './ReaderSettingItems';
+import { ReaderLayoutElementToggle, ReaderSwitchSettingItem } from './ReaderSettingItems';
+import { ReaderTxtCharsetOption } from '../core/reader/ReaderSettingsModels';
+import { TtsVoiceOption } from '../utils/SystemTtsReader';
+import { HdsFeedback } from '../utils/HdsFeedback';
 
 /**
  * 阅读设置面板里的「行」组件。
@@ -363,5 +366,316 @@ export struct ReaderLayoutElementSettingsDialog {
     }
     .width('100%')
     .height('100%')
+  }
+}
+
+/**
+ * 页眉 / 页脚设置块。
+ * 原来是一个 72 行的 @Builder，读了 6 个页面 @State 与 4 个选择项索引；
+ * 提成组件后所有值由调用点显式传入，回调用事件回抛。
+ */
+@Component
+export struct ReaderHeaderFooterSettingsPanel {
+  @Prop headerEnabled: boolean = true;
+  @Prop headerContentSelected: number = 0;
+  @Prop footerEnabled: boolean = true;
+  @Prop footerLeftSelected: number = 0;
+  @Prop footerProgressSelected: number = 0;
+  @Prop footerShowProgressBar: boolean = true;
+  @Prop textColor: ResourceColor = '#18191C';
+  @Prop subTextColor: ResourceColor = '#8A8A8A';
+  @Prop switchColor: ResourceColor = '#4F8F86';
+  @Prop accentColor: ResourceColor = '#3B82F6';
+  @Prop darkMode: boolean = false;
+  @Prop panelColor: string = '#FFFFFF';
+  onToggleHeader: (enabled: boolean) => void = (_enabled: boolean): void => {
+  };
+  onSelectHeaderContent: (index: number) => void = (_index: number): void => {
+  };
+  onToggleFooter: (enabled: boolean) => void = (_enabled: boolean): void => {
+  };
+  onSelectFooterLeft: (index: number) => void = (_index: number): void => {
+  };
+  onSelectFooterProgress: (index: number) => void = (_index: number): void => {
+  };
+  onToggleFooterProgressBar: (enabled: boolean) => void = (_enabled: boolean): void => {
+  };
+
+  build() {
+    Column({ space: 4 }) {
+      ReaderSwitchSettingItem({
+        title: '显示页眉',
+        description: '在正文顶部显示书名或当前章节标题',
+        isOn: this.headerEnabled,
+        onChange: (checked: boolean): void => {
+          this.onToggleHeader(checked);
+        },
+        textColor: this.textColor,
+        subTextColor: this.subTextColor,
+        switchColor: this.switchColor
+      })
+
+      if (this.headerEnabled) {
+        ReaderSelectSettingItem({
+          title: '页眉内容',
+          description: '选择页眉中显示的信息',
+          options: LeafFns.readerHeaderContentOptions(),
+          selected: this.headerContentSelected,
+          controlId: 'reader_header_content_select',
+          textColor: this.textColor,
+          subTextColor: this.subTextColor,
+          accentColor: this.accentColor,
+          darkMode: this.darkMode,
+          panelColor: this.panelColor,
+          onSelect: (index: number): void => {
+            this.onSelectHeaderContent(index);
+          }
+        })
+      }
+
+      ReaderSwitchSettingItem({
+        title: '显示页脚',
+        description: '显示章节信息和阅读进度',
+        isOn: this.footerEnabled,
+        onChange: (checked: boolean): void => {
+          this.onToggleFooter(checked);
+        },
+        textColor: this.textColor,
+        subTextColor: this.subTextColor,
+        switchColor: this.switchColor
+      })
+
+      if (this.footerEnabled) {
+        ReaderSelectSettingItem({
+          title: '页脚左侧',
+          description: '选择页脚左侧显示的信息',
+          options: LeafFns.readerFooterLeftOptions(),
+          selected: this.footerLeftSelected,
+          controlId: 'reader_footer_left_select',
+          textColor: this.textColor,
+          subTextColor: this.subTextColor,
+          accentColor: this.accentColor,
+          darkMode: this.darkMode,
+          panelColor: this.panelColor,
+          onSelect: (index: number): void => {
+            this.onSelectFooterLeft(index);
+          }
+        })
+
+        ReaderSelectSettingItem({
+          title: '阅读进度',
+          description: '选择页脚右侧显示的进度类型',
+          options: LeafFns.readerFooterProgressOptions(),
+          selected: this.footerProgressSelected,
+          controlId: 'reader_footer_progress_select',
+          textColor: this.textColor,
+          subTextColor: this.subTextColor,
+          accentColor: this.accentColor,
+          darkMode: this.darkMode,
+          panelColor: this.panelColor,
+          onSelect: (index: number): void => {
+            this.onSelectFooterProgress(index);
+          }
+        })
+
+        ReaderSwitchSettingItem({
+          title: '显示进度条',
+          description: '在页脚上方显示本章阅读进度',
+          isOn: this.footerShowProgressBar,
+          onChange: (checked: boolean): void => {
+            this.onToggleFooterProgressBar(checked);
+          },
+          textColor: this.textColor,
+          subTextColor: this.subTextColor,
+          switchColor: this.switchColor
+        })
+      }
+    }
+    .width('100%')
+    .padding({ bottom: 8 })
+  }
+}
+
+/**
+ * TXT 字符编码选择弹窗内容。
+ * 原 @Builder 81 行，读 5 个页面 @State + 2 个动作方法；提成组件后值走 @Prop、动作走回调。
+ */
+@Component
+export struct ReaderTxtCharsetDialogContent {
+  @Prop textColor: ResourceColor = '#18191C';
+  @Prop subTextColor: ResourceColor = '#8A8A8A';
+  @Prop accentColor: ResourceColor = '#3B82F6';
+  @Prop controlIconColor: ResourceColor = '#18191C';
+  @Prop darkMode: boolean = false;
+  @Prop currentCharsetLabel: string = '自动识别';
+  @Prop draftCharset: string = '';
+  @Prop applying: boolean = false;
+  @Prop listHeight: number = 320;
+  onClose: () => void = (): void => {
+  };
+  onPick: (value: string) => void = (_value: string): void => {
+  };
+  onCancel: () => void = (): void => {
+  };
+  onApply: () => void = (): void => {
+  };
+
+  build() {
+    Column({ space: 10 }) {
+      Row() {
+        Column({ space: 3 }) {
+          Text('选择字符编码')
+            .fontSize(20)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.textColor)
+          Text(`当前解析：${this.currentCharsetLabel}`)
+            .fontSize(12)
+            .fontColor(this.subTextColor)
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+        ImmersiveBackButton({
+          icon: $r('sys.symbol.xmark'),
+          iconOffsetX: 0,
+          iconColor: this.controlIconColor,
+          darkMode: this.darkMode,
+          buttonSize: 38,
+          containerWidth: 38,
+          containerHeight: 38,
+          startInset: 0,
+          compactLayout: true,
+          accessibilityLabel: '关闭字符编码选择',
+          onBack: (): void => {
+            this.onClose();
+          }
+        })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Scroll() {
+        Column({ space: 4 }) {
+          ForEach(LeafFns.txtCharsetOptions(), (option: ReaderTxtCharsetOption) => {
+            ReaderTxtCharsetOptionRow({
+              label: option.label,
+              description: option.description,
+              selected: this.draftCharset === option.value,
+              rowEnabled: !this.applying,
+              textColor: this.textColor,
+              subTextColor: this.subTextColor,
+              accentColor: this.accentColor,
+              darkMode: this.darkMode,
+              onPick: (): void => {
+                this.onPick(option.value);
+              }
+            })
+          }, (option: ReaderTxtCharsetOption) => option.value || 'auto')
+        }
+        .width('100%')
+      }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .width('100%')
+      .height(this.listHeight)
+      .scrollBar(BarState.Auto)
+
+      Row({ space: 12 }) {
+        Button('取消')
+          .layoutWeight(1)
+          .height(42)
+          .fontColor(this.textColor)
+          .backgroundColor(this.darkMode ? '#24FFFFFF' : '#10000000')
+          .enabled(!this.applying)
+          .onClick((): void => {
+            this.onCancel();
+          })
+        Button(this.applying ? '正在重新解析…' : '应用')
+          .layoutWeight(1)
+          .height(42)
+          .fontColor('#FFFFFF')
+          .backgroundColor(this.accentColor)
+          .enabled(!this.applying)
+          .onClick((): void => {
+            this.onApply();
+          })
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .constraintSize({ maxWidth: 440 })
+    .padding({ left: 18, right: 18, top: 16, bottom: 16 })
+  }
+}
+
+/**
+ * 朗读音色下拉里的一个「系统音色」行。
+ * 比 ReaderTtsVoiceOption 多三种右侧状态：下载中 / 已选中 / 可下载，以及不可用时的降透明度与 toast。
+ */
+@Component
+export struct ReaderSystemTtsVoiceOption {
+  @Prop title: string = '';
+  @Prop availableState: number = 0;
+  @Prop downloadable: boolean = false;
+  @Prop downloading: boolean = false;
+  @Prop selected: boolean = false;
+  @Prop pressed: boolean = false;
+  @Prop textColor: ResourceColor = '#18191C';
+  @Prop subTextColor: ResourceColor = '#8A8A8A';
+  @Prop accentColor: ResourceColor = '#3B82F6';
+  @Prop darkMode: boolean = false;
+  @Prop pressedBackgroundColor: ResourceColor = '#0F000000';
+  @Prop selectedBackgroundColor: ResourceColor = Color.Transparent;
+  onPressedChange: (pressed: boolean) => void = (pressed: boolean): void => {
+  };
+  onAction: (available: boolean, downloadable: boolean) => void =
+    (_available: boolean, _downloadable: boolean): void => {
+    };
+
+  private get usable(): boolean {
+    return this.availableState !== 0 || this.downloadable;
+  }
+
+  build() {
+    Row() {
+      Text(this.title)
+        .fontSize(14)
+        .fontColor(this.usable ? this.textColor : this.subTextColor)
+        .layoutWeight(1)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      if (this.downloading) {
+        Text('下载中')
+          .fontSize(11)
+          .fontColor(this.accentColor)
+          .margin({ left: 10 })
+      } else if (this.selected) {
+        SymbolGlyph($r('sys.symbol.checkmark'))
+          .fontSize(18)
+          .fontColor([this.accentColor])
+          .margin({ left: 10 })
+      } else if (this.availableState === 0 && this.downloadable) {
+        Text('下载')
+          .fontSize(12)
+          .fontColor(this.accentColor)
+          .margin({ left: 10 })
+      }
+    }
+    .width('100%')
+    .constraintSize({ minHeight: 48 })
+    .padding({ left: 12, right: 12, top: 9, bottom: 9 })
+    .borderRadius(8)
+    .backgroundColor(this.pressed ? this.pressedBackgroundColor :
+      (this.selected ? this.selectedBackgroundColor : Color.Transparent))
+    .opacity(this.usable ? 1 : 0.5)
+    .onTouch((event: TouchEvent): void => {
+      if (event.type === TouchType.Down) {
+        this.onPressedChange(true);
+      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+        this.onPressedChange(false);
+      }
+    })
+    .onClick((): void => {
+      this.onAction(this.availableState !== 0, this.downloadable);
+    })
   }
 }

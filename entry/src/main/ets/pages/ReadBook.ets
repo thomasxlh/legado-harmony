@@ -95,6 +95,9 @@ import {
   ReaderAutoPageTurnIntervalSettingItem,
   ReaderTxtCharsetOptionRow,
   ReaderLayoutElementSettingsDialog,
+  ReaderHeaderFooterSettingsPanel,
+  ReaderTxtCharsetDialogContent,
+  ReaderSystemTtsVoiceOption,
 } from '../components/ReaderSettingsRows';
 import {
   ReaderActionMenuItem,
@@ -3927,7 +3930,29 @@ TtsGlobalCapsule({
     this.txtCharsetDraft = LocalBookService.getTxtCharsetOverride(this.book);
     this.showTxtCharsetDialog = true;
     this.txtCharsetDialogSession.open(this.getUIContext(), (): void => {
-      this.readerTxtCharsetDialogContent();
+      ReaderTxtCharsetDialogContent({
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        controlIconColor: this.readerControlIconColor(),
+        darkMode: this.isReaderThemeDark(),
+        currentCharsetLabel: LeafFns.txtCharsetLabel(this.book?.charset || ''),
+        draftCharset: this.txtCharsetDraft,
+        applying: this.txtCharsetApplying,
+        listHeight: Math.min(440, Math.max(160, this.pageViewHeight - 190)),
+        onClose: (): void => {
+          if (!this.txtCharsetApplying) this.showTxtCharsetDialog = false;
+        },
+        onPick: (value: string): void => {
+          this.txtCharsetDraft = value;
+        },
+        onCancel: (): void => {
+          this.showTxtCharsetDialog = false;
+        },
+        onApply: (): void => {
+          this.applyTxtCharsetSelection();
+        }
+      });
     }, {
       autoCancel: false,
       maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
@@ -3937,89 +3962,6 @@ TtsGlobalCapsule({
 
   async applyTxtCharsetSelection(): Promise<void> {
     return ReaderTextPrepOps.applyTxtCharsetSelection(this);
-  }
-
-  @Builder
-  readerTxtCharsetDialogContent() {
-    Column({ space: 10 }) {
-      Row() {
-        Column({ space: 3 }) {
-          Text('选择字符编码')
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.getTextColor())
-          Text(`当前解析：${LeafFns.txtCharsetLabel(this.book?.charset || '')}`)
-            .fontSize(12)
-            .fontColor(this.getSubTextColor())
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-        ImmersiveBackButton({
-          icon: $r('sys.symbol.xmark'),
-          iconOffsetX: 0,
-          iconColor: this.readerControlIconColor(),
-          darkMode: this.isReaderThemeDark(),
-          buttonSize: 38,
-          containerWidth: 38,
-          containerHeight: 38,
-          startInset: 0,
-          compactLayout: true,
-          accessibilityLabel: '关闭字符编码选择',
-          onBack: () => {
-            if (!this.txtCharsetApplying) this.showTxtCharsetDialog = false;
-          }
-        })
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-
-      Scroll() {
-        Column({ space: 4 }) {
-          ForEach(LeafFns.txtCharsetOptions(), (option: ReaderTxtCharsetOption) => {
-            ReaderTxtCharsetOptionRow({
-              label: option.label,
-              description: option.description,
-              selected: this.txtCharsetDraft === option.value,
-              rowEnabled: !this.txtCharsetApplying,
-              textColor: this.getTextColor(),
-              subTextColor: this.getSubTextColor(),
-              accentColor: this.accentColor(),
-              darkMode: this.isReaderThemeDark(),
-              onPick: (): void => {
-                this.txtCharsetDraft = option.value;
-              }
-            })
-          }, (option: ReaderTxtCharsetOption) => option.value || 'auto')
-        }
-        .width('100%')
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height(Math.min(440, Math.max(160, this.pageViewHeight - 190)))
-      .scrollBar(BarState.Auto)
-
-      Row({ space: 12 }) {
-        Button('取消')
-          .layoutWeight(1)
-          .height(42)
-          .fontColor(this.getTextColor())
-          .backgroundColor(this.isReaderThemeDark() ? '#24FFFFFF' : '#10000000')
-          .enabled(!this.txtCharsetApplying)
-          .onClick(() => {
-            this.showTxtCharsetDialog = false;
-          })
-        Button(this.txtCharsetApplying ? '正在重新解析…' : '应用')
-          .layoutWeight(1)
-          .height(42)
-          .fontColor('#FFFFFF')
-          .backgroundColor(this.accentColor())
-          .enabled(!this.txtCharsetApplying)
-          .onClick(() => this.applyTxtCharsetSelection())
-      }
-      .width('100%')
-    }    .width('100%')
-    .constraintSize({ maxWidth: 440 })
-    .padding({ left: 18, right: 18, top: 16, bottom: 16 })
   }
 
 
@@ -6281,7 +6223,41 @@ TtsGlobalCapsule({
           this.setReaderTextAlignByIndex(index);
         }
       })
-      this.readerHeaderFooterSettingsPanel()
+      ReaderHeaderFooterSettingsPanel({
+        headerEnabled: this.readerHeaderEnabled,
+        headerContentSelected: this.readerHeaderContentSelectedIndex(),
+        footerEnabled: this.readerFooterEnabled,
+        footerLeftSelected: this.readerFooterLeftSelectedIndex(),
+        footerProgressSelected: this.readerFooterProgressSelectedIndex(),
+        footerShowProgressBar: this.readerFooterShowProgressBar,
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        switchColor: this.buttonColor(),
+        accentColor: this.accentColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.getBackgroundColor(),
+        onToggleHeader: (enabled: boolean): void => {
+          this.readerHeaderEnabled = enabled;
+        },
+        onSelectHeaderContent: (index: number): void => {
+          const values = LeafFns.readerHeaderContentValues();
+          this.readerHeaderContentMode = index >= 0 && index < values.length ? values[index] : 'chapter';
+        },
+        onToggleFooter: (enabled: boolean): void => {
+          this.readerFooterEnabled = enabled;
+        },
+        onSelectFooterLeft: (index: number): void => {
+          const values = LeafFns.readerFooterLeftValues();
+          this.readerFooterLeftMode = index >= 0 && index < values.length ? values[index] : 'chapter';
+        },
+        onSelectFooterProgress: (index: number): void => {
+          const values = LeafFns.readerFooterProgressValues();
+          this.readerFooterProgressMode = index >= 0 && index < values.length ? values[index] : 'page';
+        },
+        onToggleFooterProgressBar: (enabled: boolean): void => {
+          this.readerFooterShowProgressBar = enabled;
+        }
+      })
       ReaderFontEntryItem({
         textColor: this.getTextColor(),
         subTextColor: this.getSubTextColor(),
@@ -6403,80 +6379,6 @@ TtsGlobalCapsule({
   }
 
 
-
-  @Builder
-  readerHeaderFooterSettingsPanel() {
-    Column({ space: 4 }) {
-      ReaderSwitchSettingItem({ title: '显示页眉', description: '在正文顶部显示书名或当前章节标题', isOn: this.readerHeaderEnabled, onChange: (checked: boolean) => {
-          this.readerHeaderEnabled = checked;
-        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
-
-      if (this.readerHeaderEnabled) {
-        ReaderSelectSettingItem({
-        title: '页眉内容',
-        description: '选择页眉中显示的信息',
-        options: LeafFns.readerHeaderContentOptions(),
-        selected: this.readerHeaderContentSelectedIndex(),
-        controlId: 'reader_header_content_select',
-        textColor: this.getTextColor(),
-        subTextColor: this.getSubTextColor(),
-        accentColor: this.accentColor(),
-        darkMode: this.isReaderThemeDark(),
-        panelColor: this.getBackgroundColor(),
-        onSelect: (index: number) => {
-            const values = LeafFns.readerHeaderContentValues();
-            this.readerHeaderContentMode = index >= 0 && index < values.length ? values[index] : 'chapter';
-          }
-      })
-      }
-
-      ReaderSwitchSettingItem({ title: '显示页脚', description: '显示章节信息和阅读进度', isOn: this.readerFooterEnabled, onChange: (checked: boolean) => {
-          this.readerFooterEnabled = checked;
-        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
-
-      if (this.readerFooterEnabled) {
-        ReaderSelectSettingItem({
-        title: '页脚左侧',
-        description: '选择页脚左侧显示的信息',
-        options: LeafFns.readerFooterLeftOptions(),
-        selected: this.readerFooterLeftSelectedIndex(),
-        controlId: 'reader_footer_left_select',
-        textColor: this.getTextColor(),
-        subTextColor: this.getSubTextColor(),
-        accentColor: this.accentColor(),
-        darkMode: this.isReaderThemeDark(),
-        panelColor: this.getBackgroundColor(),
-        onSelect: (index: number) => {
-            const values = LeafFns.readerFooterLeftValues();
-            this.readerFooterLeftMode = index >= 0 && index < values.length ? values[index] : 'chapter';
-          }
-      })
-
-        ReaderSelectSettingItem({
-        title: '阅读进度',
-        description: '选择页脚右侧显示的进度类型',
-        options: LeafFns.readerFooterProgressOptions(),
-        selected: this.readerFooterProgressSelectedIndex(),
-        controlId: 'reader_footer_progress_select',
-        textColor: this.getTextColor(),
-        subTextColor: this.getSubTextColor(),
-        accentColor: this.accentColor(),
-        darkMode: this.isReaderThemeDark(),
-        panelColor: this.getBackgroundColor(),
-        onSelect: (index: number) => {
-            const values = LeafFns.readerFooterProgressValues();
-            this.readerFooterProgressMode = index >= 0 && index < values.length ? values[index] : 'page';
-          }
-      })
-
-        ReaderSwitchSettingItem({ title: '显示进度条', description: '在页脚上方显示本章阅读进度', isOn: this.readerFooterShowProgressBar, onChange: (checked: boolean) => {
-            this.readerFooterShowProgressBar = checked;
-          }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
-      }
-    }
-    .width('100%')
-    .padding({ bottom: 8 })
-  }
 
   readerTypographyValue(settingIndex: number): number {
     return ReaderSettingsOps.readerTypographyValue(this, settingIndex);
@@ -7139,7 +7041,39 @@ TtsGlobalCapsule({
             if (this.selectableSystemTtsVoices().length > 0) {
               ReaderTtsVoiceSectionTitle({ title: '系统音色', subTextColor: this.getSubTextColor() })
               ForEach(this.selectableSystemTtsVoices(), (voice: TtsVoiceOption) => {
-                this.systemTtsVoiceDropdownOption(voice)
+                ReaderSystemTtsVoiceOption({
+                  title: LeafFns.ttsVoiceTitle(voice),
+                  availableState: voice.available ? 1 : 0,
+                  downloadable: voice.downloadable === true,
+                  downloading: this.ttsDownloadingVoiceKey === LeafFns.ttsVoiceKey(voice),
+                  selected: this.isCurrentTtsVoice(voice),
+                  pressed: this.ttsVoiceRowPressedKey === LeafFns.ttsVoiceKey(voice),
+                  textColor: this.getTextColor(),
+                  subTextColor: this.getSubTextColor(),
+                  accentColor: this.accentColor(),
+                  darkMode: this.isReaderThemeDark(),
+                  pressedBackgroundColor: this.isReaderThemeDark() ? '#14FFFFFF' : '#0F000000',
+                  selectedBackgroundColor: this.tocSelectedBackgroundColor(),
+                  onPressedChange: (pressed: boolean): void => {
+                    if (pressed) {
+                      this.ttsVoiceRowPressedKey = LeafFns.ttsVoiceKey(voice);
+                    } else if (this.ttsVoiceRowPressedKey === LeafFns.ttsVoiceKey(voice)) {
+                      this.ttsVoiceRowPressedKey = '';
+                    }
+                  },
+                  onAction: (available: boolean, downloadable: boolean): void => {
+                    if (!available) {
+                      if (downloadable) {
+                        this.downloadTtsVoice(voice);
+                      } else {
+                        HdsFeedback.showToast('该系统音色当前不可用');
+                      }
+                      return;
+                    }
+                    this.showTtsVoiceDropdown = false;
+                    this.applyTtsVoice(voice, true);
+                  }
+                })
               }, (voice: TtsVoiceOption) => LeafFns.ttsVoiceKey(voice))
             }
           }
@@ -7167,64 +7101,6 @@ TtsGlobalCapsule({
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  systemTtsVoiceDropdownOption(voice: TtsVoiceOption) {
-    Row() {
-      Text(LeafFns.ttsVoiceTitle(voice))
-        .fontSize(14)
-        .fontColor(voice.available || voice.downloadable ? this.getTextColor() : this.getSubTextColor())
-        .layoutWeight(1)
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-      if (this.ttsDownloadingVoiceKey === LeafFns.ttsVoiceKey(voice)) {
-        Text('下载中')
-          .fontSize(11)
-          .fontColor(this.accentColor())
-          .margin({ left: 10 })
-      } else if (this.isCurrentTtsVoice(voice)) {
-        SymbolGlyph($r('sys.symbol.checkmark'))
-          .fontSize(18)
-          .fontColor([this.accentColor()])
-          .margin({ left: 10 })
-      } else if (!voice.available && voice.downloadable) {
-        Text('下载')
-          .fontSize(12)
-          .fontColor(this.accentColor())
-          .margin({ left: 10 })
-      }
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 48 })
-    .padding({ left: 12, right: 12, top: 9, bottom: 9 })
-    .borderRadius(8)
-    .backgroundColor(this.ttsVoiceRowPressedKey === LeafFns.ttsVoiceKey(voice) ?
-      (this.isReaderThemeDark() ? '#14FFFFFF' : '#0F000000') :
-      (this.isCurrentTtsVoice(voice) ? this.tocSelectedBackgroundColor() : Color.Transparent))
-    .opacity(voice.available || voice.downloadable ? 1 : 0.5)
-    .onTouch((event: TouchEvent) => {
-      if (event.type === TouchType.Down) {
-        this.ttsVoiceRowPressedKey = LeafFns.ttsVoiceKey(voice);
-      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-        if (this.ttsVoiceRowPressedKey === LeafFns.ttsVoiceKey(voice)) {
-          this.ttsVoiceRowPressedKey = '';
-        }
-      }
-    })
-    .onClick(() => {
-      if (!voice.available) {
-        if (voice.downloadable) {
-          this.downloadTtsVoice(voice);
-        } else {
-          HdsFeedback.showToast('该系统音色当前不可用');
-        }
-        return;
-      }
-      this.showTtsVoiceDropdown = false;
-      this.applyTtsVoice(voice, true);
-    })
   }
 
 
