@@ -2462,47 +2462,25 @@ export struct ReadBookPage {
         }
         if (this.readerUseTtsQuickAction && this.shouldShowTtsMediaControls()) {
           if (LeafFns.supportsReaderImmersiveMaterial()) {
-            if (this.hdsMaterialRenderBranch) {
-              ReaderTtsExpandedControlsBar({
-                timerMinutes: this.ttsSleepTimerMinutes,
-                remainingSeconds: this.ttsSleepTimerRemainingSeconds,
-                speaking: this.isTtsSpeaking,
-                paused: this.isTtsPaused,
-                canPlayPrevious: this.canPlayPreviousTtsChapter(),
-                canPlayNext: this.canPlayNextTtsChapter(),
-                speedText: `${this.ttsSpeed.toFixed(1)}x`,
-                textColor: this.getTextColor(),
-                subTextColor: this.getSubTextColor(),
-                accentColor: this.accentColor(),
-                panelColor: this.readerGlassPanelColor(),
-                themeKey: `reader_tts_controls_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`,
-                controlLeft: this.readerTtsExpandedControlLeft(),
-                overlayOffset: this.readerBottomMenuOverlayHeight() + 66,
-                onControl: (index: number): void => {
-                  this.handleTtsExpandedControl(index);
-                }
-              })
-            } else {
-              ReaderTtsExpandedControlsBar({
-                timerMinutes: this.ttsSleepTimerMinutes,
-                remainingSeconds: this.ttsSleepTimerRemainingSeconds,
-                speaking: this.isTtsSpeaking,
-                paused: this.isTtsPaused,
-                canPlayPrevious: this.canPlayPreviousTtsChapter(),
-                canPlayNext: this.canPlayNextTtsChapter(),
-                speedText: `${this.ttsSpeed.toFixed(1)}x`,
-                textColor: this.getTextColor(),
-                subTextColor: this.getSubTextColor(),
-                accentColor: this.accentColor(),
-                panelColor: this.readerGlassPanelColor(),
-                themeKey: `reader_tts_controls_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`,
-                controlLeft: this.readerTtsExpandedControlLeft(),
-                overlayOffset: this.readerBottomMenuOverlayHeight() + 66,
-                onControl: (index: number): void => {
-                  this.handleTtsExpandedControl(index);
-                }
-              })
-            }
+            ReaderTtsExpandedControlsBar({
+              timerMinutes: this.ttsSleepTimerMinutes,
+              remainingSeconds: this.ttsSleepTimerRemainingSeconds,
+              speaking: this.isTtsSpeaking,
+              paused: this.isTtsPaused,
+              canPlayPrevious: this.canPlayPreviousTtsChapter(),
+              canPlayNext: this.canPlayNextTtsChapter(),
+              speedText: `${this.ttsSpeed.toFixed(1)}x`,
+              textColor: this.getTextColor(),
+              subTextColor: this.getSubTextColor(),
+              accentColor: this.accentColor(),
+              panelColor: this.readerGlassPanelColor(),
+              themeKey: `reader_tts_controls_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`,
+              controlLeft: this.readerTtsExpandedControlLeft(),
+              overlayOffset: this.readerBottomMenuOverlayHeight() + 66,
+              onControl: (index: number): void => {
+                this.handleTtsExpandedControl(index);
+              }
+            })
           } else {
             ReaderTtsExpandedControlsCompat({
               timerMinutes: this.ttsSleepTimerMinutes,
@@ -3103,7 +3081,6 @@ TtsGlobalCapsule({
           ReaderBookmarkList({
             bookmarks: this.bookmarks,
             selectedUrls: this.selectedBookmarkUrls,
-            multiSelectMode: this.bookmarkMultiSelectMode,
             accentColor: this.accentColor(),
             textColor: this.getTextColor(),
             subTextColor: this.getSubTextColor(),

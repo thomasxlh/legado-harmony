@@ -7,7 +7,7 @@ import { ReaderBookmarkDeleteAction, ReaderBookmarkMultiSelectAction } from './R
 /**
  * 目录面板中的书签列表（89 行 @Builder + 17 行旧系统侧滑兜底）。
  *
- * 书签数据、选中 URL 集与多选模式走 @Prop；跳转/多选切换/长按浮层/删除全部以回调交还页面。
+ * 书签数据与选中 URL 集走 @Prop；跳转/多选切换/长按浮层/删除全部以回调交还页面。
  * API 26+ 走 HdsListItem 单侧滑面板，旧系统走原生 ListItem + swipeAction 兜底，
  * 兜底面板（多选/删除双按钮）随本组件内聚，页面不再感知系统分支。
  */
@@ -15,7 +15,6 @@ import { ReaderBookmarkDeleteAction, ReaderBookmarkMultiSelectAction } from './R
 export struct ReaderBookmarkList {
   @Prop bookmarks: Bookmark[] = [];
   @Prop selectedUrls: string[] = [];
-  @Prop multiSelectMode: boolean = false;
   @Prop accentColor: string = '#3B82F6';
   @Prop textColor: string = '#18191C';
   @Prop subTextColor: string = '#6B7280';

@@ -1715,7 +1715,8 @@ export function getRegexRules(page: ReadBookPage): ReaderRegexFontRule[] {
 }
 
 export function themeRegexEmphasisColor(dark: boolean): string {
-    return ThemeRuntime.regexEmphasisColor(dark);}
+    return ThemeRuntime.regexEmphasisColor(dark);
+}
 
 export function readerRegexEmphasisContext(page: ReadBookPage): ReaderRegexEmphasisContext {
     const context = new ReaderRegexEmphasisContext();
