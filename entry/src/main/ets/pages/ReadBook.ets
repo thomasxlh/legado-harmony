@@ -99,6 +99,7 @@ import {
   ReaderSystemTtsVoiceOption,
   ReaderTtsVoicePanel,
   ReaderChapterCacheDialogContent,
+  ReaderTypographyCombinedSettings,
 } from '../components/ReaderSettingsRows';
 import { ReaderActionMenuItem, ReaderCommentPanelDragOverlay, ReaderFloatingIconMenuItem, ReaderHdsMenuItem, ReaderReplaceRulesEntryItem, ReaderActionMenuPanel } from '../components/ReaderMenuItems';
 import {
@@ -5903,7 +5904,37 @@ TtsGlobalCapsule({
   readerTypographySettingsPanel() {
     Column({ space: 4 }) {
       // 正文排版作为面板首项，统一调整字号、字距、行距、段距及四侧边距。
-      this.readerTypographyCombinedSettings()
+      ReaderTypographyCombinedSettings({
+        selection: this.readerTypographySelection,
+        selectedLabel: this.readerTypographySelectedLabel(),
+        value: this.readerTypographyValue(this.readerTypographySelection),
+        minValue: LeafFns.readerTypographyMin(this.readerTypographySelection),
+        maxValue: LeafFns.readerTypographyMax(this.readerTypographySelection),
+        valueDraft: this.readerTypographyValueDraft,
+        inputVisible: this.showReaderTypographyValueInput,
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        iconColor: this.readerControlIconColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.readerSolidPanelColor(),
+        onSelect: (index: number): void => {
+          this.showReaderTypographyValueInput = false;
+          this.readerTypographySelection = Math.max(0, Math.min(index, 7));
+        },
+        onStep: (delta: number): void => {
+          this.stepReaderTypographyValue(this.readerTypographySelection, delta);
+        },
+        onDraftChange: (value: string): void => {
+          this.readerTypographyValueDraft = value.replace(/[^0-9]/g, '').substring(0, 3);
+        },
+        onSubmit: (): void => {
+          this.applyReaderTypographyValueInput();
+        },
+        onOpenInput: (): void => {
+          this.openReaderTypographyValueInput();
+        }
+      })
       ReaderSelectSettingItem({
         title: '正文对齐方式',
         description: '设置正文段落的水平对齐方式',
@@ -5985,93 +6016,6 @@ TtsGlobalCapsule({
 
   setReaderTextAlignByIndex(index: number): void {
     ReaderSettingsOps.setReaderTextAlignByIndex(this, index);
-  }
-
-  @Builder
-  readerTypographyCombinedSettings() {
-    Row({ space: 8 }) {
-      Select(LeafFns.readerTypographyOptions())
-        .id('reader_typography_selector')
-        .selected(this.readerTypographySelection)
-        .value(this.readerTypographySelectedLabel())
-        .font({ size: 15 })
-        .fontColor(this.getSubTextColor())
-        .backgroundColor(Color.Transparent)
-        .arrowPosition(ArrowPosition.START)
-        .padding({ left: 0, right: 0 })
-        .borderRadius(16)
-        .border({ width: 0 })
-        .optionBgColor(Color.Transparent)
-        .divider(null)
-        .optionFontColor(this.getTextColor())
-        .selectedOptionFontColor(this.accentColor())
-        .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
-        .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
-        .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .attributeModifier(new SelectMenuMaterialModifier())
-        .onSelect((index: number) => {
-          this.showReaderTypographyValueInput = false;
-          this.readerTypographySelection = Math.max(0, Math.min(index, 7));
-        })
-      Blank()
-        .layoutWeight(1)
-      ReaderSliderStepButton({
-        icon: $r('sys.symbol.minus'),
-        accessibilityLabel: '减小当前排版参数',
-        controlEnabled: this.readerTypographyValue(this.readerTypographySelection) > LeafFns.readerTypographyMin(this.readerTypographySelection),
-        action: () => this.stepReaderTypographyValue(this.readerTypographySelection, -1),
-        iconColor: this.readerControlIconColor(),
-        disabledIconColor: this.getSubTextColor(),
-        darkMode: this.isReaderThemeDark(),
-      })
-      if (this.showReaderTypographyValueInput) {
-        TextInput({ text: this.readerTypographyValueDraft,
-          placeholder: `${this.readerTypographyValue(this.readerTypographySelection)}` })
-          .type(InputType.Number)
-          .enterKeyType(EnterKeyType.Done)
-          .defaultFocus(true)
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-          .width(52)
-          .height(36)
-          .padding(0)
-          .textAlign(TextAlign.Center)
-          .backgroundColor(this.readerSolidPanelColor())
-          .borderRadius(6)
-          .onChange((value: string) => {
-            this.readerTypographyValueDraft = value.replace(/[^0-9]/g, '').substring(0, 3);
-          })
-          .onSubmit(() => {
-            this.applyReaderTypographyValueInput();
-          })
-          .onBlur(() => {
-            this.applyReaderTypographyValueInput();
-          })
-      } else {
-        Text(`${Math.round(this.readerTypographyValue(this.readerTypographySelection))}`)
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-          .width(52)
-          .height(36)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            this.openReaderTypographyValueInput();
-          })
-      }
-      ReaderSliderStepButton({
-        icon: $r('sys.symbol.plus'),
-        accessibilityLabel: '增大当前排版参数',
-        controlEnabled: this.readerTypographyValue(this.readerTypographySelection) < LeafFns.readerTypographyMax(this.readerTypographySelection),
-        action: () => this.stepReaderTypographyValue(this.readerTypographySelection, 1),
-        iconColor: this.readerControlIconColor(),
-        disabledIconColor: this.getSubTextColor(),
-        darkMode: this.isReaderThemeDark(),
-      })
-    }
-    .width('100%')
-    // Keep the selector on the same content baseline as the settings below.
-    .padding({ left: 0, right: 0, top: 12, bottom: 12 })
-    .alignItems(VerticalAlign.Center)
   }
 
 

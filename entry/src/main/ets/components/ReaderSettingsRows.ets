@@ -7,6 +7,7 @@ import { ReaderTxtCharsetOption } from '../core/reader/ReaderSettingsModels';
 import { TtsVoiceOption } from '../utils/SystemTtsReader';
 import { HttpTTS, BookChapter } from '../model/data/Book';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { ReaderSliderStepButton } from './ReaderOverlayItems';
 
 /**
  * 阅读设置面板里的「行」组件。
@@ -978,5 +979,127 @@ export struct ReaderChapterCacheDialogContent {
     .constraintSize({ maxWidth: 560 })
     .height(this.dialogHeight)
     .padding({ left: 18, right: 18, top: 18, bottom: 18 })
+  }
+}
+
+
+/**
+ * 排版参数组合行：左侧参数下拉 + 中间「− 数值 ＋」。
+ *
+ * 原先 85 行 @Builder，read 了 15 个页面状态；提取后数值/上下限/输入态显式传入，
+ * 增减与数值输入仍回调页面（页面负责写 @State 与落盘）。
+ */
+@Component
+export struct ReaderTypographyCombinedSettings {
+  @Prop selection: number = 0;
+  @Prop selectedLabel: string = '';
+  @Prop value: number = 16;
+  @Prop minValue: number = 12;
+  @Prop maxValue: number = 40;
+  @Prop valueDraft: string = '';
+  @Prop inputVisible: boolean = false;
+  @Prop textColor: ResourceColor = '#18191C';
+  @Prop subTextColor: ResourceColor = '#8A8A8A';
+  @Prop accentColor: ResourceColor = '#3B82F6';
+  @Prop iconColor: ResourceColor = '#18191C';
+  @Prop darkMode: boolean = false;
+  @Prop panelColor: string = '#FFFFFF';
+  onSelect: (index: number) => void = (index: number): void => {
+  };
+  onStep: (delta: number) => void = (delta: number): void => {
+  };
+  onDraftChange: (value: string) => void = (value: string): void => {
+  };
+  onSubmit: () => void = (): void => {
+  };
+  onOpenInput: () => void = (): void => {
+  };
+
+  build() {
+    Row({ space: 8 }) {
+      Select(LeafFns.readerTypographyOptions())
+        .id('reader_typography_selector')
+        .selected(this.selection)
+        .value(this.selectedLabel)
+        .font({ size: 15 })
+        .fontColor(this.subTextColor)
+        .backgroundColor(Color.Transparent)
+        .arrowPosition(ArrowPosition.START)
+        .padding({ left: 0, right: 0 })
+        .borderRadius(16)
+        .border({ width: 0 })
+        .optionBgColor(Color.Transparent)
+        .divider(null)
+        .optionFontColor(this.textColor)
+        .selectedOptionFontColor(this.accentColor)
+        .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.darkMode))
+        .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.darkMode, this.panelColor))
+        .menuBackgroundBlurStyle(BlurStyle.NONE)
+        .attributeModifier(new SelectMenuMaterialModifier())
+        .onSelect((index: number): void => {
+          this.onSelect(index);
+        })
+      Blank()
+        .layoutWeight(1)
+      ReaderSliderStepButton({
+        icon: $r('sys.symbol.minus'),
+        accessibilityLabel: '减小当前排版参数',
+        controlEnabled: this.value > this.minValue,
+        action: (): void => {
+          this.onStep(-1);
+        },
+        iconColor: this.iconColor,
+        disabledIconColor: this.subTextColor,
+        darkMode: this.darkMode,
+      })
+      if (this.inputVisible) {
+        TextInput({ text: this.valueDraft, placeholder: `${Math.round(this.value)}` })
+          .type(InputType.Number)
+          .enterKeyType(EnterKeyType.Done)
+          .defaultFocus(true)
+          .fontSize(15)
+          .fontColor(this.textColor)
+          .width(52)
+          .height(36)
+          .padding(0)
+          .textAlign(TextAlign.Center)
+          .backgroundColor(this.panelColor)
+          .borderRadius(6)
+          .onChange((value: string): void => {
+            this.onDraftChange(value);
+          })
+          .onSubmit((): void => {
+            this.onSubmit();
+          })
+          .onBlur((): void => {
+            this.onSubmit();
+          })
+      } else {
+        Text(`${Math.round(this.value)}`)
+          .fontSize(15)
+          .fontColor(this.textColor)
+          .width(52)
+          .height(36)
+          .textAlign(TextAlign.Center)
+          .onClick((): void => {
+            this.onOpenInput();
+          })
+      }
+      ReaderSliderStepButton({
+        icon: $r('sys.symbol.plus'),
+        accessibilityLabel: '增大当前排版参数',
+        controlEnabled: this.value < this.maxValue,
+        action: (): void => {
+          this.onStep(1);
+        },
+        iconColor: this.iconColor,
+        disabledIconColor: this.subTextColor,
+        darkMode: this.darkMode,
+      })
+    }
+    .width('100%')
+    // Keep the selector on the same content baseline as the settings below.
+    .padding({ left: 0, right: 0, top: 12, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
   }
 }
