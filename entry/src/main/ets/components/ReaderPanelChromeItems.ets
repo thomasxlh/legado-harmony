@@ -9,6 +9,9 @@ import { AdaptiveSwitch } from './AdaptiveSwitch';
 import { ImmersiveBackButton } from './ImmersiveBackButton';
 import { ReaderRoundMenuButton } from './ReaderSettingItems';
 import { ReaderSelectSettingItem } from './ReaderSettingsRows';
+import { ReaderFloatingIconMenuItem } from './ReaderMenuItems';
+import { ReaderFloatingDayNightMenuItem } from './ReaderPageFrameItems';
+import { ThemeRuntime } from '../theme/ThemeRuntime';
 import * as LeafFns from '../reader/ReaderLeafFns';
 
 @Component
@@ -485,5 +488,182 @@ export struct ReaderChapterSliderBar {
     .padding({ left: 4, right: 4 })
     .alignItems(VerticalAlign.Center)
     .translate({ y: -2 })
+  }
+}
+
+/**
+ * 浮动底栏（菜单态）：章节快速跳转条 + 4 个图标按钮（目录/设置/排版/昼夜）。
+ * 原为 ReadBook.ets 的 @Builder readerFloatingBottomMenu()，抽出后不持有 page 引用。
+ */
+@Component
+export struct ReaderFloatingBottomMenu {
+  @Prop useChapterQuickJump: boolean = false;
+  @Prop chapterDisplayIndex: number = 0;
+  @Prop chapterCount: number = 0;
+  @Prop chapterTitle: string = '';
+  @Prop currentChapterIndex: number = 0;
+  @Prop loading: boolean = false;
+  @Prop comicMode: boolean = false;
+  @Prop textColor: ResourceColor = '#18191C';
+  @Prop subTextColor: ResourceColor = '#8A8A8A';
+  @Prop accentColor: ResourceColor = '#3B82F6';
+  @Prop trackColor: ResourceColor = '#33000000';
+  @Prop blockColor: ResourceColor = '#F2FFFFFF';
+  @Prop panelColor: ResourceColor = '#F2FFFFFF';
+  @Prop glassBorderColor: ResourceColor = '#33FFFFFF';
+  @Prop shadowColor: ResourceColor = '#22000000';
+  @Prop iconColor: ResourceColor = '#18191C';
+  @Prop dayNightIcon: Resource = $r('sys.symbol.moon');
+  @Prop barLeft: number = 0;
+  @Prop barWidth: number = 0;
+  onJumpChapter: (delta: number) => void = (delta: number): void => {
+  };
+  onSliderChange: (value: number, mode: SliderChangeMode) => void = (value: number, mode: SliderChangeMode): void => {
+  };
+  onOpenToc: () => void = (): void => {
+  };
+  onOpenSettings: () => void = (): void => {
+  };
+  onOpenTypography: () => void = (): void => {
+  };
+  onToggleDayNight: () => void = (): void => {
+  };
+  onDayNightLongPress: () => void = (): void => {
+  };
+
+  build() {
+      Column({ space: 10 }) {
+        if (this.useChapterQuickJump) {
+          Row() {
+          SymbolGlyph($r('sys.symbol.chevron_left'))
+            .fontSize(24)
+            .fontColor([this.currentChapterIndex > 0 && !this.loading ? this.textColor : this.subTextColor])
+            .width(46)
+            .height(54)
+            .enabled(this.currentChapterIndex > 0 && !this.loading)
+            .onClick(async () => {
+              await this.onJumpChapter(-1);
+            })
+
+          Column({ space: 1 }) {
+            Row() {
+              Text(this.chapterTitle)
+                .fontSize(12)
+                .fontColor(this.subTextColor)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .layoutWeight(1)
+              Text(`${this.chapterDisplayIndex + 1}/${this.chapterCount}`)
+                .fontSize(11)
+                .fontColor(this.subTextColor)
+                .margin({ left: 8 })
+            }
+            .width('100%')
+
+            Slider({
+              value: this.chapterDisplayIndex,
+              min: 0,
+              max: Math.max(0, this.chapterCount - 1),
+              step: 1,
+              style: SliderStyle.InSet
+            })
+              .width('100%')
+              .height(24)
+              .selectedColor(this.accentColor)
+              .trackColor(this.trackColor)
+              .blockColor(this.blockColor)
+              .showSteps(false)
+              .onChange((value: number, mode: SliderChangeMode) => {
+                this.onSliderChange(value, mode);
+              })
+          }
+          .layoutWeight(1)
+
+          SymbolGlyph($r('sys.symbol.chevron_right'))
+            .fontSize(24)
+            .fontColor([this.currentChapterIndex < this.chapterCount - 1 && !this.loading ?
+              this.textColor : this.subTextColor])
+            .width(46)
+            .height(54)
+            .enabled(this.currentChapterIndex < this.chapterCount - 1 && !this.loading)
+            .onClick(async () => {
+              await this.onJumpChapter(1);
+            })
+          }
+          .width('100%')
+          .height(56)
+          .padding({ left: 4, right: 4 })
+          .borderRadius(ThemeRuntime.glassCornerRadius(28, 'panel'))
+          .backgroundColor(this.panelColor)
+          .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+          .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.glassBorderColor })
+          .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.shadowColor, offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
+        }
+
+        Row() {
+          Row() {
+            ReaderFloatingIconMenuItem({
+              icon: $r('sys.symbol.list_bullet'),
+              iconColor: this.iconColor,
+              showAddBadge: false,
+              menuEnabled: true,
+              onMenuClick: () => {
+              this.onOpenToc();
+            },
+            })
+          }
+          .layoutWeight(1)
+          .height(56)
+          Row() {
+            ReaderFloatingIconMenuItem({
+              icon: $r('sys.symbol.gearshape'),
+              iconColor: this.iconColor,
+              showAddBadge: false,
+              menuEnabled: !this.comicMode,
+              onMenuClick: () => {
+              this.onOpenSettings();
+            },
+            })
+          }
+          .layoutWeight(1)
+          .height(56)
+          Row() {
+            ReaderFloatingIconMenuItem({
+              icon: $r('sys.symbol.textformat'),
+              iconColor: this.iconColor,
+              showAddBadge: false,
+              menuEnabled: !this.comicMode,
+              onMenuClick: () => {
+              this.onOpenTypography();
+            },
+            })
+          }
+          .layoutWeight(1)
+          .height(56)
+          ReaderFloatingDayNightMenuItem({
+            icon: this.dayNightIcon,
+            iconColor: this.iconColor,
+            onActivate: (): void => {
+              this.onToggleDayNight();
+            },
+            onLongPress: (): void => {
+              this.onDayNightLongPress();
+            }
+          })
+        }
+        .width('100%')
+        .height(56)
+        .padding({ left: 8, right: 8 })
+        .borderRadius(ThemeRuntime.glassCornerRadius(28, 'panel'))
+        .backgroundColor(this.panelColor)
+        .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+        .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.glassBorderColor })
+        .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.shadowColor, offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
+      }
+      .width(this.barWidth)
+      .padding({ bottom: 14 })
+      .position({ x: this.barLeft, y: '100%' })
+      .translate({ y: '-100%' })
+
   }
 }

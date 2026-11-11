@@ -126,7 +126,8 @@ import {
   ReaderChapterSliderBar,
   ReaderPreloadSettingItem,
   ReaderTtsQuickActionButton,
-  ReaderTocVirtualScrollbar
+  ReaderTocVirtualScrollbar,
+  ReaderFloatingBottomMenu
 } from '../components/ReaderPanelChromeItems';
 import { ReaderMenuDismissLayer, ReaderSettingsDismissLayer } from '../components/ReaderDismissLayers';
 import {
@@ -2459,7 +2460,49 @@ export struct ReadBookPage {
             this.readerHdsFloatingBottomMenu()
           }
         } else {
-          this.readerFloatingBottomMenu()
+          ReaderFloatingBottomMenu({
+            useChapterQuickJump: this.readerUseChapterQuickJump,
+            chapterDisplayIndex: this.getMenuChapterDisplayIndex(),
+            chapterCount: this.chapters.length,
+            chapterTitle: this.getChapterTitle(this.getMenuChapterDisplayIndex()),
+            currentChapterIndex: this.currentChapterIndex,
+            loading: this.isLoading,
+            comicMode: this.isReaderComicModeActive(),
+            textColor: this.getTextColor(),
+            subTextColor: this.getSubTextColor(),
+            accentColor: this.accentColor(),
+            trackColor: this.readerChapterTrackColor(),
+            blockColor: this.readerSolidPanelColor(),
+            panelColor: this.readerGlassPanelColor(),
+            glassBorderColor: this.readerGlassBorderColor(),
+            shadowColor: this.readerGlassShadowColor(),
+            iconColor: this.readerControlIconColor(),
+            dayNightIcon: this.readerDayNightIcon(),
+            barLeft: this.readerFloatingBarLeft(),
+            barWidth: this.readerFloatingBarWidth(),
+            onJumpChapter: (delta: number): void => {
+              this.jumpToAdjacentChapterFromMenu(delta).catch(() => {
+              });
+            },
+            onSliderChange: (value: number, mode: SliderChangeMode): void => {
+              this.handleMenuChapterSliderChange(value, mode);
+            },
+            onOpenToc: (): void => {
+              this.openTocPanel();
+            },
+            onOpenSettings: (): void => {
+              this.openSettingsPanel();
+            },
+            onOpenTypography: (): void => {
+              this.openTypographySettingsPanel();
+            },
+            onToggleDayNight: (): void => {
+              this.handleReaderDayNightClick();
+            },
+            onDayNightLongPress: (): void => {
+              this.handleReaderDayNightLongPress();
+            },
+        })
         }
         if (this.readerUseTtsQuickAction && !this.isReaderComicModeActive() && !this.ttsMediaControlsExpanded &&
           !this.isTtsSpeaking && !this.ttsReader.isSpeaking() && !this.globalTtsActive) {
@@ -2965,142 +3008,6 @@ TtsGlobalCapsule({
 
   applyReaderThemeMode(nextMode: string): void {
     ReaderMenuBuildOps.applyReaderThemeMode(this, nextMode);
-  }
-
-  @Builder
-  readerFloatingBottomMenu() {
-    Column({ space: 10 }) {
-      if (this.readerUseChapterQuickJump) {
-        Row() {
-        SymbolGlyph($r('sys.symbol.chevron_left'))
-          .fontSize(24)
-          .fontColor([this.currentChapterIndex > 0 && !this.isLoading ? this.getTextColor() : this.getSubTextColor()])
-          .width(46)
-          .height(54)
-          .enabled(this.currentChapterIndex > 0 && !this.isLoading)
-          .onClick(async () => {
-            await this.jumpToAdjacentChapterFromMenu(-1);
-          })
-
-        Column({ space: 1 }) {
-          Row() {
-            Text(this.getChapterTitle(this.getMenuChapterDisplayIndex()))
-              .fontSize(12)
-              .fontColor(this.getSubTextColor())
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .layoutWeight(1)
-            Text(`${this.getMenuChapterDisplayIndex() + 1}/${this.chapters.length}`)
-              .fontSize(11)
-              .fontColor(this.getSubTextColor())
-              .margin({ left: 8 })
-          }
-          .width('100%')
-
-          Slider({
-            value: this.getMenuChapterDisplayIndex(),
-            min: 0,
-            max: Math.max(0, this.chapters.length - 1),
-            step: 1,
-            style: SliderStyle.InSet
-          })
-            .width('100%')
-            .height(24)
-            .selectedColor(this.accentColor())
-            .trackColor(this.readerChapterTrackColor())
-            .blockColor(this.readerSolidPanelColor())
-            .showSteps(false)
-            .onChange((value: number, mode: SliderChangeMode) => {
-              this.handleMenuChapterSliderChange(value, mode);
-            })
-        }
-        .layoutWeight(1)
-
-        SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(24)
-          .fontColor([this.currentChapterIndex < this.chapters.length - 1 && !this.isLoading ?
-            this.getTextColor() : this.getSubTextColor()])
-          .width(46)
-          .height(54)
-          .enabled(this.currentChapterIndex < this.chapters.length - 1 && !this.isLoading)
-          .onClick(async () => {
-            await this.jumpToAdjacentChapterFromMenu(1);
-          })
-        }
-        .width('100%')
-        .height(56)
-        .padding({ left: 4, right: 4 })
-        .borderRadius(ThemeRuntime.glassCornerRadius(28, 'panel'))
-        .backgroundColor(this.readerGlassPanelColor())
-        .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
-        .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
-        .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.readerGlassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      }
-
-      Row() {
-        Row() {
-          ReaderFloatingIconMenuItem({
-            icon: $r('sys.symbol.list_bullet'),
-            iconColor: this.readerControlIconColor(),
-            showAddBadge: false,
-            menuEnabled: true,
-            onMenuClick: () => {
-            this.openTocPanel();
-          },
-          })
-        }
-        .layoutWeight(1)
-        .height(56)
-        Row() {
-          ReaderFloatingIconMenuItem({
-            icon: $r('sys.symbol.gearshape'),
-            iconColor: this.readerControlIconColor(),
-            showAddBadge: false,
-            menuEnabled: !this.isReaderComicModeActive(),
-            onMenuClick: () => {
-            this.openSettingsPanel();
-          },
-          })
-        }
-        .layoutWeight(1)
-        .height(56)
-        Row() {
-          ReaderFloatingIconMenuItem({
-            icon: $r('sys.symbol.textformat'),
-            iconColor: this.readerControlIconColor(),
-            showAddBadge: false,
-            menuEnabled: !this.isReaderComicModeActive(),
-            onMenuClick: () => {
-            this.openTypographySettingsPanel();
-          },
-          })
-        }
-        .layoutWeight(1)
-        .height(56)
-        ReaderFloatingDayNightMenuItem({
-          icon: this.readerDayNightIcon(),
-          iconColor: this.readerControlIconColor(),
-          onActivate: (): void => {
-            this.handleReaderDayNightClick();
-          },
-          onLongPress: (): void => {
-            this.handleReaderDayNightLongPress();
-          }
-        })
-      }
-      .width('100%')
-      .height(56)
-      .padding({ left: 8, right: 8 })
-      .borderRadius(ThemeRuntime.glassCornerRadius(28, 'panel'))
-      .backgroundColor(this.readerGlassPanelColor())
-      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
-      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
-      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.readerGlassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-    }
-    .width(this.readerFloatingBarWidth())
-    .padding({ bottom: 14 })
-    .position({ x: this.readerFloatingBarLeft(), y: '100%' })
-    .translate({ y: '-100%' })
   }
 
   @Builder
