@@ -84,6 +84,16 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
+import {
+  ReaderTtsMediaSymbolControl,
+  ReaderTtsMediaSpeedControl,
+  ReaderTtsVoiceSectionTitle,
+  ReaderCacheActionItem,
+  ReaderEpubImage,
+  ReaderRoundMenuButton,
+  ReaderSwitchSettingItem,
+  ReaderLayoutElementToggle
+} from '../components/ReaderSettingItems';
 import { ReaderMenuDismissLayer, ReaderSettingsDismissLayer } from '../components/ReaderDismissLayers';
 import {
   ReaderCommentPanelDragHandle,
@@ -2522,43 +2532,25 @@ export struct ReadBookPage {
 
       Row({ space: 6 }) {
         if (this.book && !LocalBookService.isLocalBook(this.book) && this.chapters.length > 0) {
-          this.readerRoundMenuButton($r('sys.symbol.arrow_clockwise'), '刷新本章', () => {
+          ReaderRoundMenuButton({ icon: $r('sys.symbol.arrow_clockwise'), accessibilityLabel: '刷新本章', onBack: () => {
             this.hideReaderPanels();
             this.refreshCurrentChapter();
-          })
+          }, iconColor: this.readerControlIconColor(), darkMode: this.isReaderThemeDark() })
         }
         if (this.book && !LocalBookService.isLocalBook(this.book)) {
-          this.readerRoundMenuButton($r('sys.symbol.arrow_left_arrow_right'), '换源', () => {
+          ReaderRoundMenuButton({ icon: $r('sys.symbol.arrow_left_arrow_right'), accessibilityLabel: '换源', onBack: () => {
             this.openChangeSourceDialog();
-          })
+          }, iconColor: this.readerControlIconColor(), darkMode: this.isReaderThemeDark() })
         }
-        this.readerRoundMenuButton($r('sys.symbol.more'), '更多操作', () => {
+        ReaderRoundMenuButton({ icon: $r('sys.symbol.more'), accessibilityLabel: '更多操作', onBack: () => {
           this.showReaderActionMenu = !this.showReaderActionMenu;
-        })
+        }, iconColor: this.readerControlIconColor(), darkMode: this.isReaderThemeDark() })
       }
     }
     .width('100%')
     .padding({ left: 18, right: 18, top: this.getTopControlSafePadding() + 10 })
     .position({ x: 0, y: 0 })
     .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
-  readerRoundMenuButton(icon: Resource, accessibilityText: string, action: () => void) {
-    ImmersiveBackButton({
-      icon: icon,
-      iconOffsetX: 0,
-      iconColor: this.readerControlIconColor(),
-      darkMode: this.isReaderThemeDark(),
-      buttonSize: 40,
-      containerWidth: 40,
-      containerHeight: 56,
-      startInset: 0,
-      materialScale: 0.83,
-      compactLayout: true,
-      accessibilityLabel: accessibilityText,
-      onBack: action
-    })
   }
 
 
@@ -3788,22 +3780,22 @@ export struct ReadBookPage {
           .margin({ bottom: 8 })
       }
 
-      this.readerCacheActionItem(this.fullTextCaching ? '取消缓存' : '缓存全文', () => {
+      ReaderCacheActionItem({ label: this.fullTextCaching ? '取消缓存' : '缓存全文', action: () => {
         if (this.fullTextCaching) {
           this.cancelFullTextCache();
         } else {
           this.startFullTextCache(0);
         }
-      }, this.readerCacheRangeCaching, this.fullTextCaching ? this.dangerColor() : '')
-      this.readerCacheActionItem('缓存当前章到最新章', () => {
+      }, disabled: this.readerCacheRangeCaching, color: this.fullTextCaching ? this.dangerColor() : '', dark: this.isReaderThemeDark(), textColor: this.getTextColor() })
+      ReaderCacheActionItem({ label: '缓存当前章到最新章', action: () => {
         this.startFullTextCache(this.currentChapterIndex);
-      }, this.fullTextCaching || this.readerCacheRangeCaching)
-      this.readerCacheActionItem('缓存指定章节', () => {
+      }, disabled: this.fullTextCaching || this.readerCacheRangeCaching, color: undefined, dark: this.isReaderThemeDark(), textColor: this.getTextColor() })
+      ReaderCacheActionItem({ label: '缓存指定章节', action: () => {
         this.openReaderChapterCacheDialog();
-      }, this.fullTextCaching || this.readerCacheRangeCaching)
-      this.readerCacheActionItem('清除已缓存章节', () => {
+      }, disabled: this.fullTextCaching || this.readerCacheRangeCaching, color: undefined, dark: this.isReaderThemeDark(), textColor: this.getTextColor() })
+      ReaderCacheActionItem({ label: '清除已缓存章节', action: () => {
         this.clearReaderCachedChapters();
-      }, this.fullTextCaching || this.readerCacheRangeCaching, this.dangerColor())
+      }, disabled: this.fullTextCaching || this.readerCacheRangeCaching, color: this.dangerColor(), dark: this.isReaderThemeDark(), textColor: this.getTextColor() })
 
       Button('取消')
         .width('100%')
@@ -3817,20 +3809,6 @@ export struct ReadBookPage {
     .padding({ left: 18, right: 18, top: 18, bottom: 18 })
   }
 
-
-  @Builder
-  readerCacheActionItem(label: string, action: () => void, disabled: boolean = false,
-    color: string = '') {
-    Button(label)
-      .width('100%')
-      .height(44)
-      .margin({ top: 6 })
-      .backgroundColor(this.isReaderThemeDark() ? '#24272D' : '#F5F5F5')
-      .fontColor(color || this.getTextColor())
-      .enabled(!disabled)
-      .opacity(disabled ? 0.5 : 1)
-      .onClick(action)
-  }
 
   @Builder
   readerChapterCacheDialogContent() {
@@ -4133,37 +4111,22 @@ export struct ReadBookPage {
           .width('100%')
           .margin({ bottom: 8 })
 
-        this.readerLayoutElementToggle(
-          '使用快速朗读组件',
-          '显示朗读快捷按钮与展开控制条',
-          this.readerUseTtsQuickAction,
-          (enabled: boolean) => {
+        ReaderLayoutElementToggle({ title: '使用快速朗读组件', description: '显示朗读快捷按钮与展开控制条', isOn: this.readerUseTtsQuickAction, onChange: (enabled: boolean) => {
             this.readerUseTtsQuickAction = enabled;
             if (!enabled) this.ttsMediaControlsExpanded = false;
             this.saveReaderLayoutElementSettings();
-          }
-        )
+          }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), accentColor: this.accentColor(), dark: this.isReaderThemeDark() })
         if (this.readerUseTtsQuickAction) {
-          this.readerLayoutElementToggle(
-            '朗读按钮靠左',
-            '把听书播放按钮放到屏幕左下角',
-            this.readerTtsQuickActionSide < 0,
-            (left: boolean) => {
+          ReaderLayoutElementToggle({ title: '朗读按钮靠左', description: '把听书播放按钮放到屏幕左下角', isOn: this.readerTtsQuickActionSide < 0, onChange: (left: boolean) => {
               this.readerTtsQuickActionSide = left ? -1 : 1;
               this.saveReaderLayoutElementSettings();
-            }
-          )
+            }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), accentColor: this.accentColor(), dark: this.isReaderThemeDark() })
         }
-        this.readerLayoutElementToggle(
-          '使用章节快速跳转组件',
-          '显示章节滑杆与上一章、下一章按钮',
-          this.readerUseChapterQuickJump,
-          (enabled: boolean) => {
+        ReaderLayoutElementToggle({ title: '使用章节快速跳转组件', description: '显示章节滑杆与上一章、下一章按钮', isOn: this.readerUseChapterQuickJump, onChange: (enabled: boolean) => {
             this.readerUseChapterQuickJump = enabled;
             if (!enabled) this.resetMenuChapterPreview();
             this.saveReaderLayoutElementSettings();
-          }
-        )
+          }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), accentColor: this.accentColor(), dark: this.isReaderThemeDark() })
       }
       .width(Math.max(1, Math.min(420, this.pageViewWidth - 36)))
       .padding({ left: 20, right: 20, top: 18, bottom: 18 })
@@ -4178,34 +4141,6 @@ export struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  readerLayoutElementToggle(title: string, description: string, enabled: boolean,
-    onChange: (enabled: boolean) => void) {
-    Row({ space: 12 }) {
-      Column({ space: 4 }) {
-        Text(title)
-          .fontSize(16)
-          .fontColor(this.getTextColor())
-        Text(description)
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-      AdaptiveSwitch({
-        isOn: enabled,
-        selectedColor: this.accentColor(),
-        onChange: onChange
-      })
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 64 })
-    .padding({ left: 12, right: 8 })
-    .borderRadius(14)
-    .backgroundColor(this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000')
-    .alignItems(VerticalAlign.Center)
   }
 
   saveReaderLayoutElementSettings(): void {
@@ -6092,35 +6027,32 @@ export struct ReadBookPage {
         Column()
       }
       .height(48)
-      .tabBar(this.ttsMediaSymbolControl($r('sys.symbol.arrow_left'),
-        this.canPlayPreviousTtsChapter(), '上一章'))
+      .tabBar((): void => { ReaderTtsMediaSymbolControl({ icon: $r('sys.symbol.arrow_left'), controlEnabled: this.canPlayPreviousTtsChapter(), accessibilityLabel: '上一章', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() }); })
 
       TabContent() {
         Column()
       }
       .height(48)
-      .tabBar(this.ttsMediaSymbolControl(this.isTtsSpeaking && !this.isTtsPaused ?
-        $r('sys.symbol.pause') : $r('sys.symbol.play'), true,
-        this.isTtsSpeaking && !this.isTtsPaused ? '暂停朗读' : '播放朗读'))
+      .tabBar((): void => { ReaderTtsMediaSymbolControl({ icon: this.isTtsSpeaking && !this.isTtsPaused ?
+        $r('sys.symbol.pause') : $r('sys.symbol.play'), controlEnabled: true, accessibilityLabel: this.isTtsSpeaking && !this.isTtsPaused ? '暂停朗读' : '播放朗读', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() }); })
 
       TabContent() {
         Column()
       }
       .height(48)
-      .tabBar(this.ttsMediaSymbolControl($r('sys.symbol.arrow_right'),
-        this.canPlayNextTtsChapter(), '下一章'))
+      .tabBar((): void => { ReaderTtsMediaSymbolControl({ icon: $r('sys.symbol.arrow_right'), controlEnabled: this.canPlayNextTtsChapter(), accessibilityLabel: '下一章', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() }); })
 
       TabContent() {
         Column()
       }
       .height(48)
-      .tabBar(this.ttsMediaSpeedControl())
+      .tabBar((): void => { ReaderTtsMediaSpeedControl({ speedText: `${this.ttsSpeed.toFixed(1)}x`, textColor: this.getTextColor() }); })
 
       TabContent() {
         Column()
       }
       .height(48)
-      .tabBar(this.ttsMediaSymbolControl($r('sys.symbol.xmark'), true, '关闭朗读控制'))
+      .tabBar((): void => { ReaderTtsMediaSymbolControl({ icon: $r('sys.symbol.xmark'), controlEnabled: true, accessibilityLabel: '关闭朗读控制', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() }); })
     }
     .key(`reader_tts_controls_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`)
     .barBackgroundColor(this.readerGlassPanelColor())
@@ -6170,35 +6102,32 @@ export struct ReadBookPage {
       .onClick(() => this.handleTtsExpandedControl(0))
 
       Stack() {
-        this.ttsMediaSymbolControl($r('sys.symbol.arrow_left'),
-          this.canPlayPreviousTtsChapter(), '上一章')
+        ReaderTtsMediaSymbolControl({ icon: $r('sys.symbol.arrow_left'), controlEnabled: this.canPlayPreviousTtsChapter(), accessibilityLabel: '上一章', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() })
       }
       .layoutWeight(1)
       .onClick(() => this.handleTtsExpandedControl(1))
 
       Stack() {
-        this.ttsMediaSymbolControl(this.isTtsSpeaking && !this.isTtsPaused ?
-          $r('sys.symbol.pause') : $r('sys.symbol.play'), true,
-          this.isTtsSpeaking && !this.isTtsPaused ? '暂停朗读' : '播放朗读')
+        ReaderTtsMediaSymbolControl({ icon: this.isTtsSpeaking && !this.isTtsPaused ?
+          $r('sys.symbol.pause') : $r('sys.symbol.play'), controlEnabled: true, accessibilityLabel: this.isTtsSpeaking && !this.isTtsPaused ? '暂停朗读' : '播放朗读', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() })
       }
       .layoutWeight(1)
       .onClick(() => this.handleTtsExpandedControl(2))
 
       Stack() {
-        this.ttsMediaSymbolControl($r('sys.symbol.arrow_right'),
-          this.canPlayNextTtsChapter(), '下一章')
+        ReaderTtsMediaSymbolControl({ icon: $r('sys.symbol.arrow_right'), controlEnabled: this.canPlayNextTtsChapter(), accessibilityLabel: '下一章', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() })
       }
       .layoutWeight(1)
       .onClick(() => this.handleTtsExpandedControl(3))
 
       Stack() {
-        this.ttsMediaSpeedControl()
+        ReaderTtsMediaSpeedControl({ speedText: `${this.ttsSpeed.toFixed(1)}x`, textColor: this.getTextColor() })
       }
       .layoutWeight(1)
       .onClick(() => this.handleTtsExpandedControl(4))
 
       Stack() {
-        this.ttsMediaSymbolControl($r('sys.symbol.xmark'), true, '关闭朗读控制')
+        ReaderTtsMediaSymbolControl({ icon: $r('sys.symbol.xmark'), controlEnabled: true, accessibilityLabel: '关闭朗读控制', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() })
       }
       .layoutWeight(1)
       .onClick(() => this.handleTtsExpandedControl(5))
@@ -6240,32 +6169,6 @@ export struct ReadBookPage {
     .accessibilityText(this.ttsSleepTimerMinutes > 0 ?
       `朗读定时剩余 ${Math.max(1, Math.ceil(this.ttsSleepTimerRemainingSeconds / 60))} 分钟` : '设置朗读定时')
     .translate({ y: -2 })
-  }
-
-  @Builder
-  ttsMediaSymbolControl(icon: Resource, enabled: boolean, accessibilityLabel: string) {
-    Stack({ alignContent: Alignment.Center }) {
-      SymbolGlyph(icon)
-        .fontSize(22)
-        .fontColor([enabled ? this.getTextColor() : this.getSubTextColor()])
-    }
-    .width('100%')
-    .height(48)
-    .opacity(enabled ? 1 : 0.45)
-    .accessibilityText(accessibilityLabel)
-    .translate({ y: -2 })
-  }
-
-  @Builder
-  ttsMediaSpeedControl() {
-    Text(`${this.ttsSpeed.toFixed(1)}x`)
-      .fontSize(13)
-      .fontWeight(FontWeight.Bold)
-      .fontColor(this.getTextColor())
-      .textAlign(TextAlign.Center)
-      .width('100%')
-      .height(48)
-      .translate({ y: -2 })
   }
 
 
@@ -6719,15 +6622,13 @@ export struct ReadBookPage {
         }
       })
 
-      this.readerSwitchSettingItem('正文扩展至状态栏', '开启后正文同时延伸到顶部状态栏和底部系统安全区', this.readerExtendToStatusBar,
-        (checked: boolean) => {
+      ReaderSwitchSettingItem({ title: '正文扩展至状态栏', description: '开启后正文同时延伸到顶部状态栏和底部系统安全区', isOn: this.readerExtendToStatusBar, onChange: (checked: boolean) => {
           this.setReaderExtendToStatusBar(checked);
-        })
+        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
-      this.readerSwitchSettingItem('保留段首缩进', '章节开头与页首保留原文的全角空格缩进', this.keepParagraphIndent,
-        (checked: boolean) => {
+      ReaderSwitchSettingItem({ title: '保留段首缩进', description: '章节开头与页首保留原文的全角空格缩进', isOn: this.keepParagraphIndent, onChange: (checked: boolean) => {
           this.setKeepParagraphIndent(checked);
-        })
+        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
     }
     .width('100%')
@@ -6826,10 +6727,9 @@ export struct ReadBookPage {
   @Builder
   readerHeaderFooterSettingsPanel() {
     Column({ space: 4 }) {
-      this.readerSwitchSettingItem('显示页眉', '在正文顶部显示书名或当前章节标题', this.readerHeaderEnabled,
-        (checked: boolean) => {
+      ReaderSwitchSettingItem({ title: '显示页眉', description: '在正文顶部显示书名或当前章节标题', isOn: this.readerHeaderEnabled, onChange: (checked: boolean) => {
           this.readerHeaderEnabled = checked;
-        })
+        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
       if (this.readerHeaderEnabled) {
         this.readerSelectSettingItem('页眉内容', '选择页眉中显示的信息', LeafFns.readerHeaderContentOptions(),
@@ -6839,10 +6739,9 @@ export struct ReadBookPage {
           }, 'reader_header_content_select')
       }
 
-      this.readerSwitchSettingItem('显示页脚', '显示章节信息和阅读进度', this.readerFooterEnabled,
-        (checked: boolean) => {
+      ReaderSwitchSettingItem({ title: '显示页脚', description: '显示章节信息和阅读进度', isOn: this.readerFooterEnabled, onChange: (checked: boolean) => {
           this.readerFooterEnabled = checked;
-        })
+        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
       if (this.readerFooterEnabled) {
         this.readerSelectSettingItem('页脚左侧', '选择页脚左侧显示的信息', LeafFns.readerFooterLeftOptions(),
@@ -6857,10 +6756,9 @@ export struct ReadBookPage {
             this.readerFooterProgressMode = index >= 0 && index < values.length ? values[index] : 'page';
           }, 'reader_footer_progress_select')
 
-        this.readerSwitchSettingItem('显示进度条', '在页脚上方显示本章阅读进度', this.readerFooterShowProgressBar,
-          (checked: boolean) => {
+        ReaderSwitchSettingItem({ title: '显示进度条', description: '在页脚上方显示本章阅读进度', isOn: this.readerFooterShowProgressBar, onChange: (checked: boolean) => {
             this.readerFooterShowProgressBar = checked;
-          })
+          }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
       }
     }
     .width('100%')
@@ -6921,37 +6819,32 @@ export struct ReadBookPage {
           }, 'reader_page_turn_animation_select_vertical')
       }
 
-      this.readerSwitchSettingItem('使用双翻页', '横屏或折叠屏展开等宽屏状态下同时显示左右两页',
-        this.readerLandscapeDoublePage, (checked: boolean) => {
+      ReaderSwitchSettingItem({ title: '使用双翻页', description: '横屏或折叠屏展开等宽屏状态下同时显示左右两页', isOn: this.readerLandscapeDoublePage, onChange: (checked: boolean) => {
           this.setReaderLandscapeDoublePage(checked);
-        })
+        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
       this.readerSelectSettingItem('屏幕方向', '设置正文阅读时使用的屏幕方向',
         LeafFns.screenOrientationOptions(), this.screenOrientationSelectedIndex(), (index: number) => {
           this.setReaderScreenOrientationByIndex(index);
         }, 'reader_screen_orientation_select')
 
-      this.readerSwitchSettingItem('音量键翻页', '阅读页获得焦点时使用音量上/下键翻页', this.readerVolumeTurnPage,
-        (checked: boolean) => {
+      ReaderSwitchSettingItem({ title: '音量键翻页', description: '阅读页获得焦点时使用音量上/下键翻页', isOn: this.readerVolumeTurnPage, onChange: (checked: boolean) => {
           this.setReaderVolumeTurnPage(checked);
-        })
+        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
-      this.readerSwitchSettingItem('自动翻页', '开启后按设定间隔自动翻到下一页，点击屏幕右下角圆环可暂停或恢复',
-        this.autoPageTurnActive, (checked: boolean) => {
+      ReaderSwitchSettingItem({ title: '自动翻页', description: '开启后按设定间隔自动翻到下一页，点击屏幕右下角圆环可暂停或恢复', isOn: this.autoPageTurnActive, onChange: (checked: boolean) => {
           this.setAutoPageTurnActive(checked);
-        })
+        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
       this.readerAutoPageTurnIntervalSettingItem()
 
-      this.readerSwitchSettingItem('快速添加书签', '正文下拉时快速添加或删除当前页书签', this.readerQuickBookmarkEnabled,
-        (checked: boolean) => {
+      ReaderSwitchSettingItem({ title: '快速添加书签', description: '正文下拉时快速添加或删除当前页书签', isOn: this.readerQuickBookmarkEnabled, onChange: (checked: boolean) => {
           this.setReaderQuickBookmarkEnabled(checked);
-        })
+        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
-      this.readerSwitchSettingItem('眼动翻页（beta）', '视线到达正文底部后提示向上看，向上看即翻到下一页；图像仅在设备本地处理',
-        this.readerEyeTurnEnabled, (checked: boolean) => {
+      ReaderSwitchSettingItem({ title: '眼动翻页（beta）', description: '视线到达正文底部后提示向上看，向上看即翻到下一页；图像仅在设备本地处理', isOn: this.readerEyeTurnEnabled, onChange: (checked: boolean) => {
           this.setReaderEyeTurnEnabled(checked);
-        })
+        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
       if (this.readerEyeTurnEnabled) {
         this.readerEyeTurnCalibrationSettingItem()
@@ -7325,7 +7218,7 @@ export struct ReadBookPage {
         Scroll() {
           Column() {
             if (this.selectableCustomTtsVoices().length > 0) {
-              this.ttsVoiceDropdownSectionTitle('自定义音色')
+              ReaderTtsVoiceSectionTitle({ title: '自定义音色', subTextColor: this.getSubTextColor() })
               ForEach(this.selectableCustomTtsVoices(), (voice: HttpTTS) => {
                 this.ttsVoiceDropdownOption(LeafFns.ttsCustomVoiceTitle(voice),
                   this.isCurrentCustomTtsVoice(voice), () => {
@@ -7336,7 +7229,7 @@ export struct ReadBookPage {
             }
 
             if (this.selectableSystemTtsVoices().length > 0) {
-              this.ttsVoiceDropdownSectionTitle('系统音色')
+              ReaderTtsVoiceSectionTitle({ title: '系统音色', subTextColor: this.getSubTextColor() })
               ForEach(this.selectableSystemTtsVoices(), (voice: TtsVoiceOption) => {
                 this.systemTtsVoiceDropdownOption(voice)
               }, (voice: TtsVoiceOption) => LeafFns.ttsVoiceKey(voice))
@@ -7366,16 +7259,6 @@ export struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  ttsVoiceDropdownSectionTitle(title: string) {
-    Text(title)
-      .fontSize(12)
-      .fontWeight(FontWeight.Medium)
-      .fontColor(this.getSubTextColor())
-      .width('100%')
-      .padding({ left: 10, right: 10, top: 12, bottom: 6 })
   }
 
   @Builder
@@ -7632,34 +7515,6 @@ export struct ReadBookPage {
         .onSelect((index: number) => {
           onSelect(index);
         })
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
-  readerSwitchSettingItem(title: string, description: string, checked: boolean, onChange: (checked: boolean) => void) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-        Text(description)
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-          .margin({ top: 4 })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      AdaptiveSwitch({
-        isOn: checked,
-        selectedColor: this.buttonColor(),
-        onChange: (value: boolean) => {
-          onChange(value);
-        }
-      })
     }
     .width('100%')
     .constraintSize({ minHeight: 56 })
@@ -9678,7 +9533,7 @@ export struct ReadBookPage {
     contentRenderVersion: number = this.pageRenderVersion, pageRenderIdentity: string = '', pageStart: number = -1,
     documentSource: string = this.pagedContentText, pageLineHeight: number = this.getEffectiveReaderLineHeight()) {
     if (LocalBookService.isEpubImageMarker(paragraph.text)) {
-      this.readerEpubImage(paragraph.text)
+      ReaderEpubImage({ marker: paragraph.text, imageHeight: this.getReaderEpubImageHeight() })
     } else if (this.hasInlineReaderSourceAction(paragraph.text)) {
       this.readerInlineSourceActionParagraph(paragraph, chapterIndex, ttsHighlightActive, ttsRenderVersion,
         contentRenderVersion, pageRenderIdentity, pageStart, documentSource, pageLineHeight)
@@ -9775,18 +9630,6 @@ export struct ReadBookPage {
         .id(`reader_plain_${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, chapterIndex,
           contentRenderVersion, ttsRenderVersion, paragraph.text)}_${paragraph.key}`)
     }
-  }
-
-  @Builder
-  readerEpubImage(marker: string) {
-    Image(LeafFns.getReaderEpubImageUri(marker))
-      .width('100%')
-      .height(this.getReaderEpubImageHeight())
-      // sourceSize 同时指定宽高会在解码阶段把漫画压成屏幕比例，
-      // 这里交给 ImageFit.Contain 按原始宽高比缩放。
-      .objectFit(ImageFit.Contain)
-      .draggable(false)
-      .clip(true)
   }
 
   @Builder
