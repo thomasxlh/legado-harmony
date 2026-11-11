@@ -105,6 +105,7 @@ import {
 import { ReaderCommentPanel } from '../components/ReaderCommentPanel';
 import { ReaderTtsExpandedControlsCompat } from '../components/ReaderTtsExpandedControls';
 import { ReaderBookmarkActionMenu } from '../components/ReaderMenuItems';
+import { ReaderTocChapterList } from '../components/ReaderTocChapterList';
 import { ReaderActionMenuItem, ReaderCommentPanelDragOverlay, ReaderFloatingIconMenuItem, ReaderHdsMenuItem, ReaderReplaceRulesEntryItem, ReaderActionMenuPanel } from '../components/ReaderMenuItems';
 import {
   ReaderCurrentPageBookmarkMarker,
@@ -3210,7 +3211,64 @@ TtsGlobalCapsule({
 
         if (this.tocPanelTab === 0) {
           this.tocPanelSummary()
-          this.tocChapterList()
+          ReaderTocChapterList({
+            chapters: this.tocVisibleChapters,
+            currentChapterIndex: this.currentChapterIndex,
+            searchActive: this.isTocSearchActive(),
+            orderRevision: this.tocOrderRevision,
+            showCacheBadge: this.book?.origin !== 'local',
+            darkMode: this.isReaderThemeDark(),
+            textColor: this.getTextColor(),
+            subTextColor: this.getSubTextColor(),
+            accentColor: this.accentColor(),
+            selectedBackgroundColor: this.tocSelectedBackgroundColor(),
+            cacheBadgeTextColor: this.isReaderThemeDark() ? '#7CC7A0' : '#1F8F55',
+            cacheBadgeBackgroundColor: this.isReaderThemeDark() ? '#24382F' : '#E6F4EC',
+            dividerColor: this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000',
+            scrollbarVisible: this.tocShouldShowVirtualScrollbar(),
+            scrollbarDragging: this.tocScrollbarDragging,
+            scrollbarThumbLength: this.tocScrollbarThumbLength(),
+            scrollbarThumbOffset: this.tocDisplayedScrollbarThumbOffset(),
+            viewportHeight: this.tocListViewportHeight,
+            scroller: this.tocScroller,
+            resolveGlobalIndex: (localIndex: number): number => this.tocGlobalIndex(localIndex),
+            chapterTitleOf: (globalIndex: number): string => this.getChapterTitle(globalIndex),
+            titleColorOf: (chapter: BookChapter, globalIndex: number): string =>
+              this.getTocTitleColor(chapter, globalIndex),
+            onSelectChapter: (globalIndex: number): void => {
+              this.showToc = false;
+              this.showMenu = false;
+              this.jumpToReaderPositionKeepingTts(globalIndex, 0).catch(() => {
+              });
+            },
+            onListScrollIndex: (start: number, end: number): void => {
+              this.updateTocScrollbarPosition(start, end);
+            },
+            onListReachStart: (): void => {
+              this.loadPreviousTocPage();
+            },
+            onListReachEnd: (): void => {
+              this.loadNextTocPage();
+            },
+            onListViewportChange: (height: number): void => {
+              this.tocListViewportHeight = height;
+            },
+            onThumbDragStart: (event: GestureEvent): void => {
+              this.beginTocScrollbarDrag(event);
+            },
+            onThumbDragUpdate: (event: GestureEvent): void => {
+              this.updateTocScrollbarDrag(event);
+            },
+            onThumbDragEnd: (event: GestureEvent): void => {
+              this.endTocScrollbarDrag(event);
+            },
+            onThumbDragCancel: (): void => {
+              this.cancelTocScrollbarDrag();
+            },
+            onThumbTapJump: (event: GestureEvent): void => {
+              this.jumpTocScrollbarToPointer(event);
+            }
+          })
         } else {
           ReaderBookmarkPanelSummary({
             multiSelectMode: this.bookmarkMultiSelectMode,
@@ -3475,109 +3533,6 @@ TtsGlobalCapsule({
     .width('100%')
     .padding({ left: 20, right: 16, top: 18, bottom: 10 })
     .alignItems(HorizontalAlign.Start)
-  }
-
-  @Builder
-  tocChapterList() {
-    Stack({ alignContent: Alignment.TopEnd }) {
-      List({ space: 0, scroller: this.tocScroller }) {
-        if (this.isTocSearchActive() && this.tocVisibleChapters.length === 0) {
-          ListItem() {
-            Column({ space: 8 }) {
-              SymbolGlyph($r('sys.symbol.magnifyingglass'))
-                .fontSize(28)
-                .fontColor([this.getSubTextColor()])
-              Text('未找到匹配章节')
-                .fontSize(14)
-                .fontColor(this.getSubTextColor())
-            }
-            .width('100%')
-            .padding({ top: 44, bottom: 44 })
-          }
-        }
-        ForEach(this.tocVisibleChapters, (chapter: BookChapter, localIndex: number) => {
-          ListItem() {
-            Row({ space: 10 }) {
-              Text(this.tocGlobalIndex(localIndex) === this.currentChapterIndex ? '•' : '·')
-                .fontSize(this.tocGlobalIndex(localIndex) === this.currentChapterIndex ? 22 : 18)
-                .fontColor(this.tocGlobalIndex(localIndex) === this.currentChapterIndex ?
-                  this.accentColor() : this.getSubTextColor())
-                .width(18)
-                .textAlign(TextAlign.Center)
-
-              Text(this.getChapterTitle(this.tocGlobalIndex(localIndex)))
-                .fontSize(15)
-                .fontWeight(this.tocGlobalIndex(localIndex) === this.currentChapterIndex ?
-                  FontWeight.Medium : FontWeight.Regular)
-                .fontColor(this.getTocTitleColor(chapter, this.tocGlobalIndex(localIndex)))
-                .maxLines(2)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .layoutWeight(1)
-
-              if (this.book?.origin !== 'local' && chapter.cacheDate > 0) {
-                Text('已缓存')
-                  .fontSize(12)
-                  .fontColor(this.isReaderThemeDark() ? '#7CC7A0' : '#1F8F55')
-                  .padding({ left: 7, right: 7, top: 3, bottom: 3 })
-                  .backgroundColor(this.isReaderThemeDark() ? '#24382F' : '#E6F4EC')
-                  .borderRadius(10)
-              }
-            }
-            .width('100%')
-            .padding({ left: 14, right: 16, top: 14, bottom: 14 })
-            .backgroundColor(this.tocGlobalIndex(localIndex) === this.currentChapterIndex ?
-              this.tocSelectedBackgroundColor() : Color.Transparent)
-            .border({ width: { bottom: 0.5 }, color: this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000' })
-            .onClick(async () => {
-              const targetChapterIndex = this.tocGlobalIndex(localIndex);
-              this.showToc = false;
-              this.showMenu = false;
-              await this.jumpToReaderPositionKeepingTts(targetChapterIndex, 0);
-            })
-          }
-        }, (chapter: BookChapter, localIndex: number) =>
-          `${this.tocOrderRevision}_${this.tocGlobalIndex(localIndex)}_${chapter.url || chapter.title}_${chapter.cacheDate > 0 ? 1 : 0}`)
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      .scrollBar(BarState.Off)
-      .onScrollIndex((start: number, end: number) => {
-        this.updateTocScrollbarPosition(start, end);
-      })
-      .onReachStart(() => this.loadPreviousTocPage())
-      .onReachEnd(() => this.loadNextTocPage())
-
-      if (this.tocShouldShowVirtualScrollbar()) {
-        ReaderTocVirtualScrollbar({
-          darkMode: this.isReaderThemeDark(),
-          viewportHeight: this.tocListViewportHeight,
-          dragging: this.tocScrollbarDragging,
-          thumbLength: this.tocScrollbarThumbLength(),
-          thumbOffset: this.tocDisplayedScrollbarThumbOffset(),
-          onThumbDragStart: (event: GestureEvent): void => {
-            this.beginTocScrollbarDrag(event);
-          },
-          onThumbDragUpdate: (event: GestureEvent): void => {
-            this.updateTocScrollbarDrag(event);
-          },
-          onThumbDragEnd: (event: GestureEvent): void => {
-            this.endTocScrollbarDrag(event);
-          },
-          onThumbDragCancel: (): void => {
-            this.cancelTocScrollbarDrag();
-          },
-          onTapJump: (event: GestureEvent): void => {
-            this.jumpTocScrollbarToPointer(event);
-          }
-        })
-      }
-    }
-    .layoutWeight(1)
-    .width('100%')
-    .onAreaChange((_oldValue: Area, newValue: Area) => {
-      this.tocListViewportHeight = Number(newValue.height);
-    })
   }
 
   @Builder
