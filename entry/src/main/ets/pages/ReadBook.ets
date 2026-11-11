@@ -85,6 +85,13 @@ import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import {
+  ReaderActionMenuItem,
+  ReaderCommentPanelDragOverlay,
+  ReaderFloatingIconMenuItem,
+  ReaderHdsMenuItem,
+  ReaderReplaceRulesEntryItem
+} from '../components/ReaderMenuItems';
+import {
   ReaderCurrentPageBookmarkMarker,
   ReaderEyeTurnPrompt,
   ReaderHeaderInfoBar,
@@ -2514,7 +2521,9 @@ export struct ReadBookPage {
         .backgroundColor('#00000000')
         .height(this.readerCommentPanelHeightValue)
 
-        this.readerCommentPanelDragOverlay()
+        ReaderCommentPanelDragOverlay({
+        onDragTouch: (event: TouchEvent): void => { this.handleReaderCommentPanelDragTouch(event); },
+      })
       }
       .width('100%')
       .height(this.readerCommentPanelHeightValue)
@@ -2522,18 +2531,6 @@ export struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  readerCommentPanelDragOverlay() {
-    Row()
-    .width('100%')
-    .height(LeafFns.readerCommentPanelDragHandleHeight())
-    .backgroundColor('#00000000')
-    .zIndex(50)
-    .accessibilityText('上滑展开评论面板')
-    .hitTestBehavior(HitTestMode.Block)
-    .onTouch((event: TouchEvent) => this.handleReaderCommentPanelDragTouch(event))
   }
 
   @Builder
@@ -2735,28 +2732,39 @@ export struct ReadBookPage {
   }
 
   @Builder
+  readerHdsTabMenuItem(icon: Resource, menuEnabled: boolean) {
+    Row() {
+      ReaderHdsMenuItem({
+        icon: icon,
+        iconColor: this.readerControlIconColor(),
+        showAddBadge: false,
+        menuEnabled: menuEnabled,
+      })
+    }
+    .layoutWeight(1)
+    .height(56)
+  }
+
+  @Builder
   readerHdsActionBar(fromToc: boolean, fromSettings: boolean = false) {
     HdsTabs({ barPosition: BarPosition.End, index: 0 }) {
       TabContent() {
         Column()
       }
       .height(56)
-      .tabBar(this.readerHdsMenuItem($r('sys.symbol.list_bullet'), fromToc))
+      .tabBar(this.readerHdsTabMenuItem($r('sys.symbol.list_bullet'), true))
 
       TabContent() {
         Column()
       }
       .height(56)
-      .tabBar(this.readerHdsMenuItem($r('sys.symbol.gearshape'),
-        fromSettings && this.settingsPanelTab === 0, false, !this.isReaderComicModeActive()))
+      .tabBar(this.readerHdsTabMenuItem($r('sys.symbol.gearshape'), !this.isReaderComicModeActive()))
 
       TabContent() {
         Column()
       }
       .height(56)
-      .tabBar(this.readerHdsMenuItem($r('sys.symbol.textformat'),
-        fromSettings && this.settingsPanelTab === 2, false,
-        !this.isReaderComicModeActive()))
+      .tabBar(this.readerHdsTabMenuItem($r('sys.symbol.textformat'), !this.isReaderComicModeActive()))
 
       TabContent() {
         Column()
@@ -2799,35 +2807,14 @@ export struct ReadBookPage {
   }
 
   @Builder
-  readerHdsMenuItem(icon: Resource, active: boolean, showAddBadge: boolean = false, enabled: boolean = true) {
-    Stack({ alignContent: Alignment.Center }) {
-      Stack({ alignContent: Alignment.Center }) {
-        SymbolGlyph(icon)
-          .fontSize(24)
-          .fontColor([this.readerControlIconColor()])
-
-        if (showAddBadge) {
-          SymbolGlyph($r('sys.symbol.plus'))
-            .fontSize(12)
-            .fontWeight(FontWeight.Bold)
-            .fontColor([this.readerControlIconColor()])
-            .position({ x: 20, y: 0 })
-        }
-      }
-      .width(32)
-      .height(32)
-    }
-    .width('100%')
-    .height(48)
-    .opacity(enabled ? 1 : 0.32)
-    .enabled(enabled)
-    .translate({ y: -2 })
-  }
-
-  @Builder
   readerHdsDayNightMenuItem() {
     Stack() {
-      this.readerHdsMenuItem(this.readerDayNightIcon(), false)
+      ReaderHdsMenuItem({
+        icon: this.readerDayNightIcon(),
+        iconColor: this.readerControlIconColor(),
+        showAddBadge: false,
+        menuEnabled: true,
+      })
     }
     .width('100%')
     .height(48)
@@ -2937,15 +2924,45 @@ export struct ReadBookPage {
       }
 
       Row() {
-        this.readerFloatingIconMenuItem($r('sys.symbol.list_bullet'), false, () => {
-          this.openTocPanel();
-        })
-        this.readerFloatingIconMenuItem($r('sys.symbol.gearshape'), false, () => {
-          this.openSettingsPanel();
-        }, false, !this.isReaderComicModeActive())
-        this.readerFloatingIconMenuItem($r('sys.symbol.textformat'), false, () => {
-          this.openTypographySettingsPanel();
-        }, false, !this.isReaderComicModeActive())
+        Row() {
+          ReaderFloatingIconMenuItem({
+            icon: $r('sys.symbol.list_bullet'),
+            iconColor: this.readerControlIconColor(),
+            showAddBadge: false,
+            menuEnabled: true,
+            onMenuClick: () => {
+            this.openTocPanel();
+          },
+          })
+        }
+        .layoutWeight(1)
+        .height(56)
+        Row() {
+          ReaderFloatingIconMenuItem({
+            icon: $r('sys.symbol.gearshape'),
+            iconColor: this.readerControlIconColor(),
+            showAddBadge: false,
+            menuEnabled: !this.isReaderComicModeActive(),
+            onMenuClick: () => {
+            this.openSettingsPanel();
+          },
+          })
+        }
+        .layoutWeight(1)
+        .height(56)
+        Row() {
+          ReaderFloatingIconMenuItem({
+            icon: $r('sys.symbol.textformat'),
+            iconColor: this.readerControlIconColor(),
+            showAddBadge: false,
+            menuEnabled: !this.isReaderComicModeActive(),
+            onMenuClick: () => {
+            this.openTypographySettingsPanel();
+          },
+          })
+        }
+        .layoutWeight(1)
+        .height(56)
         this.readerFloatingDayNightMenuItem()
       }
       .width('100%')
@@ -2964,39 +2981,15 @@ export struct ReadBookPage {
   }
 
   @Builder
-  readerFloatingIconMenuItem(icon: Resource, active: boolean, action: () => void,
-    showAddBadge: boolean = false, enabled: boolean = true) {
-    Column() {
-      Stack({ alignContent: Alignment.Center }) {
-        SymbolGlyph(icon)
-          .fontSize(24)
-          .fontColor([this.readerControlIconColor()])
-
-        if (showAddBadge) {
-          SymbolGlyph($r('sys.symbol.plus'))
-            .fontSize(12)
-            .fontWeight(FontWeight.Bold)
-            .fontColor([this.readerControlIconColor()])
-            .position({ x: 20, y: 0 })
-        }
-      }
-      .width(32)
-      .height(32)
-    }
-    .layoutWeight(1)
-    .height(56)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .borderRadius(28)
-    .opacity(enabled ? 1 : 0.32)
-    .enabled(enabled)
-    .onClick(action)
-  }
-
-  @Builder
   readerFloatingDayNightMenuItem() {
     Row() {
-      this.readerFloatingIconMenuItem(this.readerDayNightIcon(), false, () => {})
+      ReaderFloatingIconMenuItem({
+        icon: this.readerDayNightIcon(),
+        iconColor: this.readerControlIconColor(),
+        showAddBadge: false,
+        menuEnabled: true,
+        onMenuClick: () => {},
+      })
     }
     .layoutWeight(1)
     .height(56)
@@ -3141,17 +3134,47 @@ export struct ReadBookPage {
 
       if (!LeafFns.supportsReaderImmersiveMaterial()) {
         Row() {
-          this.readerFloatingIconMenuItem($r('sys.symbol.list_bullet'), true, () => {
-            this.tocPanelTab = 0;
-          })
-          this.readerFloatingIconMenuItem($r('sys.symbol.gearshape'), false, () => {
-            this.showToc = false;
-            this.openSettingsPanel();
-          })
-          this.readerFloatingIconMenuItem($r('sys.symbol.textformat'), false, () => {
-            this.showToc = false;
-            this.openTypographySettingsPanel();
-          })
+          Row() {
+            ReaderFloatingIconMenuItem({
+              icon: $r('sys.symbol.list_bullet'),
+              iconColor: this.readerControlIconColor(),
+              showAddBadge: false,
+              menuEnabled: true,
+              onMenuClick: () => {
+              this.tocPanelTab = 0;
+            },
+            })
+          }
+          .layoutWeight(1)
+          .height(56)
+          Row() {
+            ReaderFloatingIconMenuItem({
+              icon: $r('sys.symbol.gearshape'),
+              iconColor: this.readerControlIconColor(),
+              showAddBadge: false,
+              menuEnabled: true,
+              onMenuClick: () => {
+              this.showToc = false;
+              this.openSettingsPanel();
+            },
+            })
+          }
+          .layoutWeight(1)
+          .height(56)
+          Row() {
+            ReaderFloatingIconMenuItem({
+              icon: $r('sys.symbol.textformat'),
+              iconColor: this.readerControlIconColor(),
+              showAddBadge: false,
+              menuEnabled: true,
+              onMenuClick: () => {
+              this.showToc = false;
+              this.openTypographySettingsPanel();
+            },
+            })
+          }
+          .layoutWeight(1)
+          .height(56)
           this.readerFloatingDayNightMenuItem()
         }
         .width(this.readerFloatingBarWidth())
@@ -3556,79 +3579,128 @@ export struct ReadBookPage {
   @Builder
   readerActionMenu() {
     Column() {
-      this.readerActionMenuItem(
-        $r('sys.symbol.bookmark'),
-        this.isCurrentPageBookmarked() ? '删除书签' : '添加书签',
-        () => this.toggleCurrentPageBookmark(),
-        true,
-        this.readerSourceNeedsLogin() || this.readerCanRetry() || !this.isReaderComicModeActive()
-      )
+      ReaderActionMenuItem({
+        icon: $r('sys.symbol.bookmark'),
+        label: this.isCurrentPageBookmarked() ? '删除书签' : '添加书签',
+        textColor: this.getTextColor(),
+        dividerColor: this.readerGlassBorderColor(),
+        menuEnabled: true,
+        showDivider: this.readerSourceNeedsLogin() || this.readerCanRetry() || !this.isReaderComicModeActive(),
+        onMenuClick: () => this.toggleCurrentPageBookmark(),
+        dismissMenu: (): void => { this.showReaderActionMenu = false; },
+      })
       if (this.book && !LocalBookService.isLocalBook(this.book)) {
-        this.readerActionMenuItem(
-          $r('sys.symbol.download'),
-          '缓存',
-          () => this.openReaderCacheDialog()
-        )
+        ReaderActionMenuItem({
+          icon: $r('sys.symbol.download'),
+          label: '缓存',
+          textColor: this.getTextColor(),
+          dividerColor: this.readerGlassBorderColor(),
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: () => this.openReaderCacheDialog(),
+          dismissMenu: (): void => { this.showReaderActionMenu = false; },
+        })
       }
       if (!this.isReaderComicModeActive()) {
-        this.readerActionMenuItem(
-          this.isTtsSpeaking && !this.isTtsPaused ? $r('sys.symbol.pause') : $r('sys.symbol.play'),
-          this.isTtsSpeaking ? (this.isTtsPaused ? '继续朗读' : '暂停朗读') : '开始朗读',
-          () => this.toggleTtsReading()
-        )
+        ReaderActionMenuItem({
+          icon: this.isTtsSpeaking && !this.isTtsPaused ? $r('sys.symbol.pause') : $r('sys.symbol.play'),
+          label: this.isTtsSpeaking ? (this.isTtsPaused ? '继续朗读' : '暂停朗读') : '开始朗读',
+          textColor: this.getTextColor(),
+          dividerColor: this.readerGlassBorderColor(),
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: () => this.toggleTtsReading(),
+          dismissMenu: (): void => { this.showReaderActionMenu = false; },
+        })
       }
       if (this.readerSourceNeedsLogin()) {
-        this.readerActionMenuItem(
-          $r('sys.symbol.checkmark_shield'),
-          '登录',
-          () => this.openReaderSourceLogin()
-        )
+        ReaderActionMenuItem({
+          icon: $r('sys.symbol.checkmark_shield'),
+          label: '登录',
+          textColor: this.getTextColor(),
+          dividerColor: this.readerGlassBorderColor(),
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: () => this.openReaderSourceLogin(),
+          dismissMenu: (): void => { this.showReaderActionMenu = false; },
+        })
       }
       if (this.readerCanRetry()) {
-        this.readerActionMenuItem(
-          $r('sys.symbol.exclamationmark_circle'),
-          '重试',
-          () => this.retryReaderContent()
-        )
+        ReaderActionMenuItem({
+          icon: $r('sys.symbol.exclamationmark_circle'),
+          label: '重试',
+          textColor: this.getTextColor(),
+          dividerColor: this.readerGlassBorderColor(),
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: () => this.retryReaderContent(),
+          dismissMenu: (): void => { this.showReaderActionMenu = false; },
+        })
       }
       if (!this.isReaderComicModeActive()) {
-        this.readerActionMenuItem(
-          $r('sys.symbol.gearshape'),
-          '阅读设置',
-          () => this.openSettingsPanel()
-        )
-        this.readerActionMenuItem(
-          $r('sys.symbol.speaker_wave_3'),
-          '朗读设置',
-          () => this.openTtsSettingsPanel(),
-          true,
-          true
-        )
+        ReaderActionMenuItem({
+          icon: $r('sys.symbol.gearshape'),
+          label: '阅读设置',
+          textColor: this.getTextColor(),
+          dividerColor: this.readerGlassBorderColor(),
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: () => this.openSettingsPanel(),
+          dismissMenu: (): void => { this.showReaderActionMenu = false; },
+        })
+        ReaderActionMenuItem({
+          icon: $r('sys.symbol.speaker_wave_3'),
+          label: '朗读设置',
+          textColor: this.getTextColor(),
+          dividerColor: this.readerGlassBorderColor(),
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: () => this.openTtsSettingsPanel(),
+          dismissMenu: (): void => { this.showReaderActionMenu = false; },
+        })
       }
       if (this.canSelectTxtCharset()) {
-        this.readerActionMenuItem(
-          $r('sys.symbol.textformat'),
-          `字符编码 · ${this.txtCharsetMenuLabel()}`,
-          () => this.openTxtCharsetDialog()
-        )
+        ReaderActionMenuItem({
+          icon: $r('sys.symbol.textformat'),
+          label: `字符编码 · ${this.txtCharsetMenuLabel()}`,
+          textColor: this.getTextColor(),
+          dividerColor: this.readerGlassBorderColor(),
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: () => this.openTxtCharsetDialog(),
+          dismissMenu: (): void => { this.showReaderActionMenu = false; },
+        })
       }
-      this.readerActionMenuItem(
-        this.isReaderComicModeActive() ? $r('sys.symbol.book') : $r('sys.symbol.rectangle_3_group'),
-        this.isReaderComicModeActive() ? '切换为普通阅读' : '切换为漫画阅读',
-        () => this.toggleReaderComicReadingMode()
-      )
-      this.readerActionMenuItem(
-        $r('sys.symbol.square_grid_2x2'),
-        '布局元素设置',
-        () => this.openLayoutElementSettings()
-      )
-      this.readerActionMenuItem(
-        $r('sys.symbol.arrow_left_arrow_right'),
-        '替换净化配置',
-        () => this.openCurrentReaderReplaceRules(),
-        true,
-        false
-      )
+      ReaderActionMenuItem({
+        icon: this.isReaderComicModeActive() ? $r('sys.symbol.book') : $r('sys.symbol.rectangle_3_group'),
+        label: this.isReaderComicModeActive() ? '切换为普通阅读' : '切换为漫画阅读',
+        textColor: this.getTextColor(),
+        dividerColor: this.readerGlassBorderColor(),
+        menuEnabled: true,
+        showDivider: true,
+        onMenuClick: () => this.toggleReaderComicReadingMode(),
+        dismissMenu: (): void => { this.showReaderActionMenu = false; },
+      })
+      ReaderActionMenuItem({
+        icon: $r('sys.symbol.square_grid_2x2'),
+        label: '布局元素设置',
+        textColor: this.getTextColor(),
+        dividerColor: this.readerGlassBorderColor(),
+        menuEnabled: true,
+        showDivider: true,
+        onMenuClick: () => this.openLayoutElementSettings(),
+        dismissMenu: (): void => { this.showReaderActionMenu = false; },
+      })
+      ReaderActionMenuItem({
+        icon: $r('sys.symbol.arrow_left_arrow_right'),
+        label: '替换净化配置',
+        textColor: this.getTextColor(),
+        dividerColor: this.readerGlassBorderColor(),
+        menuEnabled: true,
+        showDivider: false,
+        onMenuClick: () => this.openCurrentReaderReplaceRules(),
+        dismissMenu: (): void => { this.showReaderActionMenu = false; },
+      })
     }
     .width(220)
     .padding({ left: 8, right: 8, top: 6, bottom: 6 })
@@ -3640,43 +3712,6 @@ export struct ReadBookPage {
     .position({ x: '100%', y: 0 })
     .translate({ x: -232, y: this.getTopControlSafePadding() + 72 })
     .onClick(() => {
-    })
-  }
-
-  @Builder
-  readerActionMenuItem(icon: Resource, label: string, action: () => void,
-    enabled: boolean = true, showDivider: boolean = true) {
-    Column() {
-      Row({ space: 12 }) {
-        SymbolGlyph(icon)
-          .fontSize(21)
-          .fontColor([this.getTextColor()])
-          .width(24)
-
-        Text(label)
-          .fontSize(16)
-          .fontColor(this.getTextColor())
-          .maxLines(1)
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(46)
-      .padding({ left: 10, right: 10 })
-
-      if (showDivider) {
-        Divider()
-          .strokeWidth(0.5)
-          .color(this.readerGlassBorderColor())
-          .margin({ left: 46, right: 8 })
-      }
-    }
-    .width('100%')
-    .opacity(enabled ? 1 : 0.38)
-    .enabled(enabled)
-    .onClick(() => {
-      if (!enabled) return;
-      this.showReaderActionMenu = false;
-      action();
     })
   }
 
@@ -6797,7 +6832,14 @@ export struct ReadBookPage {
   @Builder
   readerQuickSettingsPanel() {
     Column({ space: 14 }) {
-      this.readerReplaceRulesEntryItem()
+      ReaderReplaceRulesEntryItem({
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        onOpen: (): void => {
+          this.returningFromReaderReplaceRules = true;
+          router.pushUrl({ url: 'pages/ReaderReplaceRules' });
+        },
+      })
 
       this.readerSelectSettingItem('翻页方式', '选择上下滑动、横向滑动或滚动阅读',
         LeafFns.pageTurnModeOptions(), this.pageTurnModeSelectedIndex(), (index: number) => {
@@ -7034,34 +7076,6 @@ export struct ReadBookPage {
       this.readerPreloadSettingItem()
     }
     .width('100%')
-  }
-
-  @Builder
-  readerReplaceRulesEntryItem() {
-    Row() {
-      Column() {
-        Text('替换净化')
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-        Text('管理正文与章节标题的替换规则')
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-          .margin({ top: 4 })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(18)
-        .fontColor([this.getSubTextColor()])
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      this.returningFromReaderReplaceRules = true;
-      router.pushUrl({ url: 'pages/ReaderReplaceRules' });
-    })
   }
 
   @Builder
