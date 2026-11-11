@@ -102,6 +102,7 @@ import {
   ReaderTypographyCombinedSettings,
   ReaderTypographySettingsPanel,
 } from '../components/ReaderSettingsRows';
+import { ReaderCommentPanel } from '../components/ReaderCommentPanel';
 import { ReaderActionMenuItem, ReaderCommentPanelDragOverlay, ReaderFloatingIconMenuItem, ReaderHdsMenuItem, ReaderReplaceRulesEntryItem, ReaderActionMenuPanel } from '../components/ReaderMenuItems';
 import {
   ReaderCurrentPageBookmarkMarker,
@@ -2709,7 +2710,36 @@ TtsGlobalCapsule({
       }
 
       if (this.showReaderCommentPanel) {
-        this.readerCommentPanel()
+        ReaderCommentPanel({
+          panelUrl: this.readerCommentPanelUrl,
+          panelHeightValue: this.readerCommentPanelHeightValue,
+          contentHeight: this.readerCommentPanelContentHeight(),
+          loading: this.readerCommentPanelLoading,
+          panelColor: this.readerGlassPanelColor(),
+          textColor: this.getTextColor(),
+          accentColor: this.accentColor(),
+          darkMode: this.isReaderThemeDark(),
+          appDarkMode: this.appDarkMode,
+          scrimColor: this.isReaderThemeDark() ? '#52000000' : '#26000000',
+          controller: this.readerCommentPanelController,
+          onClose: (): void => {
+            this.closeReaderCommentPanel();
+          },
+          onDragTouch: (event: TouchEvent): void => {
+            this.handleReaderCommentPanelDragTouch(event);
+          },
+          onControllerAttached: (): void => {
+            this.readerCommentPanelHtmlLoaded = false;
+            setTimeout(() => this.loadReaderCommentPanelHtmlIfNeeded(), 0);
+          },
+          onPageBegin: (): void => {
+            this.readerCommentPanelLoading = true;
+          },
+          onPageEnd: (): void => {
+            if (this.loadReaderCommentPanelHtmlIfNeeded()) return;
+            this.scheduleReaderCommentPanelHostReady(0);
+          }
+        })
       }
 
       if (this.readerEyeTurnEnabled && this.readerInitialPageReady && !this.showReaderEyeCalibration &&
@@ -2773,89 +2803,6 @@ TtsGlobalCapsule({
         this.refreshReaderScreenTimeout();
       }
     })
-  }
-
-  @Builder
-  readerCommentPanel() {
-    Column() {
-      Row()
-        .width('100%')
-        .layoutWeight(1)
-        .backgroundColor(this.isReaderThemeDark() ? '#52000000' : '#26000000')
-        .onClick(() => {
-          this.closeReaderCommentPanel();
-        })
-
-      Stack() {
-        Column() {
-          ReaderCommentPanelDragHandle({
-            dark: this.isReaderThemeDark(),
-            handleHeight: LeafFns.readerCommentPanelDragHandleHeight()
-          })
-          Stack() {
-            Web({ src: this.readerCommentPanelUrl, controller: this.readerCommentPanelController })
-            .width('100%')
-            .height(Math.max(1, this.readerCommentPanelHeightValue - LeafFns.readerCommentPanelDragHandleHeight()))
-            .monopolizeEvents(true)
-            .javaScriptAccess(true)
-            .domStorageAccess(true)
-            .onlineImageAccess(true)
-            .imageAccess(true)
-            .darkMode(this.appDarkMode ? WebDarkMode.On : WebDarkMode.Off)
-            .forceDarkAccess(this.appDarkMode)
-            .onControllerAttached(() => {
-              this.readerCommentPanelHtmlLoaded = false;
-              setTimeout(() => this.loadReaderCommentPanelHtmlIfNeeded(), 0);
-            })
-            .onPageBegin(() => {
-              this.readerCommentPanelLoading = true;
-            })
-            .onPageEnd(() => {
-              if (this.loadReaderCommentPanelHtmlIfNeeded()) return;
-              this.scheduleReaderCommentPanelHostReady(0);
-            })
-
-            if (this.readerCommentPanelLoading) {
-              Column({ space: 10 }) {
-                LoadingProgress()
-                  .width(38)
-                  .height(38)
-                  .color(this.accentColor())
-                Text('评论加载中…')
-                  .fontSize(13)
-                  .fontColor(this.getTextColor())
-              }
-              .width('100%')
-              .height('100%')
-              .justifyContent(FlexAlign.Center)
-              .alignItems(HorizontalAlign.Center)
-              .backgroundColor(this.readerGlassPanelColor())
-            }
-          }
-          .width('100%')
-          .height(this.readerCommentPanelContentHeight())
-          .backgroundColor(this.readerGlassPanelColor())
-          .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
-          .borderRadius({
-            topLeft: ThemeRuntime.glassCornerRadius(28, 'panel'),
-            topRight: ThemeRuntime.glassCornerRadius(28, 'panel')
-          })
-          .clip(true)
-        }
-        .width('100%')
-        .backgroundColor('#00000000')
-        .height(this.readerCommentPanelHeightValue)
-
-        ReaderCommentPanelDragOverlay({
-        onDragTouch: (event: TouchEvent): void => { this.handleReaderCommentPanelDragTouch(event); },
-      })
-      }
-      .width('100%')
-      .height(this.readerCommentPanelHeightValue)
-      .alignContent(Alignment.Top)
-    }
-    .width('100%')
-    .height('100%')
   }
 
 
