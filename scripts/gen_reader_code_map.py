@@ -14,6 +14,8 @@ Usage (from repo root):
     python scripts/gen_reader_code_map.py           # dry run: print plan only
     python scripts/gen_reader_code_map.py --apply  # write ReadBook.ets + CODE_MAP.md
 """
+import glob
+import os
 import re
 import sys
 
@@ -217,13 +219,27 @@ w("> 由 `scripts/gen_reader_code_map.py` 生成，**请勿手工改行号**。�
 w("> 面向 AI / 新人：先读本表定位职责域，再跳到 `entry/src/main/ets/pages/ReadBook.ets` 对应行号，"
   "避免把 2.4 万行整篇塞进上下文。")
 w("")
+_DELEGATE_RE = re.compile(r"^    (?:return )?Reader\w+Ops\.")
+_OPS_STATS = []
+for _path in sorted(glob.glob("entry/src/main/ets/reader/*Ops.ets")):
+    try:
+        _txt = open(_path, encoding="utf-8").read()
+    except OSError:
+        continue
+    _OPS_STATS.append((
+        os.path.basename(_path)[:-4],
+        len(re.findall(r"^export (?:async )?function ", _txt, re.M))))
 w("## 现状（为什么需要这张表）")
 w("")
-w("- `entry/src/main/ets/pages/ReadBook.ets`：**%d 行 / 约 1.0 MB**；单文件内仅 "
-  "1 个 `@Entry @Component struct ReadBookPage` + 1 个 `ReadBookTtsBackgroundHost` 适配器类。" % len(out))
+w("- `entry/src/main/ets/pages/ReadBook.ets`：**%d 行 / 约 %.1f MB**；单文件内仅 "
+  "1 个 `@Entry @Component struct ReadBookPage` + 1 个 `ReadBookTtsBackgroundHost` 适配器类。"
+  % (len(out), len(raw.encode("utf-8")) / 1048576.0))
 w("- 响应式字段（`@State` / `@StorageLink` / `@StorageProp`）见下方「响应式状态域地图」，由脚本实时扫描生成；"
-  "`@Builder` 约 127 个、成员方法约 1168 个（P0 抽走 131 个叶子纯函数后）；"
-  "整个 `ets/` 目录 **0 个** `@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。")
+  "`@Builder` %d 个仍留在 struct 内（ArkUI DSL 不能外移），业务方法 %d 个已抽到 `reader/*Ops.ets`，"
+  "struct 内只保留 1 行委托；整个 `ets/` 目录 **0 个** "
+  "`@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。"
+  % (sum(1 for ln in out if ln.startswith("  @Builder")),
+     sum(1 for ln in out if _DELEGATE_RE.match(ln))))
 w("- 文件内唯一分区手段是本工具写入的 `//region` / `//endregion`（VS Code 与 IntelliJ/DevEco Studio "
   "都能折叠）；每个区块头还带一行 `// [map] 契约:` 说明本区允许读写哪些状态。")
 w("- 已存在的可复用范式：`reader/ReaderPureUtils.ets`（纯函数）、"
@@ -238,6 +254,24 @@ for k, (_t, name, contract) in enumerate(REGIONS):
     start = region_start[k]
     end = (region_start[k + 1] - 1) if k + 1 < len(region_start) else len(out)
     w("| %d | %s | %d | %d | %s |" % (k + 1, name, start, end, contract))
+w("")
+w("## 已抽离的业务域（`reader/*Ops.ets`）")
+w("")
+w("> 每个业务方法都搬成了 `export function name(page: ReadBookPage, ...)`；`ReadBookPage` 内保留 "
+  "**原签名 + 1 行委托**，因此调用点（`this.xxx()`）与 `@State` 响应式全部不变。")
+w("> 关键点：`import type { ReadBookPage }` 会被 ArkTS 自动降级为纯类型导入，无运行时循环依赖；"
+  "`@State` 编译成 public getter/setter，外部 `page.field = v` 仍走同一 setter。")
+w("")
+w("| 模块 | 方法数 | 行数 |")
+w("|------|------:|-----:|")
+for _mod, _cnt in _OPS_STATS:
+    _p = "entry/src/main/ets/reader/%s.ets" % _mod
+    try:
+        _n = open(_p, encoding="utf-8").read().count("\n")
+    except OSError:
+        _n = 0
+    w("| `reader/%s.ets` | %d | %d |" % (_mod, _cnt, _n))
+w("| **合计** | **%d** | |" % sum(c for _m, c in _OPS_STATS))
 w("")
 w("## 关键入口方法索引")
 w("")
@@ -405,23 +439,31 @@ w("1. **V1 状态不能跨文件**：`@State` 必须留在 `@Component` 内。�
   "不能让新类直接持有 `@State`。")
 w("2. **@Builder 提 @Component 会切断联动**：提成独立 `@Component` 后需用 `@Link/@Prop` 或 "
   "`AppStorage/@StorageLink` 接通数据；否则状态变更不再刷新 UI。")
-w("3. **隐式共享是最大耦合源**：1279 个方法几乎都通过 `this.xxx` 直接读写同一批 `@State`，"
-  "没有参数边界。任何抽取前先靠本表 + `ops_grep` 确认该方法触达的状态集合。")
-w("4. **长跑 TTS 跨章保活**：`finish()` 走 `keepAudioOutputOnFinish` 分支时曾不清帧时间线/缓存引用计数；"
+w("3. **隐式共享是最大耦合源**：已抽离的方法仍通过 `page.xxx` 直接读写同一批 `@State`，"
+  "没有参数边界；`page` 只是显式传参，不是新状态容器。任何进一步抽取前先靠本表 + `ops_grep` "
+  "确认该方法触达的状态集合。")
+w("4. **边界判定别数括号**：`ReadBook.ets` 中方法一律以 2 空格缩进的 `}` 收尾；"
+  "数括号会被正则字面量（如 `/^https?:\\/\\//i` 里的 `//`）当成行注释而误判，"
+  "导致方法被截断、struct 提前闭合、整片级联报错。缩进锚定才可靠。")
+w("5. **长跑 TTS 跨章保活**：`finish()` 走 `keepAudioOutputOnFinish` 分支时曾不清帧时间线/缓存引用计数；"
   "A1–A9 主要修复已落地（换章软重置帧时间线、CacheLease TTL、drain 看门狗等），"
   "详见 `docs/tts-long-running-bugs.md`「修复状态」。")
 w("")
 w("## 拆分蓝图（P0 → P3，每步小提交 + 真机回归，禁止大爆炸重写）")
 w("")
-w("- **P0（零风险）**：顶层常量 → `reader/ReaderConstants.ets`（25 常量 + 1 缓存函数）；"
-  "**131 个叶子纯函数**（含静态工厂 `defaultTtsVoice` 与正文规范化群）→ `reader/ReaderLeafFns.ets`，"
-  "调用方用 `import * as LeafFns` 命名空间引用；自底向上 5 批抽取后重扫 `pure=8` 全为结构性排除，"
-  "纯函数抽离已收敛到不动点。ReadBook.ets 从 24417 → %d 行（-%d）。真 ArkTS 编译通过。" % (len(out), 24417 - len(out)))
-w("- **P1**：127 个 `@Builder` 按面板提独立 `@Component`（`ttsMiniPlayer`、`ttsExpandedMediaControlsBar`、"
-  "`ttsQuickSettingsPanel` 等）；分页测量引擎（`clearTtsHighlight` → `followTtsChunk` 区间）→ `ReaderPaginator` 类。")
-w("- **P2**：TTS 朗读编排（`publishTtsFloatingSession` → `clearTtsHighlight` 区间）→ `TtsReadingCoordinator + Host`；"
-  "逐句焦点/高亮/翻页（`followTtsChunk` → `styledReaderText` 区间）→ `TtsFocusController`。")
-w("- **P3**：镜像会话 / V2 布局子系统 / 翻页动画各自独立。")
+w("- **P0（已完成）**：顶层常量 → `reader/ReaderConstants.ets`（25 常量 + 1 缓存函数）；"
+  "**131 个叶子纯函数** → `reader/ReaderLeafFns.ets`，调用方用 `import * as LeafFns` 命名空间引用；"
+  "自底向上 5 批抽取后重扫 `pure=8` 全为结构性排除，纯函数抽离已收敛到不动点。")
+w("- **P0.5（已完成）**：%d 个业务方法按 //region 抽到 12 个 `reader/*Ops.ets`，"
+  "struct 内只留 1 行委托；`private` 字段与 `private` 方法改为可见（运行时擦除、零行为影响），"
+  "`export struct ReadBookPage` 供 ops 模块做纯类型导入。ReadBook.ets 从 24417 → %d 行（-%d）。"
+  "核验：真 ArkTS 编译通过 + 941/941 方法体逐字回环一致 + 6 轮真机前后台回归 0 错误。"
+  % (sum(c for _m, c in _OPS_STATS), len(out), 24417 - len(out)))
+w("- **P1（未做）**：127 个 `@Builder` 按面板提独立 `@Component`（`ttsMiniPlayer`、"
+  "`ttsExpandedMediaControlsBar`、`ttsQuickSettingsPanel` 等）。这会切断 ArkUI V1 的隐式联动，"
+  "须用 `@Link/@Prop` 或 `@StorageLink` 重建数据通路，且只能靠真机视觉回归验证。")
+w("- **P2（未做）**：分页测量引擎 / TTS 编排 / 焦点·镜像 各自提 Controller+Host 类；"
+  "本步已把它们的**代码**挪出巨型文件，剩下的工作是切状态边界。")
 w("- 目标：每单元 ≤ 1500–2000 行 / ≤ 100 KB，边界靠**显式接口**而非共享 `@State`。")
 w("- 执行节奏：**纯函数 → 常量 → UI 子组件 → 分页 → TTS 编排 → 焦点/镜像**；"
   "每步 `devecocli check arkts <file>` + 真机回归后再进下一步。")
