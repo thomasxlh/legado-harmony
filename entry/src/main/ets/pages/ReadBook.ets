@@ -86,8 +86,7 @@ import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModi
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ReaderBookmarkPullHint, ReaderComicPaginationPanel, ReaderLoadingPanel, ReaderSourceActionButton,
   ReaderTtsTimerControl } from '../components/ReaderStatusItems';
-import { ReaderComicBoundaryHintContent, ReaderCustomThemeDeleteConfirm,
-  ReaderEyeCalibrationSettingItem } from '../components/ReaderComicAndDialogItems';
+import { ReaderComicBoundaryHintContent, ReaderCustomThemeDeleteConfirm, ReaderEyeCalibrationSettingItem, ReaderEyeCalibrationPanel } from '../components/ReaderComicAndDialogItems';
 import {
   ReaderSelectSettingItem,
   ReaderTtsVoiceOption,
@@ -2670,7 +2669,47 @@ TtsGlobalCapsule({
       }
 
       if (this.showReaderEyeCalibration) {
-        this.readerEyeCalibrationPanel()
+        ReaderEyeCalibrationPanel({
+          sessionActive: this.readerEyeCalibrationSessionActive,
+          capturing: this.readerEyeCalibrationCapturing,
+          step: this.readerEyeCalibrationStep,
+          progress: this.readerEyeCalibrationProgress,
+          instruction: this.readerEyeCalibrationInstruction(),
+          targetLabel: this.currentReaderEyeCalibrationTargetLabel(),
+          statusText: this.readerEyeTurnStatus,
+          previewHint: this.readerEyeCalibrationPreviewHint(),
+          previewWidth: this.readerEyeCalibrationPreviewWidthVp(),
+          previewHeight: this.readerEyeCalibrationPreviewHeightVp(),
+          previewLeft: this.readerEyeCalibrationPreviewLeftVp(),
+          previewTop: LeafFns.readerEyeCalibrationPreviewTopVp(),
+          targetTop: this.readerEyeCalibrationTargetTopVp(),
+          overlayWidth: this.readerEyeCalibrationOverlayWidth,
+          overlayHeight: this.readerEyeCalibrationOverlayHeight,
+          textColor: this.getTextColor(),
+          subTextColor: this.getSubTextColor(),
+          accentColor: this.accentColor(),
+          darkMode: this.isReaderThemeDark(),
+          panelColor: this.readerGlassPanelColor(),
+          glassBorderColor: this.readerGlassBorderColor(),
+          scrimColor: ThemeRuntime.scrimColor(this.isReaderThemeDark()),
+          onCancel: (): void => {
+            this.cancelReaderEyeCalibration();
+          },
+          onBegin: (): void => {
+            this.beginReaderEyeCalibrationCapture();
+          },
+          onSample: (): void => {
+            this.startReaderEyeCalibrationPhaseSampling();
+          },
+          onOverlaySizeChange: (width: number, height: number): void => {
+            if (width > 0 && Math.abs(width - this.readerEyeCalibrationOverlayWidth) >= 0.5) {
+              this.readerEyeCalibrationOverlayWidth = width;
+            }
+            if (height > 0 && Math.abs(height - this.readerEyeCalibrationOverlayHeight) >= 0.5) {
+              this.readerEyeCalibrationOverlayHeight = height;
+            }
+          },
+        })
       }
     }
     .width('100%')
@@ -6824,141 +6863,6 @@ TtsGlobalCapsule({
 
   readerEyeTurnPromptTop(): number {
     return ReaderSettingsOps.readerEyeTurnPromptTop(this);
-  }
-
-  @Builder
-  readerEyeCalibrationPanel() {
-    Stack({ alignContent: Alignment.Center }) {
-      Column({ space: 18 }) {
-        Row() {
-          Text('眼动翻页校准')
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.getTextColor())
-          Blank()
-          Button({ type: ButtonType.Circle }) {
-            SymbolGlyph($r('sys.symbol.xmark'))
-              .fontSize(18)
-              .fontColor([this.getTextColor()])
-          }
-          .width(38)
-          .height(38)
-          .responseRegion({ x: -3, y: -3, width: 44, height: 44 })
-          .backgroundColor(this.isReaderThemeDark() ? '#28FFFFFF' : '#12000000')
-          .onClick((): void => this.cancelReaderEyeCalibration())
-        }
-        .width('100%')
-
-        Text(this.readerEyeCalibrationInstruction())
-          .fontSize(17)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.getTextColor())
-          .textAlign(TextAlign.Center)
-
-        Text('头部和手机保持稳定，只用眼睛跟随圆点缓慢移动。请不要提前看向圆点将要到达的位置。')
-          .fontSize(13)
-          .fontColor(this.getSubTextColor())
-          .textAlign(TextAlign.Center)
-          .lineHeight(20)
-
-        Progress({ value: this.readerEyeCalibrationProgress, total: 100, type: ProgressType.Linear })
-          .width('100%')
-          .height(6)
-          .color(this.accentColor())
-        Text(this.readerEyeTurnStatus)
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-          .textAlign(TextAlign.Center)
-        if (!this.readerEyeCalibrationSessionActive) {
-          Button('开始三步校准')
-            .width('100%')
-            .height(46)
-            .fontSize(15)
-            .fontColor('#FFFFFF')
-            .backgroundColor(this.accentColor())
-            .onClick((): void => this.beginReaderEyeCalibrationCapture())
-        } else {
-          Button(this.readerEyeCalibrationCapturing ? '采样中…' :
-            `开始采样（${this.currentReaderEyeCalibrationTargetLabel()}）`)
-            .width('100%')
-            .height(46)
-            .fontSize(15)
-            .fontColor('#FFFFFF')
-            .backgroundColor(this.readerEyeCalibrationCapturing ?
-              (this.isReaderThemeDark() ? '#33FFFFFF' : '#33000000') : this.accentColor())
-            .enabled(!this.readerEyeCalibrationCapturing)
-            .onClick((): void => this.startReaderEyeCalibrationPhaseSampling())
-        }
-      }
-      .width('calc(100% - 48vp)')
-      .constraintSize({ maxWidth: 480 })
-      .padding(24)
-      .borderRadius(28)
-      .backgroundColor(this.readerGlassPanelColor())
-      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
-      .border({ width: 1, color: this.readerGlassBorderColor() })
-      .margin({ bottom: 24 })
-
-      Stack({ alignContent: Alignment.Center }) {
-        Row()
-          .width(this.readerEyeCalibrationPreviewWidthVp() * 0.48)
-          .height(this.readerEyeCalibrationPreviewHeightVp() * 0.76)
-          .borderRadius(999)
-          .border({ width: 2, color: this.accentColor(), style: BorderStyle.Dashed })
-
-        Column() {
-          Blank()
-          Text(this.readerEyeCalibrationPreviewHint())
-            .fontSize(11)
-            .fontColor('#FFFFFF')
-            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-            .borderRadius(12)
-            .backgroundColor('#88000000')
-            .margin({ bottom: 8 })
-        }
-        .height('100%')
-      }
-      .width(this.readerEyeCalibrationPreviewWidthVp())
-      .height(this.readerEyeCalibrationPreviewHeightVp())
-      .position({
-        x: this.readerEyeCalibrationPreviewLeftVp(),
-        y: LeafFns.readerEyeCalibrationPreviewTopVp()
-      })
-      .borderRadius(20)
-      .border({ width: 1, color: '#70FFFFFF' })
-      .hitTestBehavior(HitTestMode.None)
-
-      if (this.readerEyeCalibrationSessionActive && this.readerEyeCalibrationStep >= 0 &&
-        this.readerEyeCalibrationStep < READER_EYE_CALIBRATION_PHASE_COUNT) {
-        Row()
-          .width(24)
-          .height(24)
-          .borderRadius(12)
-          .backgroundColor(this.accentColor())
-          .border({ width: 4, color: this.isReaderThemeDark() ? '#A0FFFFFF' : '#D0FFFFFF' })
-          .shadow({ radius: 16, color: this.accentColor(), offsetX: 0, offsetY: 0 })
-          .position({
-            x: Math.max(0, (this.readerEyeCalibrationOverlayWidth - 24) / 2),
-            y: this.readerEyeCalibrationTargetTopVp()
-          })
-      }
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(ThemeRuntime.scrimColor(this.isReaderThemeDark()))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .zIndex(4)
-    .onAreaChange((_oldArea: Area, newArea: Area): void => {
-      const width = parseAreaDimension(newArea.width);
-      const height = parseAreaDimension(newArea.height);
-      if (width > 0 && Math.abs(width - this.readerEyeCalibrationOverlayWidth) >= 0.5) {
-        this.readerEyeCalibrationOverlayWidth = width;
-      }
-      if (height > 0 && Math.abs(height - this.readerEyeCalibrationOverlayHeight) >= 0.5) {
-        this.readerEyeCalibrationOverlayHeight = height;
-      }
-    })
-    .onClick((): void => {})
   }
 
   readerEyeCalibrationTargetTopVp(): number {
