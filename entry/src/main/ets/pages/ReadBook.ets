@@ -139,6 +139,8 @@ import {
   ReaderBookmarkMultiSelectAction
 } from '../components/ReaderStaticItems';
 import { ReaderBookmarkActionItem } from '../components/ReaderBookmarkActionItem';
+import { ReaderComicBoundaryHint, ReaderComicInteractionLayer,
+  ReaderCacheDialogContent } from '../components/ReaderComicAndCacheItems';
 import { ReaderFloatingDayNightMenuItem, ReaderHdsDayNightMenuItem, ReaderBookmarkSwipeCard,
   ReaderSimulationPaperBackground, ReaderParagraphGap } from '../components/ReaderPageFrameItems';
 import { ReaderV2TtsHighlightRect, ReaderV2SelectionHighlightRect } from '../components/ReaderV2HighlightRects';
@@ -1929,7 +1931,17 @@ export struct ReadBookPage {
       .hitTestBehavior(HitTestMode.None)
 
       if (this.readerComicBoundaryDirection !== 0 || this.readerComicChapterSwitching) {
-        this.readerComicBoundaryHint()
+        ReaderComicBoundaryHint({
+          hintText: this.readerComicBoundaryHintText(),
+          accentColor: this.accentColor(),
+          textColor: this.getTextColor(),
+          dark: this.isReaderThemeDark(),
+          boundaryDirection: this.readerComicBoundaryDirection,
+          pullDistance: this.readerComicBoundaryPullDistance,
+          ready: this.readerComicBoundaryReady,
+          chapterSwitching: this.readerComicChapterSwitching,
+          topPadding: this.readerComicBoundaryHintTopPadding()
+        })
       }
     }
     .width('100%')
@@ -1968,87 +1980,8 @@ export struct ReadBookPage {
     )
   }
 
-  @Builder
-  readerComicBoundaryHint() {
-    Column() {
-      if (this.readerComicBoundaryDirection < 0) {
-        ReaderComicBoundaryHintContent({
-        hintText: this.readerComicBoundaryHintText(),
-        accentColor: this.accentColor(),
-        textColor: this.getTextColor(),
-        dark: this.isReaderThemeDark(),
-        boundaryDirection: this.readerComicBoundaryDirection,
-        pullDistance: this.readerComicBoundaryPullDistance,
-        ready: this.readerComicBoundaryReady,
-        chapterSwitching: this.readerComicChapterSwitching
-      })
-      }
-      Blank()
-        .layoutWeight(1)
-      if (this.readerComicBoundaryDirection > 0) {
-        ReaderComicBoundaryHintContent({
-        hintText: this.readerComicBoundaryHintText(),
-        accentColor: this.accentColor(),
-        textColor: this.getTextColor(),
-        dark: this.isReaderThemeDark(),
-        boundaryDirection: this.readerComicBoundaryDirection,
-        pullDistance: this.readerComicBoundaryPullDistance,
-        ready: this.readerComicBoundaryReady,
-        chapterSwitching: this.readerComicChapterSwitching
-      })
-      }
-    }
-    .width('100%')
-    .height('100%')
-    .padding({ top: this.readerComicBoundaryHintTopPadding(), bottom: 54 })
-    .alignItems(HorizontalAlign.Center)
-    .hitTestBehavior(HitTestMode.None)
-  }
-
   readerComicBoundaryHintTopPadding(): number {
     return ReaderLoadCacheOps.readerComicBoundaryHintTopPadding(this);
-  }
-
-  @Builder
-  readerComicInteractionLayer() {
-    Blank()
-    .width('100%')
-    .height('100%')
-    .backgroundColor(Color.Transparent)
-    .onClick(() => {
-      if (this.consumeSuppressedReaderTapClick()) {
-        return;
-      }
-      if (Date.now() >= this.readerComicSuppressClickUntil &&
-        !this.showMenu && !this.showToc && !this.showSettings) {
-        this.showMenu = true;
-      }
-    })
-    .gesture(
-      PanGesture({ direction: PanDirection.Vertical, distance: this.readerTapSlop })
-        .onActionStart(() => {
-          if (this.isReaderInteractiveActionActive()) {
-            return;
-          }
-          this.beginReaderComicPan();
-        })
-        .onActionUpdate((event: GestureEvent) => {
-          if (this.isReaderInteractiveActionActive()) {
-            return;
-          }
-          this.updateReaderComicPan(event);
-        })
-        .onActionEnd((event: GestureEvent) => {
-          if (this.isReaderInteractiveActionActive()) {
-            this.cancelReaderComicPan();
-            return;
-          }
-          this.finishReaderComicPan(event);
-        })
-        .onActionCancel(() => {
-          this.cancelReaderComicPan();
-        })
-    )
   }
 
   pageTransition() {
@@ -2274,7 +2207,40 @@ export struct ReadBookPage {
       if (this.isReaderContinuousScrollSurfaceActive() && !this.isReaderNovelContinuousScrollModeActive() &&
         !this.showMenu && !this.showToc && !this.showSettings &&
         !this.shouldBlockReaderInteraction() && !this.readerComicChapterSwitching) {
-        this.readerComicInteractionLayer()
+        ReaderComicInteractionLayer({
+          panDistance: this.readerTapSlop,
+          onLayerClick: (): void => {
+            if (this.consumeSuppressedReaderTapClick()) {
+              return;
+            }
+            if (Date.now() >= this.readerComicSuppressClickUntil &&
+              !this.showMenu && !this.showToc && !this.showSettings) {
+              this.showMenu = true;
+            }
+          },
+          onPanStart: (): void => {
+            if (this.isReaderInteractiveActionActive()) {
+              return;
+            }
+            this.beginReaderComicPan();
+          },
+          onPanUpdate: (event: GestureEvent): void => {
+            if (this.isReaderInteractiveActionActive()) {
+              return;
+            }
+            this.updateReaderComicPan(event);
+          },
+          onPanEnd: (event: GestureEvent): void => {
+            if (this.isReaderInteractiveActionActive()) {
+              this.cancelReaderComicPan();
+              return;
+            }
+            this.finishReaderComicPan(event);
+          },
+          onPanCancel: (): void => {
+            this.cancelReaderComicPan();
+          }
+        })
       }
 
       if (this.bookmarkPullActive) {
@@ -3797,53 +3763,35 @@ TtsGlobalCapsule({
 
   @Builder
   readerCacheDialogContent() {
-    Column() {
-      Text(`缓存《${this.book?.name || '当前书籍'}》`)
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.getTextColor())
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
-        .textAlign(TextAlign.Center)
-        .margin({ bottom: 8 })
-
-      if (this.readerCachePanelStatus()) {
-        Text(this.readerCachePanelStatus())
-          .fontSize(13)
-          .fontColor(this.getSubTextColor())
-          .width('100%')
-          .textAlign(TextAlign.Center)
-          .margin({ bottom: 8 })
-      }
-
-      ReaderCacheActionItem({ label: this.fullTextCaching ? '取消缓存' : '缓存全文', action: () => {
+    ReaderCacheDialogContent({
+      bookName: this.book?.name || '',
+      statusText: this.readerCachePanelStatus(),
+      fullTextCaching: this.fullTextCaching,
+      rangeCaching: this.readerCacheRangeCaching,
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      dangerColor: this.dangerColor(),
+      dark: this.isReaderThemeDark(),
+      onToggleFullTextCache: (): void => {
         if (this.fullTextCaching) {
           this.cancelFullTextCache();
         } else {
           this.startFullTextCache(0);
         }
-      }, disabled: this.readerCacheRangeCaching, color: this.fullTextCaching ? this.dangerColor() : '', dark: this.isReaderThemeDark(), textColor: this.getTextColor() })
-      ReaderCacheActionItem({ label: '缓存当前章到最新章', action: () => {
+      },
+      onCacheToLatest: (): void => {
         this.startFullTextCache(this.currentChapterIndex);
-      }, disabled: this.fullTextCaching || this.readerCacheRangeCaching, color: undefined, dark: this.isReaderThemeDark(), textColor: this.getTextColor() })
-      ReaderCacheActionItem({ label: '缓存指定章节', action: () => {
+      },
+      onOpenChapterRange: (): void => {
         this.openReaderChapterCacheDialog();
-      }, disabled: this.fullTextCaching || this.readerCacheRangeCaching, color: undefined, dark: this.isReaderThemeDark(), textColor: this.getTextColor() })
-      ReaderCacheActionItem({ label: '清除已缓存章节', action: () => {
+      },
+      onClearCachedChapters: (): void => {
         this.clearReaderCachedChapters();
-      }, disabled: this.fullTextCaching || this.readerCacheRangeCaching, color: this.dangerColor(), dark: this.isReaderThemeDark(), textColor: this.getTextColor() })
-
-      Button('取消')
-        .width('100%')
-        .height(44)
-        .margin({ top: 10 })
-        .backgroundColor(this.isReaderThemeDark() ? '#24272D' : '#F5F5F5')
-        .fontColor(this.getTextColor())
-        .onClick(() => this.closeReaderCacheDialog())
-    }    .width('calc(100% - 32vp)')
-    .constraintSize({ maxWidth: 520 })
-    .padding({ left: 18, right: 18, top: 18, bottom: 18 })
+      },
+      onClose: (): void => {
+        this.closeReaderCacheDialog();
+      }
+    })
   }
 
 
