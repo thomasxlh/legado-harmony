@@ -97,6 +97,7 @@ import {
   ReaderHeaderFooterSettingsPanel,
   ReaderTxtCharsetDialogContent,
   ReaderSystemTtsVoiceOption,
+  ReaderTtsVoicePanel,
 } from '../components/ReaderSettingsRows';
 import { ReaderActionMenuItem, ReaderCommentPanelDragOverlay, ReaderFloatingIconMenuItem, ReaderHdsMenuItem, ReaderReplaceRulesEntryItem, ReaderActionMenuPanel } from '../components/ReaderMenuItems';
 import {
@@ -2545,7 +2546,55 @@ export struct ReadBookPage {
       if (this.showSettings) {
         this.settingsPanel()
         if (this.showTtsVoiceDropdown) {
-          this.ttsVoiceDropdownPanel()
+          ReaderTtsVoicePanel({
+            customVoices: this.selectableCustomTtsVoices(),
+            systemVoices: this.selectableSystemTtsVoices(),
+            pressedKey: this.ttsVoiceRowPressedKey,
+            downloadingKey: this.ttsDownloadingVoiceKey,
+            textColor: this.getTextColor(),
+            subTextColor: this.getSubTextColor(),
+            accentColor: this.accentColor(),
+            iconColor: this.readerControlIconColor(),
+            darkMode: this.isReaderThemeDark(),
+            selectedBackgroundColor: this.tocSelectedBackgroundColor(),
+            pressedBackgroundColor: this.isReaderThemeDark() ? '#14FFFFFF' : '#0F000000',
+            panelWidth: this.readerFloatingBarWidth(),
+            panelHeight: this.readerTocPanelHeight(),
+            panelBottomInset: this.readerFloatingPanelBottomInset(),
+            panelLeft: this.readerFloatingBarLeft(),
+            scrollBarColor: this.readerPanelScrollBarColor(),
+            glassPanelColor: this.readerGlassPanelColor(),
+            glassBorderColor: this.readerGlassBorderColor(),
+            glassShadowColor: this.readerGlassShadowColor(),
+            isCustomSelected: (voice: HttpTTS): boolean => this.isCurrentCustomTtsVoice(voice),
+            isSystemSelected: (voice: TtsVoiceOption): boolean => this.isCurrentTtsVoice(voice),
+            onPress: (key: string, pressed: boolean): void => {
+              if (pressed) {
+                this.ttsVoiceRowPressedKey = key;
+              } else if (this.ttsVoiceRowPressedKey === key) {
+                this.ttsVoiceRowPressedKey = '';
+              }
+            },
+            onSelectCustom: (voice: HttpTTS): void => {
+              this.showTtsVoiceDropdown = false;
+              this.applyCustomTtsVoice(voice, true);
+            },
+            onSelectSystem: (voice: TtsVoiceOption, available: boolean, downloadable: boolean): void => {
+              if (!available) {
+                if (downloadable) {
+                  this.downloadTtsVoice(voice);
+                } else {
+                  HdsFeedback.showToast('该系统音色当前不可用');
+                }
+                return;
+              }
+              this.showTtsVoiceDropdown = false;
+              this.applyTtsVoice(voice, true);
+            },
+            onClose: (): void => {
+              this.showTtsVoiceDropdown = false;
+            }
+          })
         }
         if (LeafFns.supportsReaderImmersiveMaterial()) {
           if (this.hdsMaterialRenderBranch) {
@@ -6687,141 +6736,6 @@ TtsGlobalCapsule({
         })
     }
     .width('100%')
-  }
-
-  @Builder
-  ttsVoiceDropdownPanel() {
-    Stack() {
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(Color.Transparent)
-        .onClick(() => {
-          this.showTtsVoiceDropdown = false;
-        })
-
-      Column() {
-        Row() {
-          Text('朗读音色')
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.getTextColor())
-
-          Blank()
-            .layoutWeight(1)
-
-          ImmersiveBackButton({
-            icon: $r('sys.symbol.xmark'),
-            iconOffsetX: 0,
-            iconColor: this.readerControlIconColor(),
-            darkMode: this.isReaderThemeDark(),
-            buttonSize: 40,
-            containerWidth: 40,
-            containerHeight: 40,
-            startInset: 0,
-            materialScale: 0.83,
-            compactLayout: true,
-            accessibilityLabel: '关闭音色选择',
-            onBack: () => {
-              this.showTtsVoiceDropdown = false;
-            }
-          })
-        }
-        .width('100%')
-        .padding({ left: 20, right: 16, top: 12, bottom: 10 })
-        .alignItems(VerticalAlign.Center)
-
-        Scroll() {
-          Column() {
-            if (this.selectableCustomTtsVoices().length > 0) {
-              ReaderTtsVoiceSectionTitle({ title: '自定义音色', subTextColor: this.getSubTextColor() })
-              ForEach(this.selectableCustomTtsVoices(), (voice: HttpTTS) => {
-                ReaderTtsVoiceOption({
-                  title: LeafFns.ttsCustomVoiceTitle(voice),
-                  selected: this.isCurrentCustomTtsVoice(voice),
-                  pressed: this.ttsVoiceRowPressedKey === LeafFns.ttsCustomVoiceTitle(voice),
-                  textColor: this.getTextColor(),
-                  accentColor: this.accentColor(),
-                  darkMode: this.isReaderThemeDark(),
-                  selectedBackgroundColor: this.tocSelectedBackgroundColor(),
-                  onPressedChange: (pressed: boolean): void => {
-                    if (pressed) {
-                      this.ttsVoiceRowPressedKey = LeafFns.ttsCustomVoiceTitle(voice);
-                    } else if (this.ttsVoiceRowPressedKey === LeafFns.ttsCustomVoiceTitle(voice)) {
-                      this.ttsVoiceRowPressedKey = '';
-                    }
-                  },
-                  onAction: (): void => {
-                    this.showTtsVoiceDropdown = false;
-                    this.applyCustomTtsVoice(voice, true);
-                  }
-                })
-              }, (voice: HttpTTS) => LeafFns.ttsCustomVoiceKey(voice))
-            }
-
-            if (this.selectableSystemTtsVoices().length > 0) {
-              ReaderTtsVoiceSectionTitle({ title: '系统音色', subTextColor: this.getSubTextColor() })
-              ForEach(this.selectableSystemTtsVoices(), (voice: TtsVoiceOption) => {
-                ReaderSystemTtsVoiceOption({
-                  title: LeafFns.ttsVoiceTitle(voice),
-                  availableState: voice.available ? 1 : 0,
-                  downloadable: voice.downloadable === true,
-                  downloading: this.ttsDownloadingVoiceKey === LeafFns.ttsVoiceKey(voice),
-                  selected: this.isCurrentTtsVoice(voice),
-                  pressed: this.ttsVoiceRowPressedKey === LeafFns.ttsVoiceKey(voice),
-                  textColor: this.getTextColor(),
-                  subTextColor: this.getSubTextColor(),
-                  accentColor: this.accentColor(),
-                  darkMode: this.isReaderThemeDark(),
-                  pressedBackgroundColor: this.isReaderThemeDark() ? '#14FFFFFF' : '#0F000000',
-                  selectedBackgroundColor: this.tocSelectedBackgroundColor(),
-                  onPressedChange: (pressed: boolean): void => {
-                    if (pressed) {
-                      this.ttsVoiceRowPressedKey = LeafFns.ttsVoiceKey(voice);
-                    } else if (this.ttsVoiceRowPressedKey === LeafFns.ttsVoiceKey(voice)) {
-                      this.ttsVoiceRowPressedKey = '';
-                    }
-                  },
-                  onAction: (available: boolean, downloadable: boolean): void => {
-                    if (!available) {
-                      if (downloadable) {
-                        this.downloadTtsVoice(voice);
-                      } else {
-                        HdsFeedback.showToast('该系统音色当前不可用');
-                      }
-                      return;
-                    }
-                    this.showTtsVoiceDropdown = false;
-                    this.applyTtsVoice(voice, true);
-                  }
-                })
-              }, (voice: TtsVoiceOption) => LeafFns.ttsVoiceKey(voice))
-            }
-          }
-          .width('100%')
-          .padding({ left: 12, right: 12, bottom: 16 })
-        }
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .width('100%')
-        .layoutWeight(1)
-        .scrollBar(BarState.Auto)
-        .scrollBarColor(this.readerPanelScrollBarColor())
-      }
-      .width(this.readerFloatingBarWidth())
-      .height(this.readerTocPanelHeight())
-      .borderRadius(ThemeRuntime.glassCornerRadius(28, 'panel'))
-      .clip(true)
-      .backgroundColor(this.readerGlassPanelColor())
-      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
-      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
-      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.readerGlassShadowColor(),
-        offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      .position({ x: this.readerFloatingBarLeft(), y: '100%' })
-      .translate({ y: -(this.readerTocPanelHeight() + this.readerFloatingPanelBottomInset()) })
-      .transition(LeafFns.readerPanelTransition())
-    }
-    .width('100%')
-    .height('100%')
   }
 
 
