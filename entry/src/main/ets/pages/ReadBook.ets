@@ -85,6 +85,13 @@ import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import {
+  ReaderSelectSettingItem,
+  ReaderTtsVoiceOption,
+  ReaderTapZoneSettingItem,
+  ReaderAutoPageTurnIntervalSettingItem,
+  ReaderTxtCharsetOptionRow,
+} from '../components/ReaderSettingsRows';
+import {
   ReaderActionMenuItem,
   ReaderCommentPanelDragOverlay,
   ReaderFloatingIconMenuItem,
@@ -4050,7 +4057,19 @@ export struct ReadBookPage {
       Scroll() {
         Column({ space: 4 }) {
           ForEach(LeafFns.txtCharsetOptions(), (option: ReaderTxtCharsetOption) => {
-            this.readerTxtCharsetOption(option)
+            ReaderTxtCharsetOptionRow({
+              label: option.label,
+              description: option.description,
+              selected: this.txtCharsetDraft === option.value,
+              rowEnabled: !this.txtCharsetApplying,
+              textColor: this.getTextColor(),
+              subTextColor: this.getSubTextColor(),
+              accentColor: this.accentColor(),
+              darkMode: this.isReaderThemeDark(),
+              onPick: (): void => {
+                this.txtCharsetDraft = option.value;
+              }
+            })
           }, (option: ReaderTxtCharsetOption) => option.value || 'auto')
         }
         .width('100%')
@@ -4084,37 +4103,6 @@ export struct ReadBookPage {
     .padding({ left: 18, right: 18, top: 16, bottom: 16 })
   }
 
-
-  @Builder
-  readerTxtCharsetOption(option: ReaderTxtCharsetOption) {
-    Row({ space: 12 }) {
-      Column({ space: 3 }) {
-        Text(option.label)
-          .fontSize(16)
-          .fontColor(this.getTextColor())
-        Text(option.description)
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-      if (this.txtCharsetDraft === option.value) {
-        SymbolGlyph($r('sys.symbol.checkmark_circle'))
-          .fontSize(22)
-          .fontColor([this.accentColor()])
-      }
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-    .borderRadius(14)
-    .backgroundColor(this.txtCharsetDraft === option.value ?
-      ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()) : Color.Transparent)
-    .enabled(!this.txtCharsetApplying)
-    .onClick(() => {
-      this.txtCharsetDraft = option.value;
-    })
-  }
 
   openCurrentReaderReplaceRules(): void {
     ReaderTextPrepOps.openCurrentReaderReplaceRules(this);
@@ -6633,10 +6621,21 @@ export struct ReadBookPage {
     Column({ space: 4 }) {
       // 正文排版作为面板首项，统一调整字号、字距、行距、段距及四侧边距。
       this.readerTypographyCombinedSettings()
-      this.readerSelectSettingItem('正文对齐方式', '设置正文段落的水平对齐方式',
-        LeafFns.readerTextAlignOptions(), this.readerTextAlignSelectedIndex(), (index: number) => {
+      ReaderSelectSettingItem({
+        title: '正文对齐方式',
+        description: '设置正文段落的水平对齐方式',
+        options: LeafFns.readerTextAlignOptions(),
+        selected: this.readerTextAlignSelectedIndex(),
+        controlId: 'reader_text_align_select',
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.getBackgroundColor(),
+        onSelect: (index: number) => {
           this.setReaderTextAlignByIndex(index);
-        }, 'reader_text_align_select')
+        }
+      })
       this.readerHeaderFooterSettingsPanel()
       ReaderFontEntryItem({
         textColor: this.getTextColor(),
@@ -6768,11 +6767,22 @@ export struct ReadBookPage {
         }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
       if (this.readerHeaderEnabled) {
-        this.readerSelectSettingItem('页眉内容', '选择页眉中显示的信息', LeafFns.readerHeaderContentOptions(),
-          this.readerHeaderContentSelectedIndex(), (index: number) => {
+        ReaderSelectSettingItem({
+        title: '页眉内容',
+        description: '选择页眉中显示的信息',
+        options: LeafFns.readerHeaderContentOptions(),
+        selected: this.readerHeaderContentSelectedIndex(),
+        controlId: 'reader_header_content_select',
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.getBackgroundColor(),
+        onSelect: (index: number) => {
             const values = LeafFns.readerHeaderContentValues();
             this.readerHeaderContentMode = index >= 0 && index < values.length ? values[index] : 'chapter';
-          }, 'reader_header_content_select')
+          }
+      })
       }
 
       ReaderSwitchSettingItem({ title: '显示页脚', description: '显示章节信息和阅读进度', isOn: this.readerFooterEnabled, onChange: (checked: boolean) => {
@@ -6780,17 +6790,39 @@ export struct ReadBookPage {
         }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
       if (this.readerFooterEnabled) {
-        this.readerSelectSettingItem('页脚左侧', '选择页脚左侧显示的信息', LeafFns.readerFooterLeftOptions(),
-          this.readerFooterLeftSelectedIndex(), (index: number) => {
+        ReaderSelectSettingItem({
+        title: '页脚左侧',
+        description: '选择页脚左侧显示的信息',
+        options: LeafFns.readerFooterLeftOptions(),
+        selected: this.readerFooterLeftSelectedIndex(),
+        controlId: 'reader_footer_left_select',
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.getBackgroundColor(),
+        onSelect: (index: number) => {
             const values = LeafFns.readerFooterLeftValues();
             this.readerFooterLeftMode = index >= 0 && index < values.length ? values[index] : 'chapter';
-          }, 'reader_footer_left_select')
+          }
+      })
 
-        this.readerSelectSettingItem('阅读进度', '选择页脚右侧显示的进度类型', LeafFns.readerFooterProgressOptions(),
-          this.readerFooterProgressSelectedIndex(), (index: number) => {
+        ReaderSelectSettingItem({
+        title: '阅读进度',
+        description: '选择页脚右侧显示的进度类型',
+        options: LeafFns.readerFooterProgressOptions(),
+        selected: this.readerFooterProgressSelectedIndex(),
+        controlId: 'reader_footer_progress_select',
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.getBackgroundColor(),
+        onSelect: (index: number) => {
             const values = LeafFns.readerFooterProgressValues();
             this.readerFooterProgressMode = index >= 0 && index < values.length ? values[index] : 'page';
-          }, 'reader_footer_progress_select')
+          }
+      })
 
         ReaderSwitchSettingItem({ title: '显示进度条', description: '在页脚上方显示本章阅读进度', isOn: this.readerFooterShowProgressBar, onChange: (checked: boolean) => {
             this.readerFooterShowProgressBar = checked;
@@ -6841,35 +6873,87 @@ export struct ReadBookPage {
         },
       })
 
-      this.readerSelectSettingItem('翻页方式', '选择上下滑动、横向滑动或滚动阅读',
-        LeafFns.pageTurnModeOptions(), this.pageTurnModeSelectedIndex(), (index: number) => {
+      ReaderSelectSettingItem({
+        title: '翻页方式',
+        description: '选择上下滑动、横向滑动或滚动阅读',
+        options: LeafFns.pageTurnModeOptions(),
+        selected: this.pageTurnModeSelectedIndex(),
+        controlId: 'reader_page_turn_mode_select',
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.getBackgroundColor(),
+        onSelect: (index: number) => {
           this.switchPageTurnMode(LeafFns.pageTurnModeByIndex(index));
-        }, 'reader_page_turn_mode_select')
+        }
+      })
 
       if (this.readerPageTurnMode === 2) {
-        this.readerTapZoneSettingItem()
+        ReaderTapZoneSettingItem({
+          summaryText: this.tapZoneSummaryText(),
+          textColor: this.getTextColor(),
+          subTextColor: this.getSubTextColor(),
+          buttonColor: this.buttonColor(),
+          onConfigure: (): void => {
+            this.presentTapZoneSettings();
+          }
+        })
       }
 
       if (this.readerPageTurnMode === 2) {
-        this.readerSelectSettingItem('翻页动画', '选择翻页时使用的页面切换效果',
-          this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
+        ReaderSelectSettingItem({
+        title: '翻页动画',
+        description: '选择翻页时使用的页面切换效果',
+        options: this.pageTurnAnimationOptions(),
+        selected: this.pageTurnAnimationSelectedIndex(),
+        controlId: 'reader_page_turn_animation_select_horizontal',
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.getBackgroundColor(),
+        onSelect: (index: number) => {
             this.setReaderPageTurnAnimationType(index);
-          }, 'reader_page_turn_animation_select_horizontal')
+          }
+      })
       } else if (this.readerPageTurnMode === 0) {
-        this.readerSelectSettingItem('翻页动画', '选择翻页时使用的页面切换效果',
-          this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
+        ReaderSelectSettingItem({
+        title: '翻页动画',
+        description: '选择翻页时使用的页面切换效果',
+        options: this.pageTurnAnimationOptions(),
+        selected: this.pageTurnAnimationSelectedIndex(),
+        controlId: 'reader_page_turn_animation_select_vertical',
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.getBackgroundColor(),
+        onSelect: (index: number) => {
             this.setReaderPageTurnAnimationType(index);
-          }, 'reader_page_turn_animation_select_vertical')
+          }
+      })
       }
 
       ReaderSwitchSettingItem({ title: '使用双翻页', description: '横屏或折叠屏展开等宽屏状态下同时显示左右两页', isOn: this.readerLandscapeDoublePage, onChange: (checked: boolean) => {
           this.setReaderLandscapeDoublePage(checked);
         }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
-      this.readerSelectSettingItem('屏幕方向', '设置正文阅读时使用的屏幕方向',
-        LeafFns.screenOrientationOptions(), this.screenOrientationSelectedIndex(), (index: number) => {
+      ReaderSelectSettingItem({
+        title: '屏幕方向',
+        description: '设置正文阅读时使用的屏幕方向',
+        options: LeafFns.screenOrientationOptions(),
+        selected: this.screenOrientationSelectedIndex(),
+        controlId: 'reader_screen_orientation_select',
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.getBackgroundColor(),
+        onSelect: (index: number) => {
           this.setReaderScreenOrientationByIndex(index);
-        }, 'reader_screen_orientation_select')
+        }
+      })
 
       ReaderSwitchSettingItem({ title: '音量键翻页', description: '阅读页获得焦点时使用音量上/下键翻页', isOn: this.readerVolumeTurnPage, onChange: (checked: boolean) => {
           this.setReaderVolumeTurnPage(checked);
@@ -6879,7 +6963,15 @@ export struct ReadBookPage {
           this.setAutoPageTurnActive(checked);
         }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
-      this.readerAutoPageTurnIntervalSettingItem()
+      ReaderAutoPageTurnIntervalSettingItem({
+        intervalSec: this.autoPageTurnIntervalSec,
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        fieldColor: this.customThemeFieldColor(),
+        onOpen: (): void => {
+          this.presentAutoPageTurnIntervalDialog();
+        }
+      })
 
       ReaderSwitchSettingItem({ title: '快速添加书签', description: '正文下拉时快速添加或删除当前页书签', isOn: this.readerQuickBookmarkEnabled, onChange: (checked: boolean) => {
           this.setReaderQuickBookmarkEnabled(checked);
@@ -6893,10 +6985,21 @@ export struct ReadBookPage {
         this.readerEyeTurnCalibrationSettingItem()
       }
 
-      this.readerSelectSettingItem('亮屏时间设置', '无操作达到所选时长后恢复系统息屏',
-        LeafFns.screenTimeoutOptions(), this.screenTimeoutSelectedIndex(), (index: number) => {
+      ReaderSelectSettingItem({
+        title: '亮屏时间设置',
+        description: '无操作达到所选时长后恢复系统息屏',
+        options: LeafFns.screenTimeoutOptions(),
+        selected: this.screenTimeoutSelectedIndex(),
+        controlId: 'reader_screen_timeout_select',
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.getBackgroundColor(),
+        onSelect: (index: number) => {
           this.setReaderScreenTimeoutByIndex(index);
-        }, 'reader_screen_timeout_select')
+        }
+      })
 
       Row({ space: 10 }) {
         ForEach(this.currentReaderThemes(), (theme: ReaderThemeItem, index: number) => {
@@ -7341,11 +7444,26 @@ export struct ReadBookPage {
             if (this.selectableCustomTtsVoices().length > 0) {
               ReaderTtsVoiceSectionTitle({ title: '自定义音色', subTextColor: this.getSubTextColor() })
               ForEach(this.selectableCustomTtsVoices(), (voice: HttpTTS) => {
-                this.ttsVoiceDropdownOption(LeafFns.ttsCustomVoiceTitle(voice),
-                  this.isCurrentCustomTtsVoice(voice), () => {
+                ReaderTtsVoiceOption({
+                  title: LeafFns.ttsCustomVoiceTitle(voice),
+                  selected: this.isCurrentCustomTtsVoice(voice),
+                  pressed: this.ttsVoiceRowPressedKey === LeafFns.ttsCustomVoiceTitle(voice),
+                  textColor: this.getTextColor(),
+                  accentColor: this.accentColor(),
+                  darkMode: this.isReaderThemeDark(),
+                  selectedBackgroundColor: this.tocSelectedBackgroundColor(),
+                  onPressedChange: (pressed: boolean): void => {
+                    if (pressed) {
+                      this.ttsVoiceRowPressedKey = LeafFns.ttsCustomVoiceTitle(voice);
+                    } else if (this.ttsVoiceRowPressedKey === LeafFns.ttsCustomVoiceTitle(voice)) {
+                      this.ttsVoiceRowPressedKey = '';
+                    }
+                  },
+                  onAction: (): void => {
                     this.showTtsVoiceDropdown = false;
                     this.applyCustomTtsVoice(voice, true);
-                  })
+                  }
+                })
               }, (voice: HttpTTS) => LeafFns.ttsCustomVoiceKey(voice))
             }
 
@@ -7440,42 +7558,6 @@ export struct ReadBookPage {
     })
   }
 
-  @Builder
-  ttsVoiceDropdownOption(title: string, selected: boolean, action: () => void) {
-    Row() {
-      Text(title)
-        .fontSize(14)
-        .fontColor(this.getTextColor())
-        .layoutWeight(1)
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-      if (selected) {
-        SymbolGlyph($r('sys.symbol.checkmark'))
-          .fontSize(18)
-          .fontColor([this.accentColor()])
-          .margin({ left: 10 })
-      }
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 48 })
-    .padding({ left: 12, right: 12, top: 9, bottom: 9 })
-    .borderRadius(8)
-    .backgroundColor(this.ttsVoiceRowPressedKey === title ?
-      (this.isReaderThemeDark() ? '#14FFFFFF' : '#0F000000') :
-      (selected ? this.tocSelectedBackgroundColor() : Color.Transparent))
-    .onTouch((event: TouchEvent) => {
-      if (event.type === TouchType.Down) {
-        this.ttsVoiceRowPressedKey = title;
-      } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-        if (this.ttsVoiceRowPressedKey === title) {
-          this.ttsVoiceRowPressedKey = '';
-        }
-      }
-    })
-    .onClick(action)
-  }
-
 
   pageTurnModeSelectedIndex(): number {
     return ReaderSettingsOps.pageTurnModeSelectedIndex(this);
@@ -7507,109 +7589,7 @@ export struct ReadBookPage {
     return ReaderSettingsOps.screenOrientationSelectedIndex(this);
   }
 
-  @Builder
-  readerTapZoneSettingItem() {
-    Row() {
-      Column() {
-        Text('点击区域动作')
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-        Text(this.tapZoneSummaryText())
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-          .margin({ top: 4 })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
 
-      Button('配置')
-        .height(34)
-        .fontSize(13)
-        .backgroundColor(this.buttonColor())
-        .fontColor('#FFFFFF')
-        .margin({ left: 12 })
-        .onClick(() => {
-          this.presentTapZoneSettings();
-        })
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .alignItems(VerticalAlign.Center)
-  }
-
-
-
-  @Builder
-  readerSelectSettingItem(title: string, description: string, options: SelectOption[], selected: number,
-    onSelect: (index: number) => void, controlId: string) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-        Text(description)
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-          .margin({ top: 4 })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      Select(options)
-        .id(controlId)
-        .selected(selected)
-        .value(LeafFns.readerSelectOptionValue(options, selected))
-        .font({ size: 14 })
-        .fontColor(this.getSubTextColor())
-        .backgroundColor(Color.Transparent)
-        .arrowPosition(ArrowPosition.END)
-        .padding({ left: 0, right: 0 })
-        // Keep the hit area rectangular, but soften its corners to match the rounded settings cards.
-        .borderRadius(16)
-        .border({ width: 0 })
-        .optionBgColor(Color.Transparent)
-        .divider(null)
-        .optionFontColor(this.getTextColor())
-        .selectedOptionFontColor(this.accentColor())
-        .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
-        .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
-        .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .attributeModifier(new SelectMenuMaterialModifier())
-        .onSelect((index: number) => {
-          onSelect(index);
-        })
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
-  readerAutoPageTurnIntervalSettingItem() {
-    Row() {
-      Column() {
-        Text('自动翻页间隔')
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-        Text('自动翻到下一页前等待的秒数，随阅读设置云同步')
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-          .margin({ top: 4 })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      Button(`${this.autoPageTurnIntervalSec} 秒`)
-        .height(36)
-        .fontSize(13)
-        .backgroundColor(this.customThemeFieldColor())
-        .fontColor(this.getTextColor())
-        .onClick((): void => this.presentAutoPageTurnIntervalDialog())
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .alignItems(VerticalAlign.Center)
-  }
 
   @Builder
   readerAutoPageTurnIndicator() {
@@ -7884,10 +7864,19 @@ export struct ReadBookPage {
       .alignItems(VerticalAlign.Center)
 
       if (this.readerPreloadEnabled) {
-        this.readerSelectSettingItem('下一章节数', '选择自动预缓存的后续章节数量',
-          LeafFns.readerPreloadChapterOptions(), this.readerPreloadChapterCount - 1,
-          (index: number) => this.setReaderPreloadChapterCount(index + 1),
-          'reader_preload_chapter_count_select')
+        ReaderSelectSettingItem({
+        title: '下一章节数',
+        description: '选择自动预缓存的后续章节数量',
+        options: LeafFns.readerPreloadChapterOptions(),
+        selected: this.readerPreloadChapterCount - 1,
+        controlId: 'reader_preload_chapter_count_select',
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.getBackgroundColor(),
+        onSelect: (index: number) => this.setReaderPreloadChapterCount(index + 1)
+      })
       }
     }
     .width('100%')
