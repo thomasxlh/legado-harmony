@@ -117,6 +117,7 @@ import {
   ReaderTtsSleepTimerChip,
   ReaderTtsSpeedChip
 } from '../components/ReaderOverlayItems';
+import { ReaderTtsQuickSettingsPanel } from '../components/ReaderTtsQuickSettingsPanel';
 import {
   ReaderTtsMediaSymbolControl,
   ReaderTtsMediaSpeedControl,
@@ -5564,7 +5565,34 @@ TtsGlobalCapsule({
             .transition(LeafFns.readerSettingsContentTransition(-1))
           } else if (this.settingsPanelTab === 1) {
             Column() {
-              this.ttsQuickSettingsPanel()
+              ReaderTtsQuickSettingsPanel({
+                ttsSpeed: this.ttsSpeed,
+                textColor: this.getTextColor(),
+                subTextColor: this.getSubTextColor(),
+                iconColor: this.readerControlIconColor(),
+                accentColor: this.accentColor(),
+                chipIdleColor: this.readerChipIdleColor(),
+                darkMode: this.isReaderThemeDark(),
+                voicesLoading: this.ttsVoicesLoading,
+                selectedVoiceTitle: this.selectedTtsVoiceTitle(),
+                sleepTimerMinutes: this.ttsSleepTimerMinutes,
+                sleepTimerRemainingSeconds: this.ttsSleepTimerRemainingSeconds,
+                dangerColor: this.dangerColor(),
+                buttonColor: this.buttonColor(),
+                speaking: this.isTtsSpeaking,
+                onApplySpeed: (value: number): void => {
+                  this.applyTtsSpeed(value);
+                },
+                onSetSleepTimer: (minutes: number): void => {
+                  this.setTtsSleepTimer(minutes);
+                },
+                onToggleVoiceDropdown: (): void => {
+                  this.showTtsVoiceDropdown = true;
+                },
+                onToggleReading: (): void => {
+                  this.toggleTtsReading();
+                }
+              })
             }
             .width('100%')
             .transition(LeafFns.readerSettingsContentTransition(1))
@@ -6060,222 +6088,6 @@ TtsGlobalCapsule({
           this.setReaderPreloadChapterCount(count);
         }
       })
-    }
-    .width('100%')
-  }
-
-  @Builder
-  ttsQuickSettingsPanel() {
-    Column({ space: 14 }) {
-      Row() {
-        Text('朗读倍速')
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-          .layoutWeight(1)
-        Text(`${this.ttsSpeed.toFixed(1)}x`)
-          .fontSize(14)
-          .fontColor(this.getSubTextColor())
-      }
-      .width('100%')
-
-      Row({ space: 10 }) {
-        ReaderSliderStepButton({
-        icon: $r('sys.symbol.minus'),
-        accessibilityLabel: '降低朗读倍速',
-        controlEnabled: this.ttsSpeed > 0.5,
-        action: () => {
-          this.applyTtsSpeed(this.ttsSpeed - 0.1);
-        },
-        iconColor: this.readerControlIconColor(),
-        disabledIconColor: this.getSubTextColor(),
-        darkMode: this.isReaderThemeDark(),
-      })
-      Slider({ value: this.ttsSpeed, min: 0.5, max: 3, step: 0.1 })
-        .layoutWeight(1)
-        .showTips(true)
-          .selectedColor(this.accentColor())
-        .sliderInteractionMode(ImmersiveMaterialRuntime.supportsHds() ?
-          SliderInteraction.SLIDE_AND_CLICK_UP : SliderInteraction.SLIDE_ONLY)
-          .onChange((value: number) => {
-            this.applyTtsSpeed(value);
-          })
-        ReaderSliderStepButton({
-        icon: $r('sys.symbol.plus'),
-        accessibilityLabel: '提高朗读倍速',
-        controlEnabled: this.ttsSpeed < 3,
-        action: () => {
-          this.applyTtsSpeed(this.ttsSpeed + 0.1);
-        },
-        iconColor: this.readerControlIconColor(),
-        disabledIconColor: this.getSubTextColor(),
-        darkMode: this.isReaderThemeDark(),
-      })
-      }
-      .width('100%')
-
-      Row({ space: 8 }) {
-        ReaderTtsSpeedChip({
-        value: 0.8,
-        selected: Math.abs(this.ttsSpeed - 0.8) < 0.01,
-        textColor: this.getTextColor(),
-        accentColor: this.accentColor(),
-        idleColor: this.readerChipIdleColor(),
-        onSelect: (): void => {
-          this.applyTtsSpeed(0.8);
-        }
-      })
-        ReaderTtsSpeedChip({
-        value: 1.0,
-        selected: Math.abs(this.ttsSpeed - 1.0) < 0.01,
-        textColor: this.getTextColor(),
-        accentColor: this.accentColor(),
-        idleColor: this.readerChipIdleColor(),
-        onSelect: (): void => {
-          this.applyTtsSpeed(1.0);
-        }
-      })
-        ReaderTtsSpeedChip({
-        value: 1.5,
-        selected: Math.abs(this.ttsSpeed - 1.5) < 0.01,
-        textColor: this.getTextColor(),
-        accentColor: this.accentColor(),
-        idleColor: this.readerChipIdleColor(),
-        onSelect: (): void => {
-          this.applyTtsSpeed(1.5);
-        }
-      })
-        ReaderTtsSpeedChip({
-        value: 2.0,
-        selected: Math.abs(this.ttsSpeed - 2.0) < 0.01,
-        textColor: this.getTextColor(),
-        accentColor: this.accentColor(),
-        idleColor: this.readerChipIdleColor(),
-        onSelect: (): void => {
-          this.applyTtsSpeed(2.0);
-        }
-      })
-        ReaderTtsSpeedChip({
-        value: 3.0,
-        selected: Math.abs(this.ttsSpeed - 3.0) < 0.01,
-        textColor: this.getTextColor(),
-        accentColor: this.accentColor(),
-        idleColor: this.readerChipIdleColor(),
-        onSelect: (): void => {
-          this.applyTtsSpeed(3.0);
-        }
-      })
-      }
-      .width('100%')
-
-      Row() {
-        Text('朗读音色')
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-          .layoutWeight(1)
-        if (this.ttsVoicesLoading) {
-          Text('加载中')
-            .fontSize(12)
-            .fontColor(this.getSubTextColor())
-        }
-      }
-      .width('100%')
-
-      Row() {
-        Text(this.selectedTtsVoiceTitle())
-          .fontSize(14)
-          .fontColor(this.getTextColor())
-          .layoutWeight(1)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-        SymbolGlyph($r('sys.symbol.chevron_down'))
-          .fontSize(16)
-          .fontColor([this.getSubTextColor()])
-          .margin({ left: 10 })
-      }
-        .width('100%')
-        .height(44)
-        .padding({ left: 14, right: 14 })
-        .backgroundColor(this.readerChipIdleColor())
-        .borderRadius(8)
-        .onClick(() => {
-          this.showTtsVoiceDropdown = true;
-        })
-
-      Row() {
-        Text('朗读定时')
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-          .layoutWeight(1)
-        Text(this.ttsSleepTimerMinutes > 0 ?
-          `剩余 ${Math.max(1, Math.ceil(this.ttsSleepTimerRemainingSeconds / 60))} 分钟` : '未设置')
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-      }
-      .width('100%')
-
-      Row({ space: 8 }) {
-        ReaderTtsSleepTimerChip({
-        minutes: 15,
-        selected: this.ttsSleepTimerMinutes === 15,
-        textColor: this.getTextColor(),
-        accentColor: this.accentColor(),
-        idleColor: this.readerChipIdleColor(),
-        onToggle: (): void => {
-          this.setTtsSleepTimer(this.ttsSleepTimerMinutes === 15 ? 0 : 15);
-        }
-      })
-        ReaderTtsSleepTimerChip({
-        minutes: 30,
-        selected: this.ttsSleepTimerMinutes === 30,
-        textColor: this.getTextColor(),
-        accentColor: this.accentColor(),
-        idleColor: this.readerChipIdleColor(),
-        onToggle: (): void => {
-          this.setTtsSleepTimer(this.ttsSleepTimerMinutes === 30 ? 0 : 30);
-        }
-      })
-        ReaderTtsSleepTimerChip({
-        minutes: 60,
-        selected: this.ttsSleepTimerMinutes === 60,
-        textColor: this.getTextColor(),
-        accentColor: this.accentColor(),
-        idleColor: this.readerChipIdleColor(),
-        onToggle: (): void => {
-          this.setTtsSleepTimer(this.ttsSleepTimerMinutes === 60 ? 0 : 60);
-        }
-      })
-        ReaderTtsSleepTimerChip({
-        minutes: 90,
-        selected: this.ttsSleepTimerMinutes === 90,
-        textColor: this.getTextColor(),
-        accentColor: this.accentColor(),
-        idleColor: this.readerChipIdleColor(),
-        onToggle: (): void => {
-          this.setTtsSleepTimer(this.ttsSleepTimerMinutes === 90 ? 0 : 90);
-        }
-      })
-        ReaderTtsSleepTimerChip({
-        minutes: 120,
-        selected: this.ttsSleepTimerMinutes === 120,
-        textColor: this.getTextColor(),
-        accentColor: this.accentColor(),
-        idleColor: this.readerChipIdleColor(),
-        onToggle: (): void => {
-          this.setTtsSleepTimer(this.ttsSleepTimerMinutes === 120 ? 0 : 120);
-        }
-      })
-      }
-      .width('100%')
-
-      Button(this.isTtsSpeaking ? '停止朗读' : '开始朗读')
-        .width('100%')
-        .height(40)
-        .backgroundColor(this.isTtsSpeaking ? this.dangerColor() : this.buttonColor())
-        .fontColor('#FFFFFF')
-        .onClick(() => {
-          this.toggleTtsReading();
-        })
     }
     .width('100%')
   }
