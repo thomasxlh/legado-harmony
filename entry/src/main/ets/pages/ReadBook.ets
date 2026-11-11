@@ -103,7 +103,7 @@ import {
   ReaderTypographySettingsPanel,
 } from '../components/ReaderSettingsRows';
 import { ReaderCommentPanel } from '../components/ReaderCommentPanel';
-import { ReaderTtsExpandedControlsCompat } from '../components/ReaderTtsExpandedControls';
+import { ReaderTtsExpandedControlsBar, ReaderTtsExpandedControlsCompat } from '../components/ReaderTtsExpandedControls';
 import { ReaderBookmarkActionMenu } from '../components/ReaderMenuItems';
 import { ReaderTocChapterList } from '../components/ReaderTocChapterList';
 import { ReaderActionMenuItem, ReaderCommentPanelDragOverlay, ReaderFloatingIconMenuItem, ReaderHdsMenuItem, ReaderReplaceRulesEntryItem, ReaderActionMenuPanel } from '../components/ReaderMenuItems';
@@ -2529,9 +2529,45 @@ export struct ReadBookPage {
         if (this.readerUseTtsQuickAction && this.shouldShowTtsMediaControls()) {
           if (LeafFns.supportsReaderImmersiveMaterial()) {
             if (this.hdsMaterialRenderBranch) {
-              this.ttsExpandedMediaControlsBar()
+              ReaderTtsExpandedControlsBar({
+                timerMinutes: this.ttsSleepTimerMinutes,
+                remainingSeconds: this.ttsSleepTimerRemainingSeconds,
+                speaking: this.isTtsSpeaking,
+                paused: this.isTtsPaused,
+                canPlayPrevious: this.canPlayPreviousTtsChapter(),
+                canPlayNext: this.canPlayNextTtsChapter(),
+                speedText: `${this.ttsSpeed.toFixed(1)}x`,
+                textColor: this.getTextColor(),
+                subTextColor: this.getSubTextColor(),
+                accentColor: this.accentColor(),
+                panelColor: this.readerGlassPanelColor(),
+                themeKey: `reader_tts_controls_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`,
+                controlLeft: this.readerTtsExpandedControlLeft(),
+                overlayOffset: this.readerBottomMenuOverlayHeight() + 66,
+                onControl: (index: number): void => {
+                  this.handleTtsExpandedControl(index);
+                }
+              })
             } else {
-              this.ttsExpandedMediaControlsBar()
+              ReaderTtsExpandedControlsBar({
+                timerMinutes: this.ttsSleepTimerMinutes,
+                remainingSeconds: this.ttsSleepTimerRemainingSeconds,
+                speaking: this.isTtsSpeaking,
+                paused: this.isTtsPaused,
+                canPlayPrevious: this.canPlayPreviousTtsChapter(),
+                canPlayNext: this.canPlayNextTtsChapter(),
+                speedText: `${this.ttsSpeed.toFixed(1)}x`,
+                textColor: this.getTextColor(),
+                subTextColor: this.getSubTextColor(),
+                accentColor: this.accentColor(),
+                panelColor: this.readerGlassPanelColor(),
+                themeKey: `reader_tts_controls_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`,
+                controlLeft: this.readerTtsExpandedControlLeft(),
+                overlayOffset: this.readerBottomMenuOverlayHeight() + 66,
+                onControl: (index: number): void => {
+                  this.handleTtsExpandedControl(index);
+                }
+              })
             }
           } else {
             ReaderTtsExpandedControlsCompat({
@@ -5399,89 +5435,6 @@ TtsGlobalCapsule({
     this.refreshReaderTextRender();
     this.saveReadingProgress();
     this.saveReadConfig();
-  }
-
-  @Builder
-  ttsExpandedMediaControlsBar() {
-    HdsTabs({ barPosition: BarPosition.End, index: 0 }) {
-      TabContent() {
-        Column()
-      }
-      .height(48)
-      .tabBar((): void => { ReaderTtsTimerControl({
-              timerMinutes: this.ttsSleepTimerMinutes,
-              remainingSeconds: this.ttsSleepTimerRemainingSeconds,
-              textColor: this.getTextColor(),
-              accentColor: this.accentColor()
-            }); })
-
-      TabContent() {
-        Column()
-      }
-      .height(48)
-      .tabBar((): void => { ReaderTtsMediaSymbolControl({ icon: $r('sys.symbol.arrow_left'), controlEnabled: this.canPlayPreviousTtsChapter(), accessibilityLabel: '上一章', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() }); })
-
-      TabContent() {
-        Column()
-      }
-      .height(48)
-      .tabBar((): void => { ReaderTtsMediaSymbolControl({ icon: this.isTtsSpeaking && !this.isTtsPaused ?
-        $r('sys.symbol.pause') : $r('sys.symbol.play'), controlEnabled: true, accessibilityLabel: this.isTtsSpeaking && !this.isTtsPaused ? '暂停朗读' : '播放朗读', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() }); })
-
-      TabContent() {
-        Column()
-      }
-      .height(48)
-      .tabBar((): void => { ReaderTtsMediaSymbolControl({ icon: $r('sys.symbol.arrow_right'), controlEnabled: this.canPlayNextTtsChapter(), accessibilityLabel: '下一章', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() }); })
-
-      TabContent() {
-        Column()
-      }
-      .height(48)
-      .tabBar((): void => { ReaderTtsMediaSpeedControl({ speedText: `${this.ttsSpeed.toFixed(1)}x`, textColor: this.getTextColor() }); })
-
-      TabContent() {
-        Column()
-      }
-      .height(48)
-      .tabBar((): void => { ReaderTtsMediaSymbolControl({ icon: $r('sys.symbol.xmark'), controlEnabled: true, accessibilityLabel: '关闭朗读控制', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() }); })
-    }
-    .key(`reader_tts_controls_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`)
-    .barBackgroundColor(this.readerGlassPanelColor())
-    .barMode(BarMode.Fixed)
-    .barHeight(48)
-    .barOverlap(true)
-    .barFloatingStyle({
-      barWidth: {
-        smallWidth: LeafFns.readerTtsExpandedControlWidth(),
-        mediumWidth: LeafFns.readerTtsExpandedControlWidth(),
-        largeWidth: LeafFns.readerTtsExpandedControlWidth()
-      },
-      systemMaterialEffect: {
-        materialType: ImmersiveMaterialRuntime.materialType(),
-        materialLevel: ImmersiveMaterialRuntime.materialLevel()
-      },
-      barSideMargin: 0,
-      barBottomMargin: 4,
-      gradientMask: {
-        maskColor: '#00000000',
-        maskHeight: 56
-      },
-      adaptToHandedness: false,
-      thermoCtrl: true,
-      barOpacity: 1
-    })
-    .scrollable(false)
-    .onContentWillChange(() => false)
-    .onTabBarClick((index: number) => {
-      this.handleTtsExpandedControl(index);
-    })
-    .width(LeafFns.readerTtsExpandedControlWidth())
-    .height(56)
-    .position({ x: this.readerTtsExpandedControlLeft(), y: '100%' })
-    .translate({
-      y: -(this.readerBottomMenuOverlayHeight() + 66)
-    })
   }
 
 
