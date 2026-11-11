@@ -120,6 +120,13 @@ import {
   ReaderSwitchSettingItem,
   ReaderLayoutElementToggle
 } from '../components/ReaderSettingItems';
+import {
+  ReaderBottomInfoBar,
+  ReaderBookmarkPanelSummary,
+  ReaderFloatingTopMenu,
+  ReaderPreloadSettingItem,
+  ReaderTocVirtualScrollbar
+} from '../components/ReaderPanelChromeItems';
 import { ReaderMenuDismissLayer, ReaderSettingsDismissLayer } from '../components/ReaderDismissLayers';
 import {
   ReaderCommentPanelDragHandle,
@@ -1896,7 +1903,19 @@ export struct ReadBookPage {
         Blank()
           .layoutWeight(1)
         if (this.readerFooterEnabled && !this.isReaderComicModeActive()) {
-          this.readerBottomInfoBar()
+          ReaderBottomInfoBar({
+            accentColor: this.accentColor(),
+            trackColor: this.readerChapterTrackColor(),
+            subTextColor: this.getSubTextColor(),
+            showProgressBar: this.readerFooterShowProgressBar,
+            progressValue: this.getReaderFooterProgressValue(),
+            leftText: this.getReaderFooterLeftText(),
+            progressText: this.getReaderFooterProgressText(),
+            visualOffsetY: this.getReaderBottomInfoBarVisualOffsetY(),
+            onHeightChange: (area: Area): void => {
+              this.rememberReaderBottomInfoBarHeight(area);
+            }
+          })
         }
       }
       .width('100%')
@@ -2183,7 +2202,19 @@ export struct ReadBookPage {
               Blank()
                 .layoutWeight(1)
               if (this.readerFooterEnabled) {
-                this.readerBottomInfoBar()
+                ReaderBottomInfoBar({
+            accentColor: this.accentColor(),
+            trackColor: this.readerChapterTrackColor(),
+            subTextColor: this.getSubTextColor(),
+            showProgressBar: this.readerFooterShowProgressBar,
+            progressValue: this.getReaderFooterProgressValue(),
+            leftText: this.getReaderFooterLeftText(),
+            progressText: this.getReaderFooterProgressText(),
+            visualOffsetY: this.getReaderBottomInfoBarVisualOffsetY(),
+            onHeightChange: (area: Area): void => {
+              this.rememberReaderBottomInfoBarHeight(area);
+            }
+          })
               }
             }
             .width('100%')
@@ -2283,7 +2314,26 @@ export struct ReadBookPage {
       }
 
       if (this.showMenu) {
-        this.readerFloatingTopMenu()
+        ReaderFloatingTopMenu({
+          iconColor: this.readerControlIconColor(),
+          darkMode: this.isReaderThemeDark(),
+          safeTopPadding: this.getTopControlSafePadding(),
+          canRefreshChapter: this.book !== null && !LocalBookService.isLocalBook(this.book) && this.chapters.length > 0,
+          canChangeSource: this.book !== null && !LocalBookService.isLocalBook(this.book),
+          onBack: (): void => {
+            this.exitReaderPage();
+          },
+          onRefreshChapter: (): void => {
+            this.hideReaderPanels();
+            this.refreshCurrentChapter();
+          },
+          onChangeSource: (): void => {
+            this.openChangeSourceDialog();
+          },
+          onToggleActionMenu: (): void => {
+            this.showReaderActionMenu = !this.showReaderActionMenu;
+          }
+        })
       }
 
       if (this.showMenu && this.showReaderActionMenu && !this.showToc && !this.showSettings) {
@@ -2494,47 +2544,6 @@ export struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  readerFloatingTopMenu() {
-    Row() {
-      ImmersiveBackButton({
-        iconColor: this.readerControlIconColor(),
-        darkMode: this.isReaderThemeDark(),
-        buttonSize: 40,
-        containerWidth: 40,
-        containerHeight: 56,
-        startInset: 0,
-        materialScale: 0.83,
-        compactLayout: true,
-        onBack: () => this.exitReaderPage()
-      })
-
-      Blank()
-        .layoutWeight(1)
-
-      Row({ space: 6 }) {
-        if (this.book && !LocalBookService.isLocalBook(this.book) && this.chapters.length > 0) {
-          ReaderRoundMenuButton({ icon: $r('sys.symbol.arrow_clockwise'), accessibilityLabel: '刷新本章', onBack: () => {
-            this.hideReaderPanels();
-            this.refreshCurrentChapter();
-          }, iconColor: this.readerControlIconColor(), darkMode: this.isReaderThemeDark() })
-        }
-        if (this.book && !LocalBookService.isLocalBook(this.book)) {
-          ReaderRoundMenuButton({ icon: $r('sys.symbol.arrow_left_arrow_right'), accessibilityLabel: '换源', onBack: () => {
-            this.openChangeSourceDialog();
-          }, iconColor: this.readerControlIconColor(), darkMode: this.isReaderThemeDark() })
-        }
-        ReaderRoundMenuButton({ icon: $r('sys.symbol.more'), accessibilityLabel: '更多操作', onBack: () => {
-          this.showReaderActionMenu = !this.showReaderActionMenu;
-        }, iconColor: this.readerControlIconColor(), darkMode: this.isReaderThemeDark() })
-      }
-    }
-    .width('100%')
-    .padding({ left: 18, right: 18, top: this.getTopControlSafePadding() + 10 })
-    .position({ x: 0, y: 0 })
-    .alignItems(VerticalAlign.Center)
   }
 
 
@@ -3079,7 +3088,23 @@ export struct ReadBookPage {
           this.tocPanelSummary()
           this.tocChapterList()
         } else {
-          this.bookmarkPanelSummary()
+          ReaderBookmarkPanelSummary({
+            multiSelectMode: this.bookmarkMultiSelectMode,
+            selectedCount: this.selectedBookmarkUrls.length,
+            totalCount: this.bookmarks.length,
+            textColor: this.getTextColor(),
+            subTextColor: this.getSubTextColor(),
+            accentColor: this.accentColor(),
+            onToggleSelectAll: (): void => {
+              this.toggleSelectAllBookmarks();
+            },
+            onDeleteSelected: (): void => {
+              this.deleteSelectedBookmarks();
+            },
+            onCancelMultiSelect: (): void => {
+              this.cancelBookmarkMultiSelect();
+            }
+          })
           this.bookmarkList()
         }
       }
@@ -3390,93 +3415,36 @@ export struct ReadBookPage {
       .onReachStart(() => this.loadPreviousTocPage())
       .onReachEnd(() => this.loadNextTocPage())
 
-      this.tocVirtualScrollbar()
+      if (this.tocShouldShowVirtualScrollbar()) {
+        ReaderTocVirtualScrollbar({
+          darkMode: this.isReaderThemeDark(),
+          viewportHeight: this.tocListViewportHeight,
+          dragging: this.tocScrollbarDragging,
+          thumbLength: this.tocScrollbarThumbLength(),
+          thumbOffset: this.tocDisplayedScrollbarThumbOffset(),
+          onThumbDragStart: (event: GestureEvent): void => {
+            this.beginTocScrollbarDrag(event);
+          },
+          onThumbDragUpdate: (event: GestureEvent): void => {
+            this.updateTocScrollbarDrag(event);
+          },
+          onThumbDragEnd: (event: GestureEvent): void => {
+            this.endTocScrollbarDrag(event);
+          },
+          onThumbDragCancel: (): void => {
+            this.cancelTocScrollbarDrag();
+          },
+          onTapJump: (event: GestureEvent): void => {
+            this.jumpTocScrollbarToPointer(event);
+          }
+        })
+      }
     }
     .layoutWeight(1)
     .width('100%')
     .onAreaChange((_oldValue: Area, newValue: Area) => {
       this.tocListViewportHeight = Number(newValue.height);
     })
-  }
-
-  @Builder
-  tocVirtualScrollbar() {
-    if (this.tocShouldShowVirtualScrollbar()) {
-      Stack({ alignContent: Alignment.TopEnd }) {
-        Column()
-          .width(3)
-          .height(this.tocListViewportHeight)
-          .borderRadius(2)
-          .backgroundColor(this.isReaderThemeDark() ? '#18FFFFFF' : '#14000000')
-          .margin({ right: 3 })
-          .hitTestBehavior(HitTestMode.None)
-        Column()
-          .width(this.tocScrollbarDragging ? 6 : 4)
-          .height(this.tocScrollbarThumbLength())
-          .borderRadius(3)
-          .backgroundColor(this.isReaderThemeDark() ? '#BFD5D8DE' : '#A87A6F63')
-          .margin({ right: 2 })
-          .translate({ y: this.tocDisplayedScrollbarThumbOffset() })
-          .hitTestBehavior(HitTestMode.None)
-      }
-      .width(24)
-      .height(this.tocListViewportHeight)
-      .zIndex(10)
-      .gesture(
-        GestureGroup(GestureMode.Exclusive,
-          PanGesture({ direction: PanDirection.Vertical, distance: 1 })
-            .onActionStart((event: GestureEvent) => this.beginTocScrollbarDrag(event))
-            .onActionUpdate((event: GestureEvent) => this.updateTocScrollbarDrag(event))
-            .onActionEnd((event: GestureEvent) => this.endTocScrollbarDrag(event))
-            .onActionCancel(() => this.cancelTocScrollbarDrag()),
-          TapGesture().onAction((event: GestureEvent) => this.jumpTocScrollbarToPointer(event))
-        )
-      )
-    }
-  }
-
-  @Builder
-  bookmarkPanelSummary() {
-    if (this.bookmarkMultiSelectMode) {
-      Row({ space: 16 }) {
-        Text(`已选 ${this.selectedBookmarkUrls.length} 项`)
-          .fontSize(14)
-          .fontColor(this.getTextColor())
-          .layoutWeight(1)
-        Text(this.selectedBookmarkUrls.length === this.bookmarks.length ? '取消全选' : '全选')
-          .fontSize(13)
-          .fontColor(this.accentColor())
-          .onClick(() => {
-            this.toggleSelectAllBookmarks();
-          })
-        Text('删除')
-          .fontSize(13)
-          .fontColor(this.selectedBookmarkUrls.length > 0 ? '#D94841' : this.getSubTextColor())
-          .enabled(this.selectedBookmarkUrls.length > 0)
-          .onClick(() => {
-            this.deleteSelectedBookmarks();
-          })
-        Text('取消')
-          .fontSize(13)
-          .fontColor(this.getSubTextColor())
-          .onClick(() => {
-            this.cancelBookmarkMultiSelect();
-          })
-      }
-      .width('100%')
-      .height(52)
-      .padding({ left: 20, right: 20 })
-      .alignItems(VerticalAlign.Center)
-    } else {
-      Row() {
-        Text(`${this.bookmarks.length} 条书签`)
-          .fontSize(14)
-          .fontColor(this.getSubTextColor())
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .padding({ left: 20, right: 20, top: 18, bottom: 10 })
-    }
   }
 
   @Builder
@@ -5883,52 +5851,6 @@ export struct ReadBookPage {
     }
   }
 
-  @Builder
-  readerBottomInfoBar() {
-    Column({ space: 3 }) {
-      if (this.readerFooterShowProgressBar) {
-        Progress({ value: this.getReaderFooterProgressValue(), total: 100, type: ProgressType.Linear })
-          .width('100%')
-          .height(2)
-          .color(this.accentColor())
-          .backgroundColor(this.readerChapterTrackColor())
-      }
-      Row() {
-        if (this.getReaderFooterLeftText()) {
-          Text(this.getReaderFooterLeftText())
-            .fontSize(12)
-            .fontColor(this.getSubTextColor())
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-        } else {
-          Blank().layoutWeight(1)
-        }
-
-        if (this.getReaderFooterProgressText()) {
-          Text(this.getReaderFooterProgressText())
-            .fontSize(12)
-            .fontColor(this.getSubTextColor())
-            .textAlign(TextAlign.End)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ left: 12 })
-        }
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-    }
-    .width('100%')
-    .padding({ left: 28, right: 28, top: 0, bottom: 0 })
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor(Color.Transparent)
-    .translate({ y: this.getReaderBottomInfoBarVisualOffsetY() })
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-    .onAreaChange((_oldValue: Area, newValue: Area) => {
-      this.rememberReaderBottomInfoBarHeight(newValue);
-    })
-  }
-
   currentChapterProgressPageCount(): number {
     return ReaderGestureOps.currentChapterProgressPageCount(this);
   }
@@ -7096,7 +7018,22 @@ export struct ReadBookPage {
         .width('100%')
       }
 
-      this.readerPreloadSettingItem()
+      ReaderPreloadSettingItem({
+        preloadEnabled: this.readerPreloadEnabled,
+        preloadChapterCount: this.readerPreloadChapterCount,
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        switchColor: this.buttonColor(),
+        darkMode: this.isReaderThemeDark(),
+        panelColor: this.getBackgroundColor(),
+        onToggleEnabled: (value: boolean): void => {
+          this.setReaderPreloadEnabled(value);
+        },
+        onSelectChapterCount: (count: number): void => {
+          this.setReaderPreloadChapterCount(count);
+        }
+      })
     }
     .width('100%')
   }
@@ -7721,55 +7658,6 @@ export struct ReadBookPage {
 
   readerEyeCalibrationInstruction(): string {
     return ReaderSettingsOps.readerEyeCalibrationInstruction(this);
-  }
-
-  @Builder
-  readerPreloadSettingItem() {
-    // Keep the dependent chapter-count selector separated from the toggle by the
-    // same spacing used between the other reading settings.
-    Column({ space: 14 }) {
-      Row() {
-        Column() {
-          Text('预缓存设置')
-            .fontSize(15)
-            .fontColor(this.getTextColor())
-          Text(this.readerPreloadEnabled ? '阅读过程中提前缓存后续章节' : '已关闭自动预缓存')
-            .fontSize(12)
-            .fontColor(this.getSubTextColor())
-            .margin({ top: 4 })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-
-        AdaptiveSwitch({
-          isOn: this.readerPreloadEnabled,
-          selectedColor: this.buttonColor(),
-          onChange: (value: boolean) => {
-            this.setReaderPreloadEnabled(value);
-          }
-        })
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-
-      if (this.readerPreloadEnabled) {
-        ReaderSelectSettingItem({
-        title: '下一章节数',
-        description: '选择自动预缓存的后续章节数量',
-        options: LeafFns.readerPreloadChapterOptions(),
-        selected: this.readerPreloadChapterCount - 1,
-        controlId: 'reader_preload_chapter_count_select',
-        textColor: this.getTextColor(),
-        subTextColor: this.getSubTextColor(),
-        accentColor: this.accentColor(),
-        darkMode: this.isReaderThemeDark(),
-        panelColor: this.getBackgroundColor(),
-        onSelect: (index: number) => this.setReaderPreloadChapterCount(index + 1)
-      })
-      }
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
   }
 
   switchPageTurnMode(mode: number) {
