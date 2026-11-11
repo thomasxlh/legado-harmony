@@ -5,8 +5,8 @@
 
 ## 现状（为什么需要这张表）
 
-- `entry/src/main/ets/pages/ReadBook.ets`：**11091 行 / 约 0.4 MB**；单文件内仅 1 个 `@Entry @Component struct ReadBookPage` + 1 个 `ReadBookTtsBackgroundHost` 适配器类。
-- 响应式字段（`@State` / `@StorageLink` / `@StorageProp`）见下方「响应式状态域地图」，由脚本实时扫描生成；`@Builder` 61 个仍留在 struct 内（ArkUI DSL 不能外移），业务方法 941 个已抽到 `reader/*Ops.ets`，struct 内只保留 1 行委托；整个 `ets/` 目录 **0 个** `@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。
+- `entry/src/main/ets/pages/ReadBook.ets`：**10958 行 / 约 0.4 MB**；单文件内仅 1 个 `@Entry @Component struct ReadBookPage` + 1 个 `ReadBookTtsBackgroundHost` 适配器类。
+- 响应式字段（`@State` / `@StorageLink` / `@StorageProp`）见下方「响应式状态域地图」，由脚本实时扫描生成；`@Builder` 60 个仍留在 struct 内（ArkUI DSL 不能外移），业务方法 941 个已抽到 `reader/*Ops.ets`，struct 内只保留 1 行委托；整个 `ets/` 目录 **0 个** `@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。
 - 文件内唯一分区手段是本工具写入的 `//region` / `//endregion`（VS Code 与 IntelliJ/DevEco Studio 都能折叠）；每个区块头还带一行 `// [map] 契约:` 说明本区允许读写哪些状态。
 - 已存在的可复用范式：`reader/ReaderPureUtils.ets`（纯函数）、`reader/ReaderTtsBackgroundController.ets` + Host 接口、`components/TtsGlobalCapsule.ets`、`components/ReaderTtsPlayerPanel.ets`、`components/TtsCatalogSheet.ets`（已抽出的 @Component）。
 
@@ -18,16 +18,16 @@
 | 2 | struct 声明与状态字段 (@State / @StorageLink / 私有字段) | 395 | 1043 | 仅声明状态, 不含逻辑; ArkUI V1 下 @State 必须留在本 @Component 内, 逻辑外移须走 Controller+Host |
 | 3 | 生命周期 / 全局监听 / @Watch 回调 | 1044 | 1342 | 读写 会话/进度/可见性/焦点 状态; 装配后台控制器、注册(并应注销)全局监听与 @Watch |
 | 4 | 书籍加载 / 全文缓存 / 后台长时任务 / 屏幕超时 / 加载遮罩 | 1343 | 1995 | 读写 book/chapters/content/缓存/遮罩 状态; 持有后台长时任务与多个成对 timer |
-| 5 | build / 主内容层 / 悬浮菜单 / 目录·书签·换源·缓存面板 | 1996 | 3909 | 读 主题/排版/章节; 纯渲染 + 面板显隐; 交互只转发到方法, 不写业务状态 |
-| 6 | 排版·字符集·替换规则设置 / TTS快捷入口·mini播放器·目录 / 书签 / 正文预处理 | 3910 | 4219 | 读写 设置/目录/书签/TTS浮标显示态; 含 ttsMiniPlayer 等大量 @Builder |
-| 7 | 页眉页脚 / 漫画·连续滚动 / 页面度量 / 主题·字体 / 书签 / TTS音色·语速 / 目录搜索 | 4220 | 5205 | 读 排版/主题/字体/章节; 写 字体注册、书签、音色语速、目录滚动条 |
-| 8 | 尺寸计算 / 排版变更监听 / 媒体控制条·睡眠定时器 / 触摸·翻页手势 | 5206 | 6047 | 读写 面板尺寸/排版代际/媒体控制/触摸 状态; 定时器成对清理 |
-| 9 | 点击区域 / 设置面板 / 音色下拉 / 主题自定义 / 交互·眼动·预载设置 | 6048 | 7566 | 写 各类设置项持久化; 修改后触发重排 / 重载 / 重新分页 |
-| 10 | TTS 浮标会话 / 朗读编排(起播·续播·换章·看门狗) / 后台委托 / 封面 / 高亮清理 | 7567 | 7842 | 核心长链路: ttsReadToken / ttsFocusGeneration / ttsChapterSwitching; 与浮标会话、AVSession 双向同步 |
-| 11 | 焦点会话 / 正文规范化纯函数群 / 分页测量引擎 | 7843 | 8050 | 含大量可纯化的正文处理(findMeasuredPageEnd 等); 分页测量读排版状态 |
-| 12 | 逐句焦点·高亮·进度持久化 / 镜像会话 / TTS翻页 / 动画表面 | 8051 | 8776 | 每句触发 followTtsChunk→高亮重绘→persistTtsReadPosition→浮标 revision++; 镜像会话接管线 |
-| 13 | 样式化正文 / 段评·源动作·文本选择 / 正则高亮 / V2布局·分页·选区·高亮 | 8777 | 10499 | 读 高亮偏移/正则规则/主题; V2 分页与选区是独立大子系统, 建议优先外移 |
-| 14 | 分页缓存 / 翻页·预载·自动翻页 / 翻页动画·卷曲 / 换章 | 10500 | 11091 | 写 currentPageIndex / 翻页动画状态 / 预载; 与 TTS 翻页、镜像手动翻页交织 |
+| 5 | build / 主内容层 / 悬浮菜单 / 目录·书签·换源·缓存面板 | 1996 | 3950 | 读 主题/排版/章节; 纯渲染 + 面板显隐; 交互只转发到方法, 不写业务状态 |
+| 6 | 排版·字符集·替换规则设置 / TTS快捷入口·mini播放器·目录 / 书签 / 正文预处理 | 3951 | 4260 | 读写 设置/目录/书签/TTS浮标显示态; 含 ttsMiniPlayer 等大量 @Builder |
+| 7 | 页眉页脚 / 漫画·连续滚动 / 页面度量 / 主题·字体 / 书签 / TTS音色·语速 / 目录搜索 | 4261 | 5246 | 读 排版/主题/字体/章节; 写 字体注册、书签、音色语速、目录滚动条 |
+| 8 | 尺寸计算 / 排版变更监听 / 媒体控制条·睡眠定时器 / 触摸·翻页手势 | 5247 | 5914 | 读写 面板尺寸/排版代际/媒体控制/触摸 状态; 定时器成对清理 |
+| 9 | 点击区域 / 设置面板 / 音色下拉 / 主题自定义 / 交互·眼动·预载设置 | 5915 | 7433 | 写 各类设置项持久化; 修改后触发重排 / 重载 / 重新分页 |
+| 10 | TTS 浮标会话 / 朗读编排(起播·续播·换章·看门狗) / 后台委托 / 封面 / 高亮清理 | 7434 | 7709 | 核心长链路: ttsReadToken / ttsFocusGeneration / ttsChapterSwitching; 与浮标会话、AVSession 双向同步 |
+| 11 | 焦点会话 / 正文规范化纯函数群 / 分页测量引擎 | 7710 | 7917 | 含大量可纯化的正文处理(findMeasuredPageEnd 等); 分页测量读排版状态 |
+| 12 | 逐句焦点·高亮·进度持久化 / 镜像会话 / TTS翻页 / 动画表面 | 7918 | 8643 | 每句触发 followTtsChunk→高亮重绘→persistTtsReadPosition→浮标 revision++; 镜像会话接管线 |
+| 13 | 样式化正文 / 段评·源动作·文本选择 / 正则高亮 / V2布局·分页·选区·高亮 | 8644 | 10366 | 读 高亮偏移/正则规则/主题; V2 分页与选区是独立大子系统, 建议优先外移 |
+| 14 | 分页缓存 / 翻页·预载·自动翻页 / 翻页动画·卷曲 / 换章 | 10367 | 10958 | 写 currentPageIndex / 翻页动画状态 / 预载; 与 TTS 翻页、镜像手动翻页交织 |
 
 ## 已抽离的业务域（`reader/*Ops.ets`）
 
@@ -64,75 +64,75 @@
 | `build` | 1999 |
 | `loadBook` | 1370 |
 | `loadContent` | 380 / 1552 |
-| `saveReadingProgress` | 385 / 5570 |
+| `saveReadingProgress` | 385 / 5611 |
 | `enterReaderImmersive` | 1350 |
-| `ttsExpandedMediaControlsBar` | 5634 |
-| `readerQuickSettingsPanel` | 6412 |
-| `ttsQuickSettingsPanel` | 6756 |
-| `ttsVoiceDropdownPanel` | 6972 |
-| `settingsPanel` | 6126 |
-| `publishTtsFloatingSession` | 7570 |
-| `publishTtsFloatingVoices` | 7574 |
-| `updateTtsFloatingSession` | 7578 |
-| `stopTtsFloatingSession` | 7582 |
-| `toggleTtsReading` | 345 / 7586 |
-| `startTtsReadingFromCurrentPosition` | 349 / 7594 |
-| `stopTtsReading` | 356 / 7602 |
-| `continueTtsReading` | 7642 |
-| `isTtsReadingAtExpectedEnd` | 7646 |
-| `armTtsContinuationWatchdog` | 7660 |
-| `clearTtsContinuationWatchdog` | 376 / 7664 |
-| `advanceTtsReadingToNextChapter` | 7668 |
-| `finishTtsReading` | 7672 |
-| `prepareTtsForManualPageTurn` | 368 / 7626 |
-| `scheduleTtsResumeAfterManualPageTurn` | 372 / 7630 |
-| `playPositionFromFloatingSession` | 7814 |
-| `startTtsBackgroundRunning` | 7692 |
-| `stopTtsBackgroundRunning` | 7696 |
-| `updateTtsAvSessionPlaybackState` | 7704 |
-| `clearTtsHighlight` | 7846 |
-| `publishTtsHighlightRenderChange` | 7850 |
-| `currentTtsSourceIdentity` | 7854 |
-| `invalidateTtsFocusSession` | 7858 |
-| `isCurrentTtsFocusSession` | 7862 |
-| `getTtsReadingText` | 7867 |
-| `getTtsFocusBreakOffsets` | 7871 |
+| `ttsExpandedMediaControlsBar` | 5675 |
+| `readerQuickSettingsPanel` | 6279 |
+| `ttsQuickSettingsPanel` | 6623 |
+| `ttsVoiceDropdownPanel` | 6839 |
+| `settingsPanel` | 5993 |
+| `publishTtsFloatingSession` | 7437 |
+| `publishTtsFloatingVoices` | 7441 |
+| `updateTtsFloatingSession` | 7445 |
+| `stopTtsFloatingSession` | 7449 |
+| `toggleTtsReading` | 345 / 7453 |
+| `startTtsReadingFromCurrentPosition` | 349 / 7461 |
+| `stopTtsReading` | 356 / 7469 |
+| `continueTtsReading` | 7509 |
+| `isTtsReadingAtExpectedEnd` | 7513 |
+| `armTtsContinuationWatchdog` | 7527 |
+| `clearTtsContinuationWatchdog` | 376 / 7531 |
+| `advanceTtsReadingToNextChapter` | 7535 |
+| `finishTtsReading` | 7539 |
+| `prepareTtsForManualPageTurn` | 368 / 7493 |
+| `scheduleTtsResumeAfterManualPageTurn` | 372 / 7497 |
+| `playPositionFromFloatingSession` | 7681 |
+| `startTtsBackgroundRunning` | 7559 |
+| `stopTtsBackgroundRunning` | 7563 |
+| `updateTtsAvSessionPlaybackState` | 7571 |
+| `clearTtsHighlight` | 7713 |
+| `publishTtsHighlightRenderChange` | 7717 |
+| `currentTtsSourceIdentity` | 7721 |
+| `invalidateTtsFocusSession` | 7725 |
+| `isCurrentTtsFocusSession` | 7729 |
+| `getTtsReadingText` | 7734 |
+| `getTtsFocusBreakOffsets` | 7738 |
 | `normalizeReaderText` | → `reader/ReaderLeafFns.ets`（已抽离为纯函数） |
-| `getPagedSourceText` | 7875 |
-| `buildPagedSourceText` | 7879 |
-| `findMeasuredPageEnd` | 7910 |
-| `refineMeasuredPageEnd` | 7925 |
-| `followTtsChunk` | 8057 |
-| `noteTtsFocusLatency` | 8062 |
-| `applyTtsChunkFocus` | 8066 |
-| `syncTtsFocusAfterResume` | 8097 |
-| `updateTtsChunkHighlight` | 8105 |
-| `republishTtsFocusAfterPageTurn` | 8122 |
-| `scheduleTtsFocusSyncAfterPagination` | 8127 |
-| `persistTtsReadPosition` | 8135 |
-| `restorePersistedTtsFocus` | 8147 |
-| `syncMirroredTtsFocus` | 8159 |
-| `clearMirroredTtsFocus` | 8163 |
-| `takeOverMirroredTtsSession` | 8170 |
-| `animateTtsToPage` | 8178 |
-| `applyTtsPageTarget` | 8190 |
-| `applyTtsPageTurn` | 8206 |
-| `styledReaderText` | 8781 |
-| `splitSlicesByTtsHighlight` | 9586 |
-| `hasActiveTtsHighlight` | 9677 |
-| `shouldUseReaderLayoutV2` | 9698 |
-| `buildReaderV2Snapshot` | 9702 |
-| `refreshReaderV2TtsOverlay` | 10492 |
-| `paginateReaderSourceText` | 10503 |
-| `turnNext` | 10611 |
-| `turnPrev` | 10620 |
-| `applyPageTurn` | 10747 |
-| `runPageTurnAnimation` | 10760 |
-| `prepareMirroredTtsManualPageTurn` | 10765 |
-| `cancelMirroredTtsManualPageTurn` | 10773 |
-| `drawReaderPageCurl` | 10981 |
-| `loadNextChapter` | 11082 |
-| `loadPrevChapter` | 11086 |
+| `getPagedSourceText` | 7742 |
+| `buildPagedSourceText` | 7746 |
+| `findMeasuredPageEnd` | 7777 |
+| `refineMeasuredPageEnd` | 7792 |
+| `followTtsChunk` | 7924 |
+| `noteTtsFocusLatency` | 7929 |
+| `applyTtsChunkFocus` | 7933 |
+| `syncTtsFocusAfterResume` | 7964 |
+| `updateTtsChunkHighlight` | 7972 |
+| `republishTtsFocusAfterPageTurn` | 7989 |
+| `scheduleTtsFocusSyncAfterPagination` | 7994 |
+| `persistTtsReadPosition` | 8002 |
+| `restorePersistedTtsFocus` | 8014 |
+| `syncMirroredTtsFocus` | 8026 |
+| `clearMirroredTtsFocus` | 8030 |
+| `takeOverMirroredTtsSession` | 8037 |
+| `animateTtsToPage` | 8045 |
+| `applyTtsPageTarget` | 8057 |
+| `applyTtsPageTurn` | 8073 |
+| `styledReaderText` | 8648 |
+| `splitSlicesByTtsHighlight` | 9453 |
+| `hasActiveTtsHighlight` | 9544 |
+| `shouldUseReaderLayoutV2` | 9565 |
+| `buildReaderV2Snapshot` | 9569 |
+| `refreshReaderV2TtsOverlay` | 10359 |
+| `paginateReaderSourceText` | 10370 |
+| `turnNext` | 10478 |
+| `turnPrev` | 10487 |
+| `applyPageTurn` | 10614 |
+| `runPageTurnAnimation` | 10627 |
+| `prepareMirroredTtsManualPageTurn` | 10632 |
+| `cancelMirroredTtsManualPageTurn` | 10640 |
+| `drawReaderPageCurl` | 10848 |
+| `loadNextChapter` | 10949 |
+| `loadPrevChapter` | 10953 |
 
 （共索引 77 个关键方法；未列出的多为 `@Builder` 或仅在表达式中出现。）
 
@@ -593,7 +593,7 @@
 ## 拆分蓝图（P0 → P3，每步小提交 + 真机回归，禁止大爆炸重写）
 
 - **P0（已完成）**：顶层常量 → `reader/ReaderConstants.ets`（25 常量 + 1 缓存函数）；**131 个叶子纯函数** → `reader/ReaderLeafFns.ets`，调用方用 `import * as LeafFns` 命名空间引用；自底向上 5 批抽取后重扫 `pure=8` 全为结构性排除，纯函数抽离已收敛到不动点。
-- **P0.5（已完成）**：941 个业务方法按 //region 抽到 12 个 `reader/*Ops.ets`，struct 内只留 1 行委托；`private` 字段与 `private` 方法改为可见（运行时擦除、零行为影响），`export struct ReadBookPage` 供 ops 模块做纯类型导入。ReadBook.ets 从 24417 → 11091 行（-13326）。核验：真 ArkTS 编译通过 + 941/941 方法体逐字回环一致 + 6 轮真机前后台回归 0 错误。
+- **P0.5（已完成）**：941 个业务方法按 //region 抽到 12 个 `reader/*Ops.ets`，struct 内只留 1 行委托；`private` 字段与 `private` 方法改为可见（运行时擦除、零行为影响），`export struct ReadBookPage` 供 ops 模块做纯类型导入。ReadBook.ets 从 24417 → 10958 行（-13459）。核验：真 ArkTS 编译通过 + 941/941 方法体逐字回环一致 + 6 轮真机前后台回归 0 错误。
 - **P1（进行中）**：127 个 `@Builder` 按面板提独立 `@Component`（`readerTtsQuickActionButton`、`ttsExpandedMediaControlsBar`、`ttsQuickSettingsPanel` 等）。这会切断 ArkUI V1 的隐式联动，须用 `@Link/@Prop` 或 `@StorageLink` 重建数据通路，且只能靠真机视觉回归验证。
 - **P2（未做）**：分页测量引擎 / TTS 编排 / 焦点·镜像 各自提 Controller+Host 类；本步已把它们的**代码**挪出巨型文件，剩下的工作是切状态边界。
 - 目标：每单元 ≤ 1500–2000 行 / ≤ 100 KB，边界靠**显式接口**而非共享 `@State`。

@@ -145,7 +145,7 @@ import { ReaderBookmarkActionItem } from '../components/ReaderBookmarkActionItem
 import { ReaderComicBoundaryHint, ReaderComicInteractionLayer,
   ReaderCacheDialogContent } from '../components/ReaderComicAndCacheItems';
 import { ReaderFloatingDayNightMenuItem, ReaderHdsDayNightMenuItem, ReaderBookmarkSwipeCard,
-  ReaderSimulationPaperBackground, ReaderParagraphGap } from '../components/ReaderPageFrameItems';
+  ReaderSimulationPaperBackground, ReaderParagraphGap, ReaderTapLayer } from '../components/ReaderPageFrameItems';
 import { ReaderV2TtsHighlightRect, ReaderV2SelectionHighlightRect } from '../components/ReaderV2HighlightRects';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
 import { ReaderContentPreprocessor } from '../core/concurrency/ReaderContentPreprocessor';
@@ -2184,7 +2184,48 @@ export struct ReadBookPage {
 
       if (!this.isReaderContinuousScrollSurfaceActive() && !this.showMenu && !this.showToc && !this.showSettings &&
         !this.shouldBlockReaderInteraction()) {
-        this.readerTapLayer()
+        ReaderTapLayer({
+          pageTurnMode: this.readerEffectivePageTurnMode(),
+          tapSlop: this.readerTapSlop,
+          verticalPageTurn: this.isVerticalPageTurnAnimation(),
+          menuVisible: this.showMenu,
+          tocVisible: this.showToc,
+          settingsVisible: this.showSettings,
+          shouldIgnoreTap: (): boolean => this.consumeSuppressedReaderTapClick(),
+          onTapZone: (zone: number): void => {
+            this.commitReaderTapZone(zone);
+          },
+          onPrevPage: (): void => {
+            this.turnPrev();
+          },
+          onNextPage: (): void => {
+            this.turnNext();
+          },
+          onShowMenu: (): void => {
+            this.showMenu = true;
+          },
+          onLayerAreaChange: (area: Area): void => {
+            this.rememberReaderTapLayerArea(area);
+          },
+          onLayerTouch: (event: TouchEvent): void => {
+            this.handleReaderTouch(event);
+          },
+          onPanStart: (event: GestureEvent): void => {
+            this.handleReaderPanStart(event);
+          },
+          onPanUpdate: (event: GestureEvent): void => {
+            this.handleReaderPanUpdate(event);
+          },
+          onPanEnd: (event: GestureEvent): void => {
+            this.handleReaderPanEnd(event);
+          },
+          onPanCancel: (): void => {
+            this.handleReaderPanCancel();
+          },
+          onLongPress: (event: GestureEvent): void => {
+            this.selectReaderTextAtGlobalPoint(event);
+          }
+        })
       }
 
       if (this.readerComicPaginationParsing) {
@@ -5805,180 +5846,6 @@ TtsGlobalCapsule({
 
   disabledButtonColor(): string {
     return ReaderGestureOps.disabledButtonColor(this);
-  }
-
-  @Builder
-  readerTapLayer() {
-    if (this.readerEffectivePageTurnMode() === 2) {
-      Column() {
-        ForEach([0, 1, 2], (row: number) => {
-          Row() {
-            ForEach([0, 1, 2], (column: number) => {
-              Blank()
-                .height('100%')
-                .layoutWeight(1)
-                .onClick(() => {
-                  if (this.consumeSuppressedReaderTapClick()) {
-                    return;
-                  }
-                  this.commitReaderTapZone(row * 3 + column);
-                })
-            }, (column: number) => `${row}_${column}`)
-          }
-          .width('100%')
-          .layoutWeight(1)
-        }, (row: number) => `${row}`)
-      }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Color.Transparent)
-      .onAreaChange((_oldValue: Area, newValue: Area) => this.rememberReaderTapLayerArea(newValue))
-      .onTouch((event: TouchEvent) => {
-        this.handleReaderTouch(event);
-      })
-      .parallelGesture(
-        GestureGroup(GestureMode.Exclusive,
-          PanGesture({ direction: PanDirection.All, distance: this.readerTapSlop })
-            .onActionStart((event: GestureEvent) => {
-              this.handleReaderPanStart(event);
-            })
-            .onActionUpdate((event: GestureEvent) => {
-              this.handleReaderPanUpdate(event);
-            })
-            .onActionEnd((event: GestureEvent) => {
-              this.handleReaderPanEnd(event);
-            })
-            .onActionCancel(() => {
-              this.handleReaderPanCancel();
-            }),
-          LongPressGesture({ duration: 600 })
-            .onAction((event: GestureEvent) => {
-              this.selectReaderTextAtGlobalPoint(event);
-            })
-        )
-      )
-    } else if (this.readerEffectivePageTurnMode() === 0) {
-      Column() {
-        Blank()
-          .width('100%')
-          .layoutWeight(3)
-          .onClick(() => {
-            if (this.consumeSuppressedReaderTapClick()) {
-              return;
-            }
-            this.turnPrev();
-          })
-
-        Row() {
-          Blank()
-            .height('100%')
-            .layoutWeight(1)
-            .onClick(() => {
-              if (this.consumeSuppressedReaderTapClick()) {
-                return;
-              }
-              this.turnPrev();
-            })
-          Blank()
-            .height('100%')
-            .layoutWeight(1)
-            .onClick(() => {
-              if (this.consumeSuppressedReaderTapClick()) {
-                return;
-              }
-              this.showMenu = true;
-            })
-          Blank()
-            .height('100%')
-            .layoutWeight(1)
-            .onClick(() => {
-              if (this.consumeSuppressedReaderTapClick()) {
-                return;
-              }
-              this.turnNext();
-            })
-        }
-        .width('100%')
-        .layoutWeight(4)
-
-        Blank()
-          .width('100%')
-          .layoutWeight(3)
-          .onClick(() => {
-            if (this.consumeSuppressedReaderTapClick()) {
-              return;
-            }
-            this.turnNext();
-          })
-      }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Color.Transparent)
-      .onAreaChange((_oldValue: Area, newValue: Area) => this.rememberReaderTapLayerArea(newValue))
-      .onTouch((event: TouchEvent) => {
-        this.handleReaderTouch(event);
-      })
-      .parallelGesture(
-        GestureGroup(GestureMode.Exclusive,
-          PanGesture({ direction: this.isVerticalPageTurnAnimation() ?
-            PanDirection.Vertical : PanDirection.Horizontal, distance: this.readerTapSlop })
-            .onActionStart((event: GestureEvent) => {
-              this.handleReaderPanStart(event);
-            })
-            .onActionUpdate((event: GestureEvent) => {
-              this.handleReaderPanUpdate(event);
-            })
-            .onActionEnd((event: GestureEvent) => {
-              this.handleReaderPanEnd(event);
-            })
-            .onActionCancel(() => {
-              this.handleReaderPanCancel();
-            }),
-          LongPressGesture({ duration: 600 })
-            .onAction((event: GestureEvent) => {
-              this.selectReaderTextAtGlobalPoint(event);
-            })
-        )
-      )
-    } else {
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(Color.Transparent)
-        .onAreaChange((_oldValue: Area, newValue: Area) => this.rememberReaderTapLayerArea(newValue))
-        .onClick(() => {
-          if (this.consumeSuppressedReaderTapClick()) {
-            return;
-          }
-          if (this.readerEffectivePageTurnMode() === 1 && !this.showMenu && !this.showToc && !this.showSettings) {
-            this.showMenu = true;
-          }
-        })
-        .onTouch((event: TouchEvent) => {
-          this.handleReaderTouch(event);
-        })
-        .parallelGesture(
-          GestureGroup(GestureMode.Exclusive,
-            PanGesture({ direction: PanDirection.All, distance: this.readerTapSlop })
-              .onActionStart((event: GestureEvent) => {
-                this.handleReaderPanStart(event);
-              })
-              .onActionUpdate((event: GestureEvent) => {
-                this.handleReaderPanUpdate(event);
-              })
-              .onActionEnd((event: GestureEvent) => {
-                this.handleReaderPanEnd(event);
-              })
-              .onActionCancel(() => {
-                this.handleReaderPanCancel();
-              }),
-            LongPressGesture({ duration: 600 })
-              .onAction((event: GestureEvent) => {
-                this.selectReaderTextAtGlobalPoint(event);
-              })
-          )
-        )
-    }
   }
 
   canHandleReaderPageTurnPan(): boolean {

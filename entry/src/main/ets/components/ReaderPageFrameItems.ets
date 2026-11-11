@@ -166,3 +166,229 @@ export struct ReaderParagraphGap {
       .width('100%')
   }
 }
+
+/**
+ * 阅读页的点击 / 手势热区层。
+ *
+ * 原 @Builder 172 行、三个分支（自定义九宫格 / 左右或上下翻页 / 单击唤菜单），
+ * 读 17 个页面成员。提成组件后分支判定与阈值走 @Prop，动作全部走回调；
+ * 只有「这次点击是否该被吞掉」是即时判定，保留为同步回调 shouldIgnoreTap。
+ */
+@Component
+export struct ReaderTapLayer {
+  /** 0 = 左右/上下翻页，1 = 单击唤菜单，2 = 自定义九宫格 */
+  @Prop pageTurnMode: number = 1;
+  @Prop tapSlop: number = 12;
+  @Prop verticalPageTurn: boolean = false;
+  @Prop menuVisible: boolean = false;
+  @Prop tocVisible: boolean = false;
+  @Prop settingsVisible: boolean = false;
+  shouldIgnoreTap: () => boolean = (): boolean => false;
+  onTapZone: (zone: number) => void = (_zone: number): void => {
+  };
+  onPrevPage: () => void = (): void => {
+  };
+  onNextPage: () => void = (): void => {
+  };
+  onShowMenu: () => void = (): void => {
+  };
+  onLayerAreaChange: (area: Area) => void = (_area: Area): void => {
+  };
+  onLayerTouch: (event: TouchEvent) => void = (_event: TouchEvent): void => {
+  };
+  onPanStart: (event: GestureEvent) => void = (_event: GestureEvent): void => {
+  };
+  onPanUpdate: (event: GestureEvent) => void = (_event: GestureEvent): void => {
+  };
+  onPanEnd: (event: GestureEvent) => void = (_event: GestureEvent): void => {
+  };
+  onPanCancel: () => void = (): void => {
+  };
+  onLongPress: (event: GestureEvent) => void = (_event: GestureEvent): void => {
+  };
+
+  private tapIgnored(): boolean {
+    return this.shouldIgnoreTap();
+  }
+
+  build() {
+    if (this.pageTurnMode === 2) {
+      Column() {
+        ForEach([0, 1, 2], (row: number) => {
+          Row() {
+            ForEach([0, 1, 2], (column: number) => {
+              Blank()
+                .height('100%')
+                .layoutWeight(1)
+                .onClick((): void => {
+                  if (this.tapIgnored()) {
+                    return;
+                  }
+                  this.onTapZone(row * 3 + column);
+                })
+            }, (column: number) => `${row}_${column}`)
+          }
+          .width('100%')
+          .layoutWeight(1)
+        }, (row: number) => `${row}`)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(Color.Transparent)
+      .onAreaChange((_oldValue: Area, newValue: Area): void => {
+        this.onLayerAreaChange(newValue);
+      })
+      .onTouch((event: TouchEvent): void => {
+        this.onLayerTouch(event);
+      })
+      .parallelGesture(
+        GestureGroup(GestureMode.Exclusive,
+          PanGesture({ direction: PanDirection.All, distance: this.tapSlop })
+            .onActionStart((event: GestureEvent): void => {
+              this.onPanStart(event);
+            })
+            .onActionUpdate((event: GestureEvent): void => {
+              this.onPanUpdate(event);
+            })
+            .onActionEnd((event: GestureEvent): void => {
+              this.onPanEnd(event);
+            })
+            .onActionCancel((): void => {
+              this.onPanCancel();
+            }),
+          LongPressGesture({ duration: 600 })
+            .onAction((event: GestureEvent): void => {
+              this.onLongPress(event);
+            })
+        )
+      )
+    } else if (this.pageTurnMode === 0) {
+      Column() {
+        Blank()
+          .width('100%')
+          .layoutWeight(3)
+          .onClick((): void => {
+            if (this.tapIgnored()) {
+              return;
+            }
+            this.onPrevPage();
+          })
+
+        Row() {
+          Blank()
+            .height('100%')
+            .layoutWeight(1)
+            .onClick((): void => {
+              if (this.tapIgnored()) {
+                return;
+              }
+              this.onPrevPage();
+            })
+          Blank()
+            .height('100%')
+            .layoutWeight(1)
+            .onClick((): void => {
+              if (this.tapIgnored()) {
+                return;
+              }
+              this.onShowMenu();
+            })
+          Blank()
+            .height('100%')
+            .layoutWeight(1)
+            .onClick((): void => {
+              if (this.tapIgnored()) {
+                return;
+              }
+              this.onNextPage();
+            })
+        }
+        .width('100%')
+        .layoutWeight(4)
+
+        Blank()
+          .width('100%')
+          .layoutWeight(3)
+          .onClick((): void => {
+            if (this.tapIgnored()) {
+              return;
+            }
+            this.onNextPage();
+          })
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(Color.Transparent)
+      .onAreaChange((_oldValue: Area, newValue: Area): void => {
+        this.onLayerAreaChange(newValue);
+      })
+      .onTouch((event: TouchEvent): void => {
+        this.onLayerTouch(event);
+      })
+      .parallelGesture(
+        GestureGroup(GestureMode.Exclusive,
+          PanGesture({
+            direction: this.verticalPageTurn ? PanDirection.Vertical : PanDirection.Horizontal,
+            distance: this.tapSlop
+          })
+            .onActionStart((event: GestureEvent): void => {
+              this.onPanStart(event);
+            })
+            .onActionUpdate((event: GestureEvent): void => {
+              this.onPanUpdate(event);
+            })
+            .onActionEnd((event: GestureEvent): void => {
+              this.onPanEnd(event);
+            })
+            .onActionCancel((): void => {
+              this.onPanCancel();
+            }),
+          LongPressGesture({ duration: 600 })
+            .onAction((event: GestureEvent): void => {
+              this.onLongPress(event);
+            })
+        )
+      )
+    } else {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Color.Transparent)
+        .onAreaChange((_oldValue: Area, newValue: Area): void => {
+          this.onLayerAreaChange(newValue);
+        })
+        .onClick((): void => {
+          if (this.tapIgnored()) {
+            return;
+          }
+          if (!this.menuVisible && !this.tocVisible && !this.settingsVisible) {
+            this.onShowMenu();
+          }
+        })
+        .onTouch((event: TouchEvent): void => {
+          this.onLayerTouch(event);
+        })
+        .parallelGesture(
+          GestureGroup(GestureMode.Exclusive,
+            PanGesture({ direction: PanDirection.All, distance: this.tapSlop })
+              .onActionStart((event: GestureEvent): void => {
+                this.onPanStart(event);
+              })
+              .onActionUpdate((event: GestureEvent): void => {
+                this.onPanUpdate(event);
+              })
+              .onActionEnd((event: GestureEvent): void => {
+                this.onPanEnd(event);
+              })
+              .onActionCancel((): void => {
+                this.onPanCancel();
+              }),
+            LongPressGesture({ duration: 600 })
+              .onAction((event: GestureEvent): void => {
+                this.onLongPress(event);
+              })
+          )
+        )
+    }
+  }
+}
