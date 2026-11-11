@@ -124,6 +124,8 @@ import {
   ReaderBottomInfoBar,
   ReaderBookmarkPanelSummary,
   ReaderFloatingTopMenu,
+  ReaderAutoPageTurnIndicator,
+  ReaderChapterSliderBar,
   ReaderPreloadSettingItem,
   ReaderTtsQuickActionButton,
   ReaderTocVirtualScrollbar
@@ -2294,7 +2296,20 @@ export struct ReadBookPage {
 
       if (this.autoPageTurnActive && this.readerInitialPageReady && !this.showMenu && !this.showToc &&
         !this.showSettings && !this.showReaderCommentPanel && !this.isLoading) {
-        this.readerAutoPageTurnIndicator()
+        ReaderAutoPageTurnIndicator({
+          accentColor: this.accentColor(),
+          ringProgress: this.autoPageTurnRingProgress,
+          userPaused: this.autoPageTurnUserPaused,
+          textColor: this.getTextColor(),
+          darkMode: this.isReaderThemeDark(),
+          bottomInset: this.navBarHeight,
+          onTogglePause: (): void => {
+            this.autoPageTurnController.toggleUserPause();
+          },
+          onLongPress: (): void => {
+            this.presentAutoPageTurnIntervalDialog();
+          }
+        })
       }
 
       if (this.showMenu && !this.showToc && !this.showSettings) {
@@ -2449,7 +2464,37 @@ TtsGlobalCapsule({
       }
 
       if (this.showGlobalTtsCatalog) {
-        this.globalTtsCatalogOverlay()
+        TtsCatalogSheet({
+          darkMode: this.isReaderThemeDark(),
+          accentColor: this.accentColor(),
+          primaryTextColor: this.getTextColor(),
+          subTextColor: this.getSubTextColor(),
+          controlIconColor: this.readerControlIconColor(),
+          panelColor: this.readerGlassPanelColor(),
+          bookName: this.book?.name || '',
+          bookInitial: this.getTocBookInitial(),
+          cover: this.getTocCover(),
+          bookSubtitle: this.book?.author || '',
+          count: this.ttsCatalogCount(),
+          currentDisplayIndex: this.globalTtsCatalogDisplayIndex(this.ttsCatalogCurrentIndex()),
+          reverseOrder: this.globalTtsCatalogReverseOrder,
+          progressText: `${this.ttsCatalogCurrentIndex() + 1} / ` + `${this.ttsCatalogCount()}`,
+          bottomInset: this.navBarHeight,
+          viewportHeight: this.pageViewHeight,
+          zIndexValue: 90,
+          scroller: this.globalTtsCatalogScroller,
+          source: this.globalTtsCatalogSource,
+          isCached: (displayIndex: number): boolean => this.isGlobalTtsCatalogChapterCached(displayIndex),
+          onToggleOrder: (): void => {
+            this.toggleGlobalTtsCatalogOrder();
+          },
+          onSelect: (displayIndex: number): void => {
+            this.selectGlobalTtsCatalog(displayIndex);
+          },
+          onClose: (): void => {
+            this.closeGlobalTtsCatalog();
+          }
+        })
       }
 
       if (this.showBookmarkActionMenu && this.pendingBookmarkAction) {
@@ -2592,6 +2637,30 @@ TtsGlobalCapsule({
 
 
   @Builder
+  readerHdsChapterBarTab() {
+    ReaderChapterSliderBar({
+      sliderValue: this.getMenuChapterDisplayIndex(),
+      sliderMax: Math.max(0, this.chapters.length - 1),
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      accentColor: this.accentColor(),
+      trackColor: this.readerChapterTrackColor(),
+      blockColor: this.readerSolidPanelColor(),
+      canGoPrevious: this.currentChapterIndex > 0 && !this.isLoading,
+      canGoNext: this.currentChapterIndex < this.chapters.length - 1 && !this.isLoading,
+      onPrevious: (): void => {
+        this.jumpToAdjacentChapterFromMenu(-1);
+      },
+      onNext: (): void => {
+        this.jumpToAdjacentChapterFromMenu(1);
+      },
+      onSliderChange: (value: number, mode: SliderChangeMode): void => {
+        this.handleMenuChapterSliderChange(value, mode);
+      }
+    })
+  }
+
+  @Builder
   readerHdsFloatingBottomMenu() {
     Column({ space: 4 }) {
       if (this.readerUseChapterQuickJump) {
@@ -2619,7 +2688,7 @@ TtsGlobalCapsule({
           Column()
         }
         .height(56)
-        .tabBar(this.readerHdsChapterBarContent())
+        .tabBar(this.readerHdsChapterBarTab())
       }
       .key(`reader_hds_chapter_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`)
       .barBackgroundColor(this.readerGlassPanelColor())
@@ -2674,61 +2743,6 @@ TtsGlobalCapsule({
     }
     .width('100%')
     .height(56)
-  }
-
-  @Builder
-  readerHdsChapterBarContent() {
-    Row() {
-      Stack({ alignContent: Alignment.Center }) {
-        SymbolGlyph($r('sys.symbol.chevron_left'))
-          .fontSize(25)
-          .fontColor([this.currentChapterIndex > 0 && !this.isLoading ?
-            this.getTextColor() : this.getSubTextColor()])
-      }
-        .width(46)
-        .height(48)
-        .enabled(this.currentChapterIndex > 0 && !this.isLoading)
-        .onClick(async () => {
-          await this.jumpToAdjacentChapterFromMenu(-1);
-        })
-
-      Slider({
-        value: this.getMenuChapterDisplayIndex(),
-        min: 0,
-        max: Math.max(0, this.chapters.length - 1),
-        step: 1,
-        style: SliderStyle.InSet
-      })
-        .layoutWeight(1)
-        .height(48)
-        .trackThickness(30)
-        .blockSize({ width: 30, height: 30 })
-        .selectedColor(this.accentColor())
-        .trackColor(this.readerChapterTrackColor())
-        .blockColor(this.readerSolidPanelColor())
-        .showSteps(false)
-        .onChange((value: number, mode: SliderChangeMode) => {
-          this.handleMenuChapterSliderChange(value, mode);
-        })
-
-      Stack({ alignContent: Alignment.Center }) {
-        SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(25)
-          .fontColor([this.currentChapterIndex < this.chapters.length - 1 && !this.isLoading ?
-            this.getTextColor() : this.getSubTextColor()])
-      }
-        .width(46)
-        .height(48)
-        .enabled(this.currentChapterIndex < this.chapters.length - 1 && !this.isLoading)
-        .onClick(async () => {
-          await this.jumpToAdjacentChapterFromMenu(1);
-        })
-    }
-    .width('100%')
-    .height(48)
-    .padding({ left: 4, right: 4 })
-    .alignItems(VerticalAlign.Center)
-    .translate({ y: -2 })
   }
 
   @Builder
@@ -4228,36 +4242,6 @@ TtsGlobalCapsule({
   // 全局浮标“定位”按钮：同书跳到后台朗读锚点页；他书朗读则打开对应阅读页。
   async jumpToGlobalTtsPosition(): Promise<void> {
     return ReaderTextPrepOps.jumpToGlobalTtsPosition(this);
-  }
-
-  @Builder
-  globalTtsCatalogOverlay() {
-    TtsCatalogSheet({
-      darkMode: this.isReaderThemeDark(),
-      accentColor: this.accentColor(),
-      primaryTextColor: this.getTextColor(),
-      subTextColor: this.getSubTextColor(),
-      controlIconColor: this.readerControlIconColor(),
-      panelColor: this.readerGlassPanelColor(),
-      bookName: this.book?.name || '',
-      bookInitial: this.getTocBookInitial(),
-      cover: this.getTocCover(),
-      bookSubtitle: this.book?.author || '',
-      count: this.ttsCatalogCount(),
-      currentDisplayIndex: this.globalTtsCatalogDisplayIndex(this.ttsCatalogCurrentIndex()),
-      reverseOrder: this.globalTtsCatalogReverseOrder,
-      progressText: `${this.ttsCatalogCurrentIndex() + 1} / ` +
-        `${this.ttsCatalogCount()}`,
-      bottomInset: this.navBarHeight,
-      viewportHeight: this.pageViewHeight,
-      zIndexValue: 90,
-      scroller: this.globalTtsCatalogScroller,
-      source: this.globalTtsCatalogSource,
-      isCached: (displayIndex: number): boolean => this.isGlobalTtsCatalogChapterCached(displayIndex),
-      onToggleOrder: () => this.toggleGlobalTtsCatalogOrder(),
-      onSelect: (displayIndex: number) => this.selectGlobalTtsCatalog(displayIndex),
-      onClose: () => this.closeGlobalTtsCatalog()
-    })
   }
 
   ttsCurrentSentence(): string {
@@ -7389,50 +7373,6 @@ TtsGlobalCapsule({
   }
 
 
-
-  @Builder
-  readerAutoPageTurnIndicator() {
-    Column() {
-      Blank()
-      Row() {
-        Blank()
-        Stack({ alignContent: Alignment.Center }) {
-          Progress({
-            value: Math.round(this.autoPageTurnRingProgress * 100),
-            total: 100,
-            type: ProgressType.Ring
-          })
-            .width(30)
-            .height(30)
-            .style({ strokeWidth: 3 })
-            .color(this.accentColor())
-            .backgroundColor(this.autoPageTurnUserPaused ?
-              (this.isReaderThemeDark() ? '#33FFFFFF' : '#14000000') :
-              (this.isReaderThemeDark() ? '#33FFFFFF' : '#22000000'))
-          Text(this.autoPageTurnUserPaused ? '▶' : '❚❚')
-            .fontSize(10)
-            .fontColor(this.getTextColor())
-            .opacity(this.autoPageTurnUserPaused ? 0.95 : 0.7)
-        }
-        .width(38)
-        .height(38)
-        .borderRadius(19)
-        .backgroundColor(this.isReaderThemeDark() ? '#59000000' : '#33000000')
-        .opacity(this.autoPageTurnUserPaused ? 0.72 : 1)
-        .margin({ right: 16, bottom: 12 + this.navBarHeight })
-        .onClick(() => {
-          this.autoPageTurnController.toggleUserPause();
-        })
-        .gesture(LongPressGesture({ repeat: false }).onAction(() => {
-          this.presentAutoPageTurnIntervalDialog();
-        }))
-      }
-      .width('100%')
-    }
-    .width('100%')
-    .height('100%')
-    .hitTestBehavior(HitTestMode.None)
-  }
 
   readerEyeTurnPromptVisible(): boolean {
     return ReaderSettingsOps.readerEyeTurnPromptVisible(this);

@@ -364,3 +364,126 @@ export struct ReaderTtsQuickActionButton {
     .translate({ y: this.offsetY })
   }
 }
+
+@Component
+export struct ReaderAutoPageTurnIndicator {
+  @Prop accentColor: ResourceColor;
+  @Prop ringProgress: number = 0;
+  @Prop userPaused: boolean = false;
+  @Prop textColor: ResourceColor;
+  @Prop darkMode: boolean = false;
+  @Prop bottomInset: number = 0;
+  onTogglePause: () => void = () => {};
+  onLongPress: () => void = () => {};
+
+  build() {
+    Column() {
+      Blank()
+      Row() {
+        Blank()
+        Stack({ alignContent: Alignment.Center }) {
+          Progress({
+            value: Math.round(this.ringProgress * 100),
+            total: 100,
+            type: ProgressType.Ring
+          })
+            .width(30)
+            .height(30)
+            .style({ strokeWidth: 3 })
+            .color(this.accentColor)
+            .backgroundColor(this.userPaused ?
+              (this.darkMode ? '#33FFFFFF' : '#14000000') :
+              (this.darkMode ? '#33FFFFFF' : '#22000000'))
+          Text(this.userPaused ? '▶' : '❚❚')
+            .fontSize(10)
+            .fontColor(this.textColor)
+            .opacity(this.userPaused ? 0.95 : 0.7)
+        }
+        .width(38)
+        .height(38)
+        .borderRadius(19)
+        .backgroundColor(this.darkMode ? '#59000000' : '#33000000')
+        .opacity(this.userPaused ? 0.72 : 1)
+        .margin({ right: 16, bottom: 12 + this.bottomInset })
+        .onClick(() => {
+          this.onTogglePause();
+        })
+        .gesture(LongPressGesture({ repeat: false }).onAction(() => {
+          this.onLongPress();
+        }))
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .height('100%')
+    .hitTestBehavior(HitTestMode.None)
+  }
+}
+
+@Component
+export struct ReaderChapterSliderBar {
+  @Prop sliderValue: number = 0;
+  @Prop sliderMax: number = 0;
+  @Prop textColor: ResourceColor;
+  @Prop subTextColor: ResourceColor;
+  @Prop accentColor: ResourceColor;
+  @Prop trackColor: ResourceColor;
+  @Prop blockColor: ResourceColor;
+  @Prop canGoPrevious: boolean = false;
+  @Prop canGoNext: boolean = false;
+  onPrevious: () => void = () => {};
+  onNext: () => void = () => {};
+  onSliderChange: (value: number, mode: SliderChangeMode) => void = () => {};
+
+  build() {
+    Row() {
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph($r('sys.symbol.chevron_left'))
+          .fontSize(25)
+          .fontColor([this.canGoPrevious ? this.textColor : this.subTextColor])
+      }
+      .width(46)
+      .height(48)
+      .enabled(this.canGoPrevious)
+      .onClick(() => {
+        this.onPrevious();
+      })
+
+      Slider({
+        value: this.sliderValue,
+        min: 0,
+        max: Math.max(0, this.sliderMax),
+        step: 1,
+        style: SliderStyle.InSet
+      })
+        .layoutWeight(1)
+        .height(48)
+        .trackThickness(30)
+        .blockSize({ width: 30, height: 30 })
+        .selectedColor(this.accentColor)
+        .trackColor(this.trackColor)
+        .blockColor(this.blockColor)
+        .showSteps(false)
+        .onChange((value: number, mode: SliderChangeMode) => {
+          this.onSliderChange(value, mode);
+        })
+
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph($r('sys.symbol.chevron_right'))
+          .fontSize(25)
+          .fontColor([this.canGoNext ? this.textColor : this.subTextColor])
+      }
+      .width(46)
+      .height(48)
+      .enabled(this.canGoNext)
+      .onClick(() => {
+        this.onNext();
+      })
+    }
+    .width('100%')
+    .height(48)
+    .padding({ left: 4, right: 4 })
+    .alignItems(VerticalAlign.Center)
+    .translate({ y: -2 })
+  }
+}
