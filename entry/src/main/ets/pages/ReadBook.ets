@@ -139,6 +139,8 @@ import {
   ReaderBookmarkMultiSelectAction
 } from '../components/ReaderStaticItems';
 import { ReaderBookmarkActionItem } from '../components/ReaderBookmarkActionItem';
+import { ReaderFloatingDayNightMenuItem, ReaderHdsDayNightMenuItem, ReaderBookmarkSwipeCard,
+  ReaderSimulationPaperBackground, ReaderParagraphGap } from '../components/ReaderPageFrameItems';
 import { ReaderV2TtsHighlightRect, ReaderV2SelectionHighlightRect } from '../components/ReaderV2HighlightRects';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
 import { ReaderContentPreprocessor } from '../core/concurrency/ReaderContentPreprocessor';
@@ -2792,6 +2794,20 @@ TtsGlobalCapsule({
   }
 
   @Builder
+  readerHdsDayNightTab() {
+    ReaderHdsDayNightMenuItem({
+      icon: this.readerDayNightIcon(),
+      iconColor: this.readerControlIconColor(),
+      onActivate: (): void => {
+        this.handleReaderDayNightClick();
+      },
+      onLongPress: (): void => {
+        this.handleReaderDayNightLongPress();
+      }
+    })
+  }
+
+  @Builder
   readerHdsTabMenuItem(icon: Resource, menuEnabled: boolean) {
     Row() {
       ReaderHdsMenuItem({
@@ -2830,7 +2846,7 @@ TtsGlobalCapsule({
         Column()
       }
       .height(56)
-      .tabBar(this.readerHdsDayNightMenuItem())
+      .tabBar(this.readerHdsDayNightTab())
     }
     .key(`reader_hds_action_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`)
     .barBackgroundColor(this.readerGlassPanelColor())
@@ -2864,25 +2880,6 @@ TtsGlobalCapsule({
     })
     .width('100%')
     .height(56)
-  }
-
-  @Builder
-  readerHdsDayNightMenuItem() {
-    Stack() {
-      ReaderHdsMenuItem({
-        icon: this.readerDayNightIcon(),
-        iconColor: this.readerControlIconColor(),
-        showAddBadge: false,
-        menuEnabled: true,
-      })
-    }
-    .width('100%')
-    .height(48)
-    .onClick(() => this.handleReaderDayNightClick())
-    .gesture(
-      LongPressGesture({ duration: 600, repeat: false })
-        .onAction(() => this.handleReaderDayNightLongPress())
-    )
   }
 
   handleReaderHdsAction(index: number, fromToc: boolean, fromSettings: boolean = false): void {
@@ -3023,7 +3020,16 @@ TtsGlobalCapsule({
         }
         .layoutWeight(1)
         .height(56)
-        this.readerFloatingDayNightMenuItem()
+        ReaderFloatingDayNightMenuItem({
+          icon: this.readerDayNightIcon(),
+          iconColor: this.readerControlIconColor(),
+          onActivate: (): void => {
+            this.handleReaderDayNightClick();
+          },
+          onLongPress: (): void => {
+            this.handleReaderDayNightLongPress();
+          }
+        })
       }
       .width('100%')
       .height(56)
@@ -3038,26 +3044,6 @@ TtsGlobalCapsule({
     .padding({ bottom: 14 })
     .position({ x: this.readerFloatingBarLeft(), y: '100%' })
     .translate({ y: '-100%' })
-  }
-
-  @Builder
-  readerFloatingDayNightMenuItem() {
-    Row() {
-      ReaderFloatingIconMenuItem({
-        icon: this.readerDayNightIcon(),
-        iconColor: this.readerControlIconColor(),
-        showAddBadge: false,
-        menuEnabled: true,
-        onMenuClick: () => {},
-      })
-    }
-    .layoutWeight(1)
-    .height(56)
-    .onClick(() => this.handleReaderDayNightClick())
-    .gesture(
-      LongPressGesture({ duration: 600, repeat: false })
-        .onAction(() => this.handleReaderDayNightLongPress())
-    )
   }
 
   @Builder
@@ -3251,7 +3237,16 @@ TtsGlobalCapsule({
           }
           .layoutWeight(1)
           .height(56)
-          this.readerFloatingDayNightMenuItem()
+          ReaderFloatingDayNightMenuItem({
+          icon: this.readerDayNightIcon(),
+          iconColor: this.readerControlIconColor(),
+          onActivate: (): void => {
+            this.handleReaderDayNightClick();
+          },
+          onLongPress: (): void => {
+            this.handleReaderDayNightLongPress();
+          }
+        })
         }
         .width(this.readerFloatingBarWidth())
         .height(56)
@@ -3561,7 +3556,22 @@ TtsGlobalCapsule({
             // delete together instead of exposing multi-select on right swipe.
             HdsListItem({
               customItemBuilder: () => {
-                this.bookmarkSwipeCard(bookmark)
+                ReaderBookmarkSwipeCard({
+                  bookmark: bookmark,
+                  selected: this.isBookmarkSelected(bookmark.bookmarkUrl),
+                  accentColor: this.accentColor(),
+                  textColor: this.getTextColor(),
+                  subTextColor: this.getSubTextColor(),
+                  selectedBackgroundColor: this.tocSelectedBackgroundColor(),
+                  dividerColor: this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000',
+                  onPrimaryAction: (): void => {
+                    if (this.bookmarkMultiSelectMode) this.toggleBookmarkSelection(bookmark.bookmarkUrl);
+                    else this.jumpToBookmark(bookmark);
+                  },
+                  onLongPressAction: (event: GestureEvent): void => {
+                    if (!this.bookmarkMultiSelectMode) this.showBookmarkActions(bookmark, event);
+                  }
+                })
               },
               swipeActionOptions: this.bookmarkSwipeActions(bookmark)
             })
@@ -3569,7 +3579,22 @@ TtsGlobalCapsule({
             // Older systems use the native ListItem fallback with the same
             // two-button left-swipe action panel.
             ListItem() {
-              this.bookmarkSwipeCard(bookmark)
+              ReaderBookmarkSwipeCard({
+                bookmark: bookmark,
+                selected: this.isBookmarkSelected(bookmark.bookmarkUrl),
+                accentColor: this.accentColor(),
+                textColor: this.getTextColor(),
+                subTextColor: this.getSubTextColor(),
+                selectedBackgroundColor: this.tocSelectedBackgroundColor(),
+                dividerColor: this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000',
+                onPrimaryAction: (): void => {
+                  if (this.bookmarkMultiSelectMode) this.toggleBookmarkSelection(bookmark.bookmarkUrl);
+                  else this.jumpToBookmark(bookmark);
+                },
+                onLongPressAction: (event: GestureEvent): void => {
+                  if (!this.bookmarkMultiSelectMode) this.showBookmarkActions(bookmark, event);
+                }
+              })
             }
             .width('100%')
             .clip(true)
@@ -3732,49 +3757,6 @@ TtsGlobalCapsule({
     .translate({ x: -232, y: this.getTopControlSafePadding() + 72 })
     .onClick(() => {
     })
-  }
-
-  @Builder
-  bookmarkSwipeCard(bookmark: Bookmark) {
-    Column({ space: 5 }) {
-      Row() {
-        SymbolGlyph($r('sys.symbol.bookmark'))
-          .fontSize(18)
-          .fontColor([this.accentColor()])
-          .width(26)
-        Text(bookmark.chapterName || `第 ${bookmark.chapterIndex + 1} 章`)
-          .fontSize(15)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.getTextColor())
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-        Text(`第 ${bookmark.pageIndex + 1} 页`)
-          .fontSize(11)
-          .fontColor(this.getSubTextColor())
-      }
-      Text(bookmark.content || '已保存阅读位置')
-        .fontSize(12)
-        .fontColor(this.getSubTextColor())
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
-      Text(LeafFns.formatBookmarkTime(bookmark.createTime))
-        .fontSize(12)
-        .fontColor(this.getSubTextColor())
-        .width('100%')
-    }
-    .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-    .backgroundColor(this.isBookmarkSelected(bookmark.bookmarkUrl) ? this.tocSelectedBackgroundColor() : Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000' })
-    .onClick(() => {
-      if (this.bookmarkMultiSelectMode) this.toggleBookmarkSelection(bookmark.bookmarkUrl)
-      else this.jumpToBookmark(bookmark)
-    })
-    .gesture(LongPressGesture({ repeat: false }).onAction((event: GestureEvent) => {
-      if (!this.bookmarkMultiSelectMode) this.showBookmarkActions(bookmark, event)
-    }))
   }
 
   bookmarkSwipeActions(bookmark: Bookmark): HdsSwipeActionOptions {
@@ -8503,7 +8485,14 @@ TtsGlobalCapsule({
     ttsRenderVersion: number, surfaceRole: string) {
     Stack() {
       Stack() {
-        this.readerSimulationPaperBackground()
+        ReaderSimulationPaperBackground({
+          surfaceColor: this.getBackgroundColor(),
+          backgroundAssetId: this.getBackgroundAssetId(),
+          customImage: this.currentReaderTheme().backgroundImageUri,
+          customImageFit: this.getBackgroundImageFit(),
+          viewportWidthHint: this.getPageTurnWidth(),
+          viewportHeightHint: this.getReaderBackgroundViewportHeight()
+        })
         Column() {
           this.readerIncomingPageLayer(this.pageTurnIncomingRenderVersion,
             this.getVisiblePageTurnIncomingText(), `${surfaceRole}_simulation_back`)
@@ -8521,7 +8510,14 @@ TtsGlobalCapsule({
       .renderGroup(true)
 
       Stack() {
-        this.readerSimulationPaperBackground()
+        ReaderSimulationPaperBackground({
+          surfaceColor: this.getBackgroundColor(),
+          backgroundAssetId: this.getBackgroundAssetId(),
+          customImage: this.currentReaderTheme().backgroundImageUri,
+          customImageFit: this.getBackgroundImageFit(),
+          viewportWidthHint: this.getPageTurnWidth(),
+          viewportHeightHint: this.getReaderBackgroundViewportHeight()
+        })
         this.readerIncomingPageSurface(this.pageTurnIncomingRenderVersion,
           this.getVisiblePageTurnIncomingText(), `${surfaceRole}_simulation_base`)
       }
@@ -8616,19 +8612,6 @@ TtsGlobalCapsule({
   }
 
   @Builder
-  readerSimulationPaperBackground() {
-    ReaderThemeBackground({
-      surfaceColor: this.getBackgroundColor(),
-      backgroundAssetId: this.getBackgroundAssetId(),
-      customImage: this.currentReaderTheme().backgroundImageUri,
-      customImageFit: this.getBackgroundImageFit(),
-      viewportWidthHint: this.getPageTurnWidth(),
-      viewportHeightHint: this.getReaderBackgroundViewportHeight()
-    })
-      .hitTestBehavior(HitTestMode.None)
-  }
-
-  @Builder
   readerSimulationHalfPaperBackground(rightHalf: boolean) {
     Stack() {
       ReaderThemeBackground({
@@ -8687,7 +8670,14 @@ TtsGlobalCapsule({
         // Stack and simulation animate/snapshot a full-screen sheet, so their page must own the paper artwork.
         // Slide and fade live below the status-bar inset: painting the same Cover image here would restart its
         // crop at the content origin and create a visible seam against the full-screen root background.
-        this.readerSimulationPaperBackground()
+        ReaderSimulationPaperBackground({
+          surfaceColor: this.getBackgroundColor(),
+          backgroundAssetId: this.getBackgroundAssetId(),
+          customImage: this.currentReaderTheme().backgroundImageUri,
+          customImageFit: this.getBackgroundImageFit(),
+          viewportWidthHint: this.getPageTurnWidth(),
+          viewportHeightHint: this.getReaderBackgroundViewportHeight()
+        })
       }
       Column() {
         this.readerCurrentPageLayer(renderVersion, text, ttsRenderVersion, 'current_primary')
@@ -8709,7 +8699,14 @@ TtsGlobalCapsule({
     Stack() {
       if (this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation() ||
         this.is3DPageTurnAnimation()) {
-        this.readerSimulationPaperBackground()
+        ReaderSimulationPaperBackground({
+          surfaceColor: this.getBackgroundColor(),
+          backgroundAssetId: this.getBackgroundAssetId(),
+          customImage: this.currentReaderTheme().backgroundImageUri,
+          customImageFit: this.getBackgroundImageFit(),
+          viewportWidthHint: this.getPageTurnWidth(),
+          viewportHeightHint: this.getReaderBackgroundViewportHeight()
+        })
       }
       Column() {
         this.readerCurrentPageLayer(renderVersion, text, ttsRenderVersion, 'current_alternate')
@@ -9001,12 +8998,16 @@ TtsGlobalCapsule({
     if (group.mergeable) {
       this.styledMergedReaderParagraphs(group.paragraphs, chapterIndex, ttsHighlightActive, ttsRenderVersion,
         contentRenderVersion, `${pageRenderIdentity}_${group.key}`, pageStart, documentSource, pageLineHeight)
-      this.readerParagraphGap(group.paragraphs[group.paragraphs.length - 1], pageLineHeight)
+      if (!group.paragraphs[group.paragraphs.length - 1].isLast) {
+        ReaderParagraphGap({ gapHeight: this.getReaderParagraphBoundarySpacing(pageLineHeight) })
+      }
     } else {
       ForEach(group.paragraphs, (paragraph: ReaderTextParagraph) => {
         this.styledReaderParagraph(paragraph, chapterIndex, ttsHighlightActive, ttsRenderVersion,
           contentRenderVersion, pageRenderIdentity, pageStart, documentSource, pageLineHeight)
-        this.readerParagraphGap(paragraph, pageLineHeight)
+        if (!paragraph.isLast) {
+          ReaderParagraphGap({ gapHeight: this.getReaderParagraphBoundarySpacing(pageLineHeight) })
+        }
       }, (paragraph: ReaderTextParagraph) => `${pageRenderIdentity}_${paragraph.key}`)
     }
   }
@@ -9548,16 +9549,6 @@ TtsGlobalCapsule({
 
   getReaderEpubImageHeight(): number {
     return ReaderStyledTextOps.getReaderEpubImageHeight(this);
-  }
-
-  @Builder
-  readerParagraphGap(paragraph: ReaderTextParagraph,
-    pageLineHeight: number = this.getEffectiveReaderLineHeight()) {
-    if (!paragraph.isLast) {
-      Blank()
-        .height(this.getReaderParagraphBoundarySpacing(pageLineHeight))
-        .width('100%')
-    }
   }
 
   @Builder
