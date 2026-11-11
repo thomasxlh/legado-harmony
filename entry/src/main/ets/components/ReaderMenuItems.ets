@@ -7,6 +7,7 @@
  */
 import * as LeafFns from '../reader/ReaderLeafFns';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { ReaderBookmarkActionItem } from './ReaderBookmarkActionItem';
 
 @Component
 export struct ReaderHdsMenuItem {
@@ -415,5 +416,81 @@ export struct ReaderActionMenuPanel {
     .translate({ x: -232, y: this.topOffset })
     .onClick(() => {
     })
+  }
+}
+
+/**
+ * 书签长按后的操作浮层：遮罩 + 「多选 / 删除」两项。
+ *
+ * 原先 50 行 @Builder、读 12 个页面状态。提取后遮罩色、面板色、位置、待处理书签的空/非空
+ * 都走 @Prop，两个动作按钮的点击回给页面（页面负责关闭浮层并分发到多选/删除）。
+ */
+@Component
+export struct ReaderBookmarkActionMenu {
+  @Prop menuLeft: number = 0;
+  @Prop menuTop: number = 0;
+  @Prop hasPendingBookmark: boolean = false;
+  @Prop textColor: string = '#18191C';
+  @Prop dangerColor: string = '#D94841';
+  @Prop scrimColor: string = '#26FFFFFF';
+  @Prop panelColor: string = '#FFFFFF';
+  @Prop glassBorderColor: string = '#1A000000';
+  @Prop glassShadowColor: string = '#33000000';
+  onDismiss: () => void = (): void => {
+  };
+  onMultiSelect: () => void = (): void => {
+  };
+  onDelete: () => void = (): void => {
+  };
+
+  build() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.scrimColor)
+        .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
+        .onClick(() => {
+          this.onDismiss();
+        })
+
+      Column() {
+        ReaderBookmarkActionItem({
+          icon: $r('sys.symbol.checkmark_circle'),
+          label: '多选',
+          color: this.textColor,
+          action: (): void => {
+            if (this.hasPendingBookmark) {
+              this.onMultiSelect();
+            }
+          }
+        })
+        ReaderBookmarkActionItem({
+          icon: $r('sys.symbol.trash'),
+          label: '删除',
+          color: this.dangerColor,
+          action: (): void => {
+            if (this.hasPendingBookmark) {
+              this.onDelete();
+            }
+          }
+        })
+      }
+      .width(148)
+      .padding({ top: 6, bottom: 6 })
+      .backgroundColor(this.panelColor)
+      .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.glassBorderColor })
+      .shadow({
+        radius: ThemeRuntime.glassShadowRadius('panel'),
+        color: this.glassShadowColor,
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'),
+        offsetY: ThemeRuntime.glassShadowOffsetY('panel')
+      })
+      .position({ x: this.menuLeft, y: this.menuTop })
+    }
+    .width('100%')
+    .height('100%')
   }
 }

@@ -104,6 +104,7 @@ import {
 } from '../components/ReaderSettingsRows';
 import { ReaderCommentPanel } from '../components/ReaderCommentPanel';
 import { ReaderTtsExpandedControlsCompat } from '../components/ReaderTtsExpandedControls';
+import { ReaderBookmarkActionMenu } from '../components/ReaderMenuItems';
 import { ReaderActionMenuItem, ReaderCommentPanelDragOverlay, ReaderFloatingIconMenuItem, ReaderHdsMenuItem, ReaderReplaceRulesEntryItem, ReaderActionMenuPanel } from '../components/ReaderMenuItems';
 import {
   ReaderCurrentPageBookmarkMarker,
@@ -2702,7 +2703,34 @@ TtsGlobalCapsule({
       }
 
       if (this.showBookmarkActionMenu && this.pendingBookmarkAction) {
-        this.bookmarkActionMenu()
+        ReaderBookmarkActionMenu({
+          menuLeft: this.bookmarkActionMenuLeft(148),
+          menuTop: this.bookmarkActionMenuTop(100),
+          hasPendingBookmark: this.pendingBookmarkAction !== null,
+          textColor: this.getTextColor(),
+          dangerColor: this.dangerColor(),
+          scrimColor: this.isReaderThemeDark() ? '#52000000' : '#26FFFFFF',
+          panelColor: this.readerGlassPanelColor(),
+          glassBorderColor: this.readerGlassBorderColor(),
+          glassShadowColor: this.readerGlassShadowColor(),
+          onDismiss: (): void => {
+            this.closeBookmarkActionMenu();
+          },
+          onMultiSelect: (): void => {
+            if (this.pendingBookmarkAction) {
+              const bookmarkUrl = this.pendingBookmarkAction.bookmarkUrl;
+              this.closeBookmarkActionMenu();
+              this.enterBookmarkMultiSelect(bookmarkUrl);
+            }
+          },
+          onDelete: (): void => {
+            if (this.pendingBookmarkAction) {
+              const bookmark = this.pendingBookmarkAction;
+              this.closeBookmarkActionMenu();
+              this.deleteBookmark(bookmark);
+            }
+          }
+        })
       }
 
       if (this.showChangeSourceDialog) {
@@ -3962,57 +3990,6 @@ TtsGlobalCapsule({
 
   bookmarkActionMenuTop(menuHeight: number): number {
     return ReaderTextPrepOps.bookmarkActionMenuTop(this, menuHeight);
-  }
-
-  @Builder
-  bookmarkActionMenu() {
-    Stack({ alignContent: Alignment.TopStart }) {
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(this.isReaderThemeDark() ? '#52000000' : '#26FFFFFF')
-        .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
-        .onClick(() => {
-          this.closeBookmarkActionMenu();
-        })
-
-      Column() {
-        ReaderBookmarkActionItem({
-          icon: $r('sys.symbol.checkmark_circle'),
-          label: '多选',
-          color: this.getTextColor(),
-          action: (): void => {
-            if (this.pendingBookmarkAction) {
-              const bookmarkUrl = this.pendingBookmarkAction.bookmarkUrl;
-              this.closeBookmarkActionMenu();
-              this.enterBookmarkMultiSelect(bookmarkUrl);
-            }
-          }
-        })
-        ReaderBookmarkActionItem({
-          icon: $r('sys.symbol.trash'),
-          label: '删除',
-          color: this.dangerColor(),
-          action: (): void => {
-            if (this.pendingBookmarkAction) {
-              const bookmark = this.pendingBookmarkAction;
-              this.closeBookmarkActionMenu();
-              this.deleteBookmark(bookmark);
-            }
-          }
-        })
-      }
-      .width(148)
-      .padding({ top: 6, bottom: 6 })
-      .backgroundColor(this.readerGlassPanelColor())
-      .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
-      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
-      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
-      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.readerGlassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      .position({ x: this.bookmarkActionMenuLeft(148), y: this.bookmarkActionMenuTop(100) })
-    }
-    .width('100%')
-    .height('100%')
   }
 
   getTocCover(): string {
