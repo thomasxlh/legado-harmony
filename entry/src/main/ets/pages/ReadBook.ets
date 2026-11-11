@@ -94,6 +94,7 @@ import {
   ReaderTapZoneSettingItem,
   ReaderAutoPageTurnIntervalSettingItem,
   ReaderTxtCharsetOptionRow,
+  ReaderLayoutElementSettingsDialog,
 } from '../components/ReaderSettingsRows';
 import {
   ReaderActionMenuItem,
@@ -2359,7 +2360,36 @@ export struct ReadBookPage {
 
 
       if (this.showLayoutElementSettings) {
-        this.readerLayoutElementSettingsDialog()
+        ReaderLayoutElementSettingsDialog({
+          textColor: this.getTextColor(),
+          subTextColor: this.getSubTextColor(),
+          accentColor: this.accentColor(),
+          dark: this.isReaderThemeDark(),
+          panelColor: this.readerGlassPanelColor(),
+          glassBorderColor: this.readerGlassBorderColor(),
+          shadowColor: this.readerGlassShadowColor(),
+          dialogWidth: this.pageViewWidth - 36,
+          useTtsQuickAction: this.readerUseTtsQuickAction,
+          ttsQuickActionLeft: this.readerTtsQuickActionSide < 0,
+          useChapterQuickJump: this.readerUseChapterQuickJump,
+          onClose: (): void => {
+            this.showLayoutElementSettings = false;
+          },
+          onToggleTtsQuickAction: (enabled: boolean): void => {
+            this.readerUseTtsQuickAction = enabled;
+            if (!enabled) this.ttsMediaControlsExpanded = false;
+            this.saveReaderLayoutElementSettings();
+          },
+          onToggleTtsQuickActionSide: (left: boolean): void => {
+            this.readerTtsQuickActionSide = left ? -1 : 1;
+            this.saveReaderLayoutElementSettings();
+          },
+          onToggleChapterQuickJump: (enabled: boolean): void => {
+            this.readerUseChapterQuickJump = enabled;
+            if (!enabled) this.resetMenuChapterPreview();
+            this.saveReaderLayoutElementSettings();
+          }
+        })
       }
 
       if (this.showMenu && !this.showToc && !this.showSettings && this.chapters.length > 0) {
@@ -4073,80 +4103,6 @@ TtsGlobalCapsule({
 
   openReaderReplaceRuleWithSelection(selectedText: string): void {
     ReaderTextPrepOps.openReaderReplaceRuleWithSelection(this, selectedText);
-  }
-
-  @Builder
-  readerLayoutElementSettingsDialog() {
-    Stack({ alignContent: Alignment.Center }) {
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(this.isReaderThemeDark() ? '#52000000' : '#26000000')
-        .backdropBlur(ThemeRuntime.glassBlur('overlay', 18))
-        .onClick(() => {
-          this.showLayoutElementSettings = false;
-        })
-
-      Column({ space: 4 }) {
-        Row() {
-          Text('布局元素设置')
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.getTextColor())
-            .layoutWeight(1)
-          ImmersiveBackButton({
-            icon: $r('sys.symbol.xmark'),
-            iconOffsetX: 0,
-            iconColor: this.readerControlIconColor(),
-            darkMode: this.isReaderThemeDark(),
-            buttonSize: 38,
-            containerWidth: 38,
-            containerHeight: 38,
-            startInset: 0,
-            compactLayout: true,
-            accessibilityLabel: '关闭布局元素设置',
-            onBack: () => this.showLayoutElementSettings = false
-          })
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
-
-        Text('控制点击阅读页后出现的快捷组件')
-          .fontSize(13)
-          .fontColor(this.getSubTextColor())
-          .width('100%')
-          .margin({ bottom: 8 })
-
-        ReaderLayoutElementToggle({ title: '使用快速朗读组件', description: '显示朗读快捷按钮与展开控制条', isOn: this.readerUseTtsQuickAction, onChange: (enabled: boolean) => {
-            this.readerUseTtsQuickAction = enabled;
-            if (!enabled) this.ttsMediaControlsExpanded = false;
-            this.saveReaderLayoutElementSettings();
-          }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), accentColor: this.accentColor(), dark: this.isReaderThemeDark() })
-        if (this.readerUseTtsQuickAction) {
-          ReaderLayoutElementToggle({ title: '朗读按钮靠左', description: '把听书播放按钮放到屏幕左下角', isOn: this.readerTtsQuickActionSide < 0, onChange: (left: boolean) => {
-              this.readerTtsQuickActionSide = left ? -1 : 1;
-              this.saveReaderLayoutElementSettings();
-            }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), accentColor: this.accentColor(), dark: this.isReaderThemeDark() })
-        }
-        ReaderLayoutElementToggle({ title: '使用章节快速跳转组件', description: '显示章节滑杆与上一章、下一章按钮', isOn: this.readerUseChapterQuickJump, onChange: (enabled: boolean) => {
-            this.readerUseChapterQuickJump = enabled;
-            if (!enabled) this.resetMenuChapterPreview();
-            this.saveReaderLayoutElementSettings();
-          }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), accentColor: this.accentColor(), dark: this.isReaderThemeDark() })
-      }
-      .width(Math.max(1, Math.min(420, this.pageViewWidth - 36)))
-      .padding({ left: 20, right: 20, top: 18, bottom: 18 })
-      .borderRadius(ThemeRuntime.glassCornerRadius(24, 'overlay'))
-      .backgroundColor(this.readerGlassPanelColor())
-      .backdropBlur(ThemeRuntime.glassBlur('overlay', 24))
-      .border({ width: ThemeRuntime.glassBorderWidth('overlay'), color: this.readerGlassBorderColor() })
-      .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'), color: this.readerGlassShadowColor(),
-        offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
-      .onClick(() => {
-      })
-    }
-    .width('100%')
-    .height('100%')
   }
 
   saveReaderLayoutElementSettings(): void {

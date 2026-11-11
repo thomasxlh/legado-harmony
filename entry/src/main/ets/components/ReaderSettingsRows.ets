@@ -1,6 +1,8 @@
 import { SelectMenuMaterialModifier } from './SelectMenuMaterialModifier';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import * as LeafFns from '../reader/ReaderLeafFns';
+import { ImmersiveBackButton } from './ImmersiveBackButton';
+import { ReaderLayoutElementToggle } from './ReaderSettingItems';
 
 /**
  * 阅读设置面板里的「行」组件。
@@ -245,5 +247,121 @@ export struct ReaderTxtCharsetOptionRow {
     .onClick(() => {
       this.onPick();
     })
+  }
+}
+
+@Component
+export struct ReaderLayoutElementSettingsDialog {
+  @Prop textColor: ResourceColor;
+  @Prop subTextColor: ResourceColor;
+  @Prop accentColor: ResourceColor;
+  @Prop dark: boolean = false;
+  @Prop panelColor: ResourceColor;
+  @Prop glassBorderColor: ResourceColor;
+  @Prop shadowColor: ResourceColor;
+  @Prop dialogWidth: number = 420;
+  @Prop useTtsQuickAction: boolean = true;
+  @Prop ttsQuickActionLeft: boolean = false;
+  @Prop useChapterQuickJump: boolean = true;
+  onClose: () => void = () => {};
+  onToggleTtsQuickAction: (enabled: boolean) => void = () => {};
+  onToggleTtsQuickActionSide: (left: boolean) => void = () => {};
+  onToggleChapterQuickJump: (enabled: boolean) => void = () => {};
+
+  build() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.dark ? '#52000000' : '#26000000')
+        .backdropBlur(ThemeRuntime.glassBlur('overlay', 18))
+        .onClick(() => {
+          this.onClose();
+        })
+
+      Column({ space: 4 }) {
+        Row() {
+          Text('布局元素设置')
+            .fontSize(20)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.textColor)
+            .layoutWeight(1)
+          ImmersiveBackButton({
+            icon: $r('sys.symbol.xmark'),
+            iconOffsetX: 0,
+            iconColor: this.textColor,
+            darkMode: this.dark,
+            buttonSize: 38,
+            containerWidth: 38,
+            containerHeight: 38,
+            startInset: 0,
+            compactLayout: true,
+            accessibilityLabel: '关闭布局元素设置',
+            onBack: () => {
+              this.onClose();
+            }
+          })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Text('控制点击阅读页后出现的快捷组件')
+          .fontSize(13)
+          .fontColor(this.subTextColor)
+          .width('100%')
+          .margin({ bottom: 8 })
+
+        ReaderLayoutElementToggle({
+          title: '使用快速朗读组件',
+          description: '显示朗读快捷按钮与展开控制条',
+          isOn: this.useTtsQuickAction,
+          textColor: this.textColor,
+          subTextColor: this.subTextColor,
+          accentColor: this.accentColor,
+          dark: this.dark,
+          onChange: (enabled: boolean): void => {
+            this.onToggleTtsQuickAction(enabled);
+          }
+        })
+        if (this.useTtsQuickAction) {
+          ReaderLayoutElementToggle({
+            title: '朗读按钮靠左',
+            description: '把听书播放按钮放到屏幕左下角',
+            isOn: this.ttsQuickActionLeft,
+            textColor: this.textColor,
+            subTextColor: this.subTextColor,
+            accentColor: this.accentColor,
+            dark: this.dark,
+            onChange: (left: boolean): void => {
+              this.onToggleTtsQuickActionSide(left);
+            }
+          })
+        }
+        ReaderLayoutElementToggle({
+          title: '使用章节快速跳转组件',
+          description: '显示章节滑杆与上一章、下一章按钮',
+          isOn: this.useChapterQuickJump,
+          textColor: this.textColor,
+          subTextColor: this.subTextColor,
+          accentColor: this.accentColor,
+          dark: this.dark,
+          onChange: (enabled: boolean): void => {
+            this.onToggleChapterQuickJump(enabled);
+          }
+        })
+      }
+      .width(Math.max(1, Math.min(420, this.dialogWidth)))
+      .padding({ left: 20, right: 20, top: 18, bottom: 18 })
+      .borderRadius(ThemeRuntime.glassCornerRadius(24, 'overlay'))
+      .backgroundColor(this.panelColor)
+      .backdropBlur(ThemeRuntime.glassBlur('overlay', 24))
+      .border({ width: ThemeRuntime.glassBorderWidth('overlay'), color: this.glassBorderColor })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'), color: this.shadowColor,
+        offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
+      .onClick(() => {
+      })
+    }
+    .width('100%')
+    .height('100%')
   }
 }
