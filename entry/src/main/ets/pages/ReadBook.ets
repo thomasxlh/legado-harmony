@@ -86,6 +86,8 @@ import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModi
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ReaderBookmarkPullHint, ReaderComicPaginationPanel, ReaderLoadingPanel, ReaderSourceActionButton,
   ReaderTtsTimerControl } from '../components/ReaderStatusItems';
+import { ReaderComicBoundaryHintContent, ReaderCustomThemeDeleteConfirm,
+  ReaderEyeCalibrationSettingItem } from '../components/ReaderComicAndDialogItems';
 import {
   ReaderSelectSettingItem,
   ReaderTtsVoiceOption,
@@ -1945,12 +1947,30 @@ export struct ReadBookPage {
   readerComicBoundaryHint() {
     Column() {
       if (this.readerComicBoundaryDirection < 0) {
-        this.readerComicBoundaryHintContent()
+        ReaderComicBoundaryHintContent({
+        hintText: this.readerComicBoundaryHintText(),
+        accentColor: this.accentColor(),
+        textColor: this.getTextColor(),
+        dark: this.isReaderThemeDark(),
+        boundaryDirection: this.readerComicBoundaryDirection,
+        pullDistance: this.readerComicBoundaryPullDistance,
+        ready: this.readerComicBoundaryReady,
+        chapterSwitching: this.readerComicChapterSwitching
+      })
       }
       Blank()
         .layoutWeight(1)
       if (this.readerComicBoundaryDirection > 0) {
-        this.readerComicBoundaryHintContent()
+        ReaderComicBoundaryHintContent({
+        hintText: this.readerComicBoundaryHintText(),
+        accentColor: this.accentColor(),
+        textColor: this.getTextColor(),
+        dark: this.isReaderThemeDark(),
+        boundaryDirection: this.readerComicBoundaryDirection,
+        pullDistance: this.readerComicBoundaryPullDistance,
+        ready: this.readerComicBoundaryReady,
+        chapterSwitching: this.readerComicChapterSwitching
+      })
       }
     }
     .width('100%')
@@ -1962,36 +1982,6 @@ export struct ReadBookPage {
 
   readerComicBoundaryHintTopPadding(): number {
     return ReaderLoadCacheOps.readerComicBoundaryHintTopPadding(this);
-  }
-
-  @Builder
-  readerComicBoundaryHintContent() {
-    Row({ space: 8 }) {
-      if (this.readerComicChapterSwitching) {
-        LoadingProgress()
-          .width(18)
-          .height(18)
-          .color(this.accentColor())
-      } else {
-        SymbolGlyph(this.readerComicBoundaryDirection < 0 ?
-          $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_up'))
-          .fontSize(17)
-          .fontColor([this.readerComicBoundaryReady ? this.accentColor() : this.getTextColor()])
-      }
-      Text(this.readerComicBoundaryHintText())
-        .fontSize(13)
-        .fontWeight(this.readerComicBoundaryReady || this.readerComicChapterSwitching ? FontWeight.Medium :
-          FontWeight.Regular)
-        .fontColor(this.readerComicBoundaryReady || this.readerComicChapterSwitching ?
-          this.accentColor() : this.getTextColor())
-    }
-    .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-    .borderRadius(18)
-    .backgroundColor(this.isReaderThemeDark() ? '#E61B1D20' : '#E6FFFFFF')
-    .shadow({ radius: 10, color: this.isReaderThemeDark() ? '#66000000' : '#26000000', offsetY: 3 })
-    .opacity(this.readerComicChapterSwitching ? 1 :
-      Math.min(1, 0.35 + this.readerComicBoundaryPullDistance / 56))
-    .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
@@ -6903,7 +6893,16 @@ export struct ReadBookPage {
         }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
       if (this.readerEyeTurnEnabled) {
-        this.readerEyeTurnCalibrationSettingItem()
+        ReaderEyeCalibrationSettingItem({
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        autoCalibrated: this.arEngineFaceActive,
+        landscape: this.isReaderEyeLandscape(),
+        statusText: this.readerEyeTurnStatus,
+        calibrated: !!this.currentReaderEyeCalibrationRaw(),
+        onConfigure: (): void => this.openReaderEyeCalibration()
+      })
       }
 
       ReaderSelectSettingItem({
@@ -7556,37 +7555,6 @@ export struct ReadBookPage {
     .hitTestBehavior(HitTestMode.None)
   }
 
-  @Builder
-  readerEyeTurnCalibrationSettingItem() {
-    Row() {
-      Column() {
-        Text('眼动校准')
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-        Text(this.arEngineFaceActive ? 'AR 自动校准 · 无需手动校准' :
-          `${this.isReaderEyeLandscape() ? '横屏' : '竖屏'} · ${this.readerEyeTurnStatus}`)
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-          .margin({ top: 4 })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      if (!this.arEngineFaceActive) {
-        // AR Engine gaze needs no per-device calibration; only the camera fallback does.
-        Button(this.currentReaderEyeCalibrationRaw() ? '重新校准' : '开始校准')
-          .height(36)
-          .fontSize(13)
-          .fontColor('#FFFFFF')
-          .backgroundColor(this.accentColor())
-          .onClick((): void => this.openReaderEyeCalibration())
-      }
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .alignItems(VerticalAlign.Center)
-  }
-
   readerEyeTurnPromptVisible(): boolean {
     return ReaderSettingsOps.readerEyeTurnPromptVisible(this);
   }
@@ -7859,7 +7827,18 @@ export struct ReadBookPage {
   openReaderCustomThemeDeleteConfirm(): void {
     this.showReaderCustomThemeDeleteConfirm = true;
     this.readerCustomThemeDeleteDialogSession.open(this.getUIContext(), (): void => {
-      this.readerCustomThemeDeleteConfirmContent();
+      ReaderCustomThemeDeleteConfirm({
+          textColor: this.getTextColor(),
+          subTextColor: this.getSubTextColor(),
+          dangerColor: this.dangerColor(),
+          chipIdleColor: this.readerChipIdleColor(),
+          themeName: this.currentCustomThemeScheme().name,
+          onCancel: (): void => this.closeReaderCustomThemeDeleteConfirm(),
+          onDelete: (): void => {
+            this.closeReaderCustomThemeDeleteConfirm();
+            this.deleteCurrentCustomTheme();
+          }
+        });
     }, {
       autoCancel: false,
       maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
@@ -7869,47 +7848,6 @@ export struct ReadBookPage {
 
   closeReaderCustomThemeDeleteConfirm(): void {
     ReaderSettingsOps.closeReaderCustomThemeDeleteConfirm(this);
-  }
-
-  @Builder
-  readerCustomThemeDeleteConfirmContent() {
-    Column() {
-      Text('删除自定义主题')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.getTextColor())
-        .width('100%')
-        .textAlign(TextAlign.Center)
-        .margin({ bottom: 10 })
-      Text(`确定删除「${this.currentCustomThemeScheme().name}」吗？此操作无法撤销。`)
-        .fontSize(14)
-        .fontColor(this.getSubTextColor())
-        .width('100%')
-        .margin({ bottom: 16 })
-      Row({ space: 12 }) {
-        Button('取消')
-          .layoutWeight(1)
-          .height(42)
-          .fontSize(15)
-          .backgroundColor(this.readerChipIdleColor())
-          .fontColor(this.getTextColor())
-          .onClick(() => this.closeReaderCustomThemeDeleteConfirm())
-        Button('删除')
-          .layoutWeight(1)
-          .height(42)
-          .fontSize(15)
-          .backgroundColor(this.dangerColor())
-          .fontColor('#FFFFFF')
-          .onClick(() => {
-            this.closeReaderCustomThemeDeleteConfirm();
-            this.deleteCurrentCustomTheme();
-          })
-      }
-      .width('100%')
-    }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ maxWidth: 360 })
-    .padding({ left: 20, right: 20, top: 22, bottom: 20 })
   }
 
   deleteCurrentCustomTheme(): void {
