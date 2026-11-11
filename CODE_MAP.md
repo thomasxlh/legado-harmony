@@ -45,9 +45,9 @@
 | `reader/ReaderPageTurnOps.ets` | 128 | 2736 |
 | `reader/ReaderPaginationOps.ets` | 42 | 1176 |
 | `reader/ReaderSettingsOps.ets` | 98 | 1421 |
-| `reader/ReaderStyledTextOps.ets` | 135 | 2471 |
+| `reader/ReaderStyledTextOps.ets` | 135 | 2470 |
 | `reader/ReaderTextPrepOps.ets` | 50 | 653 |
-| `reader/ReaderTtsOrchestrationOps.ets` | 65 | 1262 |
+| `reader/ReaderTtsOrchestrationOps.ets` | 65 | 1261 |
 | **合计** | **941** | |
 
 ## 关键入口方法索引

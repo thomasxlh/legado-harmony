@@ -3577,7 +3577,7 @@ TtsGlobalCapsule({
   customThemeOptions(): SelectOption[] { return ReaderChromeThemeOps.customThemeOptions(this); }
   customThemeFitSelectedIndex(): number { return ReaderChromeThemeOps.customThemeFitSelectedIndex(this); }
   isReaderThemeDark(): boolean { return ReaderChromeThemeOps.isReaderThemeDark(this); }
-  isDarkHexColor(color: string): boolean { return ReaderChromeThemeOps.isDarkHexColor(this, color); }
+  isDarkHexColor(color: string): boolean { return ReaderChromeThemeOps.isDarkHexColor(this.appDarkMode, color); }
   getReaderFontFamily(): string { return ReaderChromeThemeOps.getReaderFontFamily(this); }
   getBodyReaderFontFamily(): string { return ReaderChromeThemeOps.getBodyReaderFontFamily(this); }
   getTitleReaderFontFamily(): string { return ReaderChromeThemeOps.getTitleReaderFontFamily(this); }
@@ -3708,11 +3708,11 @@ TtsGlobalCapsule({
   // light/dark material surface rather than directly on the page, so they need
   // a fixed high-contrast icon color instead of the theme's reader text color.
   readerControlIconColor(): string { return ReaderChromeThemeOps.readerControlIconColor(this); }
-  accentColor(): string { return ReaderChromeThemeOps.accentColor(this); }
-  buttonColor(): string { return ReaderChromeThemeOps.buttonColor(this); }
+  accentColor(): string { return ReaderChromeThemeOps.accentColor(this.appDarkMode); }
+  buttonColor(): string { return ReaderChromeThemeOps.buttonColor(this.appDarkMode); }
 
   /** 删除/错误等危险操作的语义色：跟随主题，浅色/深色分别取值。 */
-  dangerColor(): string { return ReaderChromeThemeOps.dangerColor(this); }
+  dangerColor(): string { return ReaderChromeThemeOps.dangerColor(this.appDarkMode); }
 
   /** 设置面板滚动条滑块颜色：深浅两套，收拢散落的硬编码对。 */
   readerPanelScrollBarColor(): string { return ReaderChromeThemeOps.readerPanelScrollBarColor(this); }
@@ -3721,7 +3721,7 @@ TtsGlobalCapsule({
   readerChipIdleColor(): string { return ReaderChromeThemeOps.readerChipIdleColor(this); }
 
   /** 自定义主题编辑器中输入框/选择器的底色（跟随系统深浅色，而非阅读主题）。 */
-  customThemeFieldColor(): string { return ReaderChromeThemeOps.customThemeFieldColor(this); }
+  customThemeFieldColor(): string { return ReaderChromeThemeOps.customThemeFieldColor(this.appDarkMode); }
   tocSelectedBackgroundColor(): string { return ReaderChromeThemeOps.tocSelectedBackgroundColor(this); }
   readerGlassPanelColor(): string { return ReaderChromeThemeOps.readerGlassPanelColor(this); }
   readerGlassBorderColor(): string { return ReaderChromeThemeOps.readerGlassBorderColor(this); }
@@ -4625,18 +4625,18 @@ TtsGlobalCapsule({
   async advanceTtsReadingToNextChapter(): Promise<boolean> { return ReaderTtsOrchestrationOps.advanceTtsReadingToNextChapter(this); }
   finishTtsReading(): void { ReaderTtsOrchestrationOps.finishTtsReading(this); }
   async loadReaderSettings(): Promise<void> { return ReaderTtsOrchestrationOps.loadReaderSettings(this); }
-  isTtsBackgroundRunning(): boolean { return ReaderTtsOrchestrationOps.isTtsBackgroundRunning(this); }
-  isTtsBackgroundRequesting(): boolean { return ReaderTtsOrchestrationOps.isTtsBackgroundRequesting(this); }
-  hasTtsAvSession(): boolean { return ReaderTtsOrchestrationOps.hasTtsAvSession(this); }
-  async startTtsBackgroundRunning(): Promise<boolean> { return ReaderTtsOrchestrationOps.startTtsBackgroundRunning(this); }
-  async stopTtsBackgroundRunning(): Promise<void> { return ReaderTtsOrchestrationOps.stopTtsBackgroundRunning(this); }
-  onTtsAudioStarted(): void { ReaderTtsOrchestrationOps.onTtsAudioStarted(this); }
-  async updateTtsAvSessionPlaybackState(state: avSession.PlaybackState): Promise<void> { return ReaderTtsOrchestrationOps.updateTtsAvSessionPlaybackState(this, state); }
-  async syncTtsSystemMediaControls(): Promise<void> { return ReaderTtsOrchestrationOps.syncTtsSystemMediaControls(this); }
-  ttsAvPlaybackState(): avSession.PlaybackState { return ReaderTtsOrchestrationOps.ttsAvPlaybackState(this); }
-  async refreshTtsMediaImage(): Promise<void> { return ReaderTtsOrchestrationOps.refreshTtsMediaImage(this); }
-  async playNextChapterFromMediaSession(): Promise<void> { return ReaderTtsOrchestrationOps.playNextChapterFromMediaSession(this); }
-  async playPreviousChapterFromMediaSession(): Promise<void> { return ReaderTtsOrchestrationOps.playPreviousChapterFromMediaSession(this); }
+  isTtsBackgroundRunning(): boolean { return ReaderTtsOrchestrationOps.isTtsBackgroundRunning(this.ttsBackgroundCtrl); }
+  isTtsBackgroundRequesting(): boolean { return ReaderTtsOrchestrationOps.isTtsBackgroundRequesting(this.ttsBackgroundCtrl); }
+  hasTtsAvSession(): boolean { return ReaderTtsOrchestrationOps.hasTtsAvSession(this.ttsBackgroundCtrl); }
+  async startTtsBackgroundRunning(): Promise<boolean> { return ReaderTtsOrchestrationOps.startTtsBackgroundRunning(this.ttsBackgroundCtrl); }
+  async stopTtsBackgroundRunning(): Promise<void> { return ReaderTtsOrchestrationOps.stopTtsBackgroundRunning(this.ttsBackgroundCtrl); }
+  onTtsAudioStarted(): void { ReaderTtsOrchestrationOps.onTtsAudioStarted(this.ttsBackgroundCtrl); }
+  async updateTtsAvSessionPlaybackState(state: avSession.PlaybackState): Promise<void> { return ReaderTtsOrchestrationOps.updateTtsAvSessionPlaybackState(this.ttsBackgroundCtrl, state); }
+  async syncTtsSystemMediaControls(): Promise<void> { return ReaderTtsOrchestrationOps.syncTtsSystemMediaControls(this.ttsBackgroundCtrl); }
+  ttsAvPlaybackState(): avSession.PlaybackState { return ReaderTtsOrchestrationOps.ttsAvPlaybackState(this.ttsBackgroundCtrl); }
+  async refreshTtsMediaImage(): Promise<void> { return ReaderTtsOrchestrationOps.refreshTtsMediaImage(this.ttsBackgroundCtrl); }
+  async playNextChapterFromMediaSession(): Promise<void> { return ReaderTtsOrchestrationOps.playNextChapterFromMediaSession(this.ttsBackgroundCtrl); }
+  async playPreviousChapterFromMediaSession(): Promise<void> { return ReaderTtsOrchestrationOps.playPreviousChapterFromMediaSession(this.ttsBackgroundCtrl); }
 
   // ---- ReaderTtsBackgroundHost 实现：供控制器读写的页面状态访问器 ----
 
@@ -5982,7 +5982,7 @@ TtsGlobalCapsule({
   shouldUseRegexStyle(text: string): boolean { return ReaderStyledTextOps.shouldUseRegexStyle(this, text); }
   hasRegexMatch(text: string): boolean { return ReaderStyledTextOps.hasRegexMatch(this, text); }
   getRegexRules(): ReaderRegexFontRule[] { return ReaderStyledTextOps.getRegexRules(this); }
-  themeRegexEmphasisColor(): string { return ReaderStyledTextOps.themeRegexEmphasisColor(this); }
+  themeRegexEmphasisColor(): string { return ReaderStyledTextOps.themeRegexEmphasisColor(this.appDarkMode); }
   readerRegexEmphasisContext(): ReaderRegexEmphasisContext { return ReaderStyledTextOps.readerRegexEmphasisContext(this); }
   resolvedRegexEmphasis(rule: ReaderRegexFontRule | null): ReaderResolvedRegexEmphasis { return ReaderStyledTextOps.resolvedRegexEmphasis(this, rule); }
   getRegexTextSlices(text: string): ReadTextSlice[] { return ReaderStyledTextOps.getRegexTextSlices(this, text); }

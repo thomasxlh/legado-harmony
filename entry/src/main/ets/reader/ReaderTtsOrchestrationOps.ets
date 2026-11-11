@@ -936,66 +936,65 @@ export async function loadReaderSettings(page: ReadBookPage): Promise<void> {
     }
 }
 
-export function isTtsBackgroundRunning(page: ReadBookPage): boolean {
-    return page.ttsBackgroundCtrl ? page.ttsBackgroundCtrl.isTtsBackgroundRunning() : false;
+export function isTtsBackgroundRunning(ctrl: ReaderTtsBackgroundController | null): boolean {
+    return ctrl ? ctrl.isTtsBackgroundRunning() : false;
 }
 
-export function isTtsBackgroundRequesting(page: ReadBookPage): boolean {
-    return page.ttsBackgroundCtrl ? page.ttsBackgroundCtrl.isTtsBackgroundRequesting() : false;
+export function isTtsBackgroundRequesting(ctrl: ReaderTtsBackgroundController | null): boolean {
+    return ctrl ? ctrl.isTtsBackgroundRequesting() : false;
 }
 
-export function hasTtsAvSession(page: ReadBookPage): boolean {
-    return page.ttsBackgroundCtrl ? page.ttsBackgroundCtrl.hasTtsAvSession() : false;
+export function hasTtsAvSession(ctrl: ReaderTtsBackgroundController | null): boolean {
+    return ctrl ? ctrl.hasTtsAvSession() : false;
 }
 
-export async function startTtsBackgroundRunning(page: ReadBookPage): Promise<boolean> {
-    return page.ttsBackgroundCtrl ? page.ttsBackgroundCtrl.startTtsBackgroundRunning() : false;
+export async function startTtsBackgroundRunning(ctrl: ReaderTtsBackgroundController | null): Promise<boolean> {
+    return ctrl ? ctrl.startTtsBackgroundRunning() : false;
 }
 
-export async function stopTtsBackgroundRunning(page: ReadBookPage): Promise<void> {
-    if (page.ttsBackgroundCtrl) {
-      await page.ttsBackgroundCtrl.stopTtsBackgroundRunning();
+export async function stopTtsBackgroundRunning(ctrl: ReaderTtsBackgroundController | null): Promise<void> {
+    if (ctrl) {
+      await ctrl.stopTtsBackgroundRunning();
     }
 }
 
-export function onTtsAudioStarted(page: ReadBookPage): void {
-    if (page.ttsBackgroundCtrl) {
-      page.ttsBackgroundCtrl.onTtsAudioStarted();
+export function onTtsAudioStarted(ctrl: ReaderTtsBackgroundController | null): void {
+    if (ctrl) {
+      ctrl.onTtsAudioStarted();
     }
 }
 
-export async function updateTtsAvSessionPlaybackState(page: ReadBookPage, state: avSession.PlaybackState): Promise<void> {
-    if (page.ttsBackgroundCtrl) {
-      await page.ttsBackgroundCtrl.updateTtsAvSessionPlaybackState(state);
+export async function updateTtsAvSessionPlaybackState(ctrl: ReaderTtsBackgroundController | null, state: avSession.PlaybackState): Promise<void> {
+    if (ctrl) {
+      await ctrl.updateTtsAvSessionPlaybackState(state);
     }
 }
 
-export async function syncTtsSystemMediaControls(page: ReadBookPage): Promise<void> {
-    if (page.ttsBackgroundCtrl) {
-      await page.ttsBackgroundCtrl.syncTtsSystemMediaControls();
+export async function syncTtsSystemMediaControls(ctrl: ReaderTtsBackgroundController | null): Promise<void> {
+    if (ctrl) {
+      await ctrl.syncTtsSystemMediaControls();
     }
 }
 
-export function ttsAvPlaybackState(page: ReadBookPage): avSession.PlaybackState {
-    return page.ttsBackgroundCtrl ?
-      page.ttsBackgroundCtrl.ttsAvPlaybackState() : avSession.PlaybackState.PLAYBACK_STATE_STOP;
+export function ttsAvPlaybackState(ctrl: ReaderTtsBackgroundController | null): avSession.PlaybackState {
+    return ctrl ? ctrl.ttsAvPlaybackState() : avSession.PlaybackState.PLAYBACK_STATE_STOP;
 }
 
-export async function refreshTtsMediaImage(page: ReadBookPage): Promise<void> {
-    if (page.ttsBackgroundCtrl) {
-      await page.ttsBackgroundCtrl.refreshTtsMediaImage();
+export async function refreshTtsMediaImage(ctrl: ReaderTtsBackgroundController | null): Promise<void> {
+    if (ctrl) {
+      await ctrl.refreshTtsMediaImage();
     }
 }
 
-export async function playNextChapterFromMediaSession(page: ReadBookPage): Promise<void> {
-    if (page.ttsBackgroundCtrl) {
-      await page.ttsBackgroundCtrl.playNextChapterFromMediaSession();
+export async function playNextChapterFromMediaSession(ctrl: ReaderTtsBackgroundController | null): Promise<void> {
+    if (ctrl) {
+      await ctrl.playNextChapterFromMediaSession();
     }
 }
 
-export async function playPreviousChapterFromMediaSession(page: ReadBookPage): Promise<void> {
-    if (page.ttsBackgroundCtrl) {
-      await page.ttsBackgroundCtrl.playPreviousChapterFromMediaSession();
+export async function playPreviousChapterFromMediaSession(ctrl: ReaderTtsBackgroundController | null): Promise<void> {
+    if (ctrl) {
+      await ctrl.playPreviousChapterFromMediaSession();
     }
 }
 

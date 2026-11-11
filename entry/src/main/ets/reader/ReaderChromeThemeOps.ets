@@ -1227,10 +1227,10 @@ export function isReaderThemeDark(page: ReadBookPage): boolean {
     return page.isDarkHexColor(page.getBackgroundColor());
 }
 
-export function isDarkHexColor(page: ReadBookPage, color: string): boolean {
+export function isDarkHexColor(dark: boolean, color: string): boolean {
     const normalized = (color || '').trim();
     if (!/^#[0-9a-fA-F]{6}$/.test(normalized)) {
-      return page.appDarkMode;
+      return dark;
     }
     const red = parseInt(normalized.substring(1, 3), 16);
     const green = parseInt(normalized.substring(3, 5), 16);
@@ -2589,16 +2589,16 @@ export function readerControlIconColor(page: ReadBookPage): string {
     return page.isReaderThemeDark() ? '#FFFFFFFF' : '#FF202124';
 }
 
-export function accentColor(page: ReadBookPage): string {
-    return ThemeRuntime.accentColor(page.appDarkMode);
+export function accentColor(dark: boolean): string {
+    return ThemeRuntime.accentColor(dark);
 }
 
-export function buttonColor(page: ReadBookPage): string {
-    return ThemeRuntime.buttonColor(page.appDarkMode);
+export function buttonColor(dark: boolean): string {
+    return ThemeRuntime.buttonColor(dark);
 }
 
-export function dangerColor(page: ReadBookPage): string {
-    return ThemeRuntime.dangerColor(page.appDarkMode);
+export function dangerColor(dark: boolean): string {
+    return ThemeRuntime.dangerColor(dark);
 }
 
 export function readerPanelScrollBarColor(page: ReadBookPage): string {
@@ -2609,8 +2609,8 @@ export function readerChipIdleColor(page: ReadBookPage): string {
     return page.isReaderThemeDark() ? '#24272D' : '#EEF0F3';
 }
 
-export function customThemeFieldColor(page: ReadBookPage): string {
-    return page.appDarkMode ? '#24FFFFFF' : '#12000000';
+export function customThemeFieldColor(dark: boolean): string {
+    return dark ? '#24FFFFFF' : '#12000000';
 }
 
 export function tocSelectedBackgroundColor(page: ReadBookPage): string {
