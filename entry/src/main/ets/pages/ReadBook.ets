@@ -148,7 +148,7 @@ import { ReaderComicBoundaryHint, ReaderComicInteractionLayer,
   ReaderCacheDialogContent } from '../components/ReaderComicAndCacheItems';
 import { ReaderFloatingDayNightMenuItem, ReaderHdsDayNightMenuItem, ReaderBookmarkSwipeCard,
   ReaderSimulationPaperBackground, ReaderParagraphGap, ReaderTapLayer } from '../components/ReaderPageFrameItems';
-import { ReaderV2TtsHighlightRect, ReaderV2SelectionHighlightRect } from '../components/ReaderV2HighlightRects';
+import { ReaderV2PageHighlightOverlay } from '../components/ReaderV2PageHighlightOverlay';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
 import { ReaderContentPreprocessor } from '../core/concurrency/ReaderContentPreprocessor';
 import { CooperativeScheduler } from '../core/concurrency/CooperativeScheduler';
@@ -9112,17 +9112,34 @@ TtsGlobalCapsule({
     Column() {
       if (this.isLandscapeDoublePageActive()) {
         Row() {
-          this.readerCurrentV2SelectionOverlayPage(this.currentPageIndex, paintVersion, true)
+          ReaderV2PageHighlightOverlay({
+            rects: this.readerV2SelectionHighlightRects(
+              this.currentChapterIndex, this.currentPageIndex, this.pagedContentText, paintVersion),
+            halfWidth: true,
+            columnWidth: this.getReaderPageColumnWidth(),
+            kind: 'selection'
+          })
           Blank()
             .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
             .height('100%')
-          this.readerCurrentV2SelectionOverlayPage(this.currentPageIndex + 1, paintVersion, true)
+          ReaderV2PageHighlightOverlay({
+            rects: this.readerV2SelectionHighlightRects(
+              this.currentChapterIndex, this.currentPageIndex + 1, this.pagedContentText, paintVersion),
+            halfWidth: true,
+            columnWidth: this.getReaderPageColumnWidth(),
+            kind: 'selection'
+          })
         }
         .width('100%')
         .height('100%')
         .alignItems(VerticalAlign.Center)
       } else {
-        this.readerCurrentV2SelectionOverlayPage(this.currentPageIndex, paintVersion)
+        ReaderV2PageHighlightOverlay({
+          rects: this.readerV2SelectionHighlightRects(
+            this.currentChapterIndex, this.currentPageIndex, this.pagedContentText, paintVersion),
+          columnWidth: this.getReaderPageColumnWidth(),
+          kind: 'selection'
+        })
       }
     }
     .width('100%')
@@ -9130,26 +9147,6 @@ TtsGlobalCapsule({
     .padding({ top: this.getReaderPageContentTopPadding() })
     .translate({ x: this.getCurrentPageTurnX(), y: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY })
     .opacity(this.getCurrentPageTurnOpacity())
-    .hitTestBehavior(HitTestMode.None)
-  }
-
-  @Builder
-  readerCurrentV2SelectionOverlayPage(pageIndex: number, paintVersion: number,
-    halfWidth: boolean = false) {
-    Stack({ alignContent: Alignment.TopStart }) {
-      ForEach(this.readerV2SelectionHighlightRects(
-        this.currentChapterIndex, pageIndex, this.pagedContentText, paintVersion),
-      (rect: ReaderV2HighlightRect) => {
-        ReaderV2SelectionHighlightRect({
-          rectLeftPx: rect.leftPx,
-          rectTopPx: rect.topPx,
-          rectWidthPx: rect.widthPx,
-          rectHeightPx: rect.heightPx
-        })
-      }, (rect: ReaderV2HighlightRect) => rect.key)
-    }
-    .width(halfWidth ? this.getReaderPageColumnWidth() : '100%')
-    .height('100%')
     .hitTestBehavior(HitTestMode.None)
   }
 
@@ -9158,17 +9155,34 @@ TtsGlobalCapsule({
     Column() {
       if (this.isLandscapeDoublePageActive()) {
         Row() {
-          this.readerCurrentV2TtsOverlayPage(this.currentPageIndex, paintVersion, true)
+          ReaderV2PageHighlightOverlay({
+            rects: this.readerV2TtsHighlightRects(
+              this.currentChapterIndex, this.currentPageIndex, this.pagedContentText, paintVersion),
+            halfWidth: true,
+            columnWidth: this.getReaderPageColumnWidth(),
+            kind: 'tts'
+          })
           Blank()
             .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
             .height('100%')
-          this.readerCurrentV2TtsOverlayPage(this.currentPageIndex + 1, paintVersion, true)
+          ReaderV2PageHighlightOverlay({
+            rects: this.readerV2TtsHighlightRects(
+              this.currentChapterIndex, this.currentPageIndex + 1, this.pagedContentText, paintVersion),
+            halfWidth: true,
+            columnWidth: this.getReaderPageColumnWidth(),
+            kind: 'tts'
+          })
         }
         .width('100%')
         .height('100%')
         .alignItems(VerticalAlign.Center)
       } else {
-        this.readerCurrentV2TtsOverlayPage(this.currentPageIndex, paintVersion)
+        ReaderV2PageHighlightOverlay({
+          rects: this.readerV2TtsHighlightRects(
+            this.currentChapterIndex, this.currentPageIndex, this.pagedContentText, paintVersion),
+          columnWidth: this.getReaderPageColumnWidth(),
+          kind: 'tts'
+        })
       }
     }
     .width('100%')
@@ -9176,25 +9190,6 @@ TtsGlobalCapsule({
     .padding({ top: this.getReaderPageContentTopPadding() })
     .translate({ x: this.getCurrentPageTurnX(), y: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY })
     .opacity(this.getCurrentPageTurnOpacity())
-    .hitTestBehavior(HitTestMode.None)
-  }
-
-  @Builder
-  readerCurrentV2TtsOverlayPage(pageIndex: number, paintVersion: number, halfWidth: boolean = false) {
-    Stack({ alignContent: Alignment.TopStart }) {
-      ForEach(this.readerV2TtsHighlightRects(
-        this.currentChapterIndex, pageIndex, this.pagedContentText, paintVersion),
-      (rect: ReaderV2HighlightRect) => {
-        ReaderV2TtsHighlightRect({
-          rectLeftPx: rect.leftPx,
-          rectTopPx: rect.topPx,
-          rectWidthPx: rect.widthPx,
-          rectHeightPx: rect.heightPx
-        })
-      }, (rect: ReaderV2HighlightRect) => rect.key)
-    }
-    .width(halfWidth ? this.getReaderPageColumnWidth() : '100%')
-    .height('100%')
     .hitTestBehavior(HitTestMode.None)
   }
 
