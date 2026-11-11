@@ -107,6 +107,7 @@ import { ReaderTtsExpandedControlsBar, ReaderTtsExpandedControlsCompat } from '.
 import { ReaderTocPanelSummary } from '../components/ReaderTocPanelSummary';
 import { ReaderSimulationHalfPaperBackground } from '../components/ReaderSimulationHalfPaperBackground';
 import { ReaderBookmarkActionMenu } from '../components/ReaderMenuItems';
+import { ReaderBookmarkList } from '../components/ReaderBookmarkList';
 import { ReaderTocChapterList } from '../components/ReaderTocChapterList';
 import { ReaderActionMenuItem, ReaderCommentPanelDragOverlay, ReaderFloatingIconMenuItem, ReaderHdsMenuItem, ReaderReplaceRulesEntryItem, ReaderActionMenuPanel } from '../components/ReaderMenuItems';
 import {
@@ -3234,7 +3235,37 @@ TtsGlobalCapsule({
               this.cancelBookmarkMultiSelect();
             }
           })
-          this.bookmarkList()
+          ReaderBookmarkList({
+            bookmarks: this.bookmarks,
+            selectedUrls: this.selectedBookmarkUrls,
+            multiSelectMode: this.bookmarkMultiSelectMode,
+            accentColor: this.accentColor(),
+            textColor: this.getTextColor(),
+            subTextColor: this.getSubTextColor(),
+            selectedBackgroundColor: this.tocSelectedBackgroundColor(),
+            dividerColor: this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000',
+            scrollBarColor: this.readerPanelScrollBarColor(),
+            scroller: this.bookmarkScroller,
+            swipeActionsOf: (bookmark: Bookmark): HdsSwipeActionOptions => this.bookmarkSwipeActions(bookmark),
+            onPrimaryAction: (bookmark: Bookmark): void => {
+              if (this.bookmarkMultiSelectMode) {
+                this.toggleBookmarkSelection(bookmark.bookmarkUrl);
+              } else {
+                this.jumpToBookmark(bookmark);
+              }
+            },
+            onLongPressAction: (bookmark: Bookmark, event: GestureEvent): void => {
+              if (!this.bookmarkMultiSelectMode) {
+                this.showBookmarkActions(bookmark, event);
+              }
+            },
+            onDeleteBookmark: (bookmark: Bookmark): void => {
+              this.deleteBookmark(bookmark);
+            },
+            onEnterMultiSelect: (bookmarkUrl: string): void => {
+              this.enterBookmarkMultiSelect(bookmarkUrl);
+            }
+          })
         }
       }
       .width(this.readerFloatingBarWidth())
@@ -3319,95 +3350,6 @@ TtsGlobalCapsule({
     .height('100%')
   }
 
-  @Builder
-  bookmarkList() {
-    if (this.bookmarks.length === 0) {
-      Column({ space: 12 }) {
-        SymbolGlyph($r('sys.symbol.bookmark'))
-          .fontSize(34)
-          .fontColor([this.getSubTextColor()])
-        Text('暂无书签')
-          .fontSize(15)
-          .fontColor(this.getSubTextColor())
-        Text('可使用底栏最右侧按钮添加当前阅读位置')
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-      }
-      .layoutWeight(1)
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
-    } else {
-      List({ space: 0, scroller: this.bookmarkScroller }) {
-        ForEach(this.bookmarks, (bookmark: Bookmark) => {
-          if (deviceInfo.sdkApiVersion >= 26) {
-            // API 26+ uses one left-swipe action panel. Keep multi-select and
-            // delete together instead of exposing multi-select on right swipe.
-            HdsListItem({
-              customItemBuilder: () => {
-                ReaderBookmarkSwipeCard({
-                  bookmark: bookmark,
-                  selected: this.isBookmarkSelected(bookmark.bookmarkUrl),
-                  accentColor: this.accentColor(),
-                  textColor: this.getTextColor(),
-                  subTextColor: this.getSubTextColor(),
-                  selectedBackgroundColor: this.tocSelectedBackgroundColor(),
-                  dividerColor: this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000',
-                  onPrimaryAction: (): void => {
-                    if (this.bookmarkMultiSelectMode) this.toggleBookmarkSelection(bookmark.bookmarkUrl);
-                    else this.jumpToBookmark(bookmark);
-                  },
-                  onLongPressAction: (event: GestureEvent): void => {
-                    if (!this.bookmarkMultiSelectMode) this.showBookmarkActions(bookmark, event);
-                  }
-                })
-              },
-              swipeActionOptions: this.bookmarkSwipeActions(bookmark)
-            })
-          } else {
-            // Older systems use the native ListItem fallback with the same
-            // two-button left-swipe action panel.
-            ListItem() {
-              ReaderBookmarkSwipeCard({
-                bookmark: bookmark,
-                selected: this.isBookmarkSelected(bookmark.bookmarkUrl),
-                accentColor: this.accentColor(),
-                textColor: this.getTextColor(),
-                subTextColor: this.getSubTextColor(),
-                selectedBackgroundColor: this.tocSelectedBackgroundColor(),
-                dividerColor: this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000',
-                onPrimaryAction: (): void => {
-                  if (this.bookmarkMultiSelectMode) this.toggleBookmarkSelection(bookmark.bookmarkUrl);
-                  else this.jumpToBookmark(bookmark);
-                },
-                onLongPressAction: (event: GestureEvent): void => {
-                  if (!this.bookmarkMultiSelectMode) this.showBookmarkActions(bookmark, event);
-                }
-              })
-            }
-            .width('100%')
-            .clip(true)
-            .swipeAction({
-              end: {
-                builder: () => {
-                  this.bookmarkFallbackSwipeActions(bookmark)
-                },
-                actionAreaDistance: 128,
-                onAction: () => this.deleteBookmark(bookmark)
-              },
-              edgeEffect: SwipeEdgeEffect.Spring
-            })
-          }
-        }, (bookmark: Bookmark) => `${bookmark.bookmarkUrl}`)
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .layoutWeight(1)
-      .width('100%')
-      .clip(true)
-      .scrollBar(BarState.Auto)
-      .scrollBarColor(this.readerPanelScrollBarColor())
-    }
-  }
 
   bookmarkSwipeActions(bookmark: Bookmark): HdsSwipeActionOptions { return ReaderMenuBuildOps.bookmarkSwipeActions(this, bookmark); }
 
@@ -5381,23 +5323,6 @@ TtsGlobalCapsule({
     .opacity(this.getCurrentPageTurnOpacity())
   }
 
-  @Builder
-  bookmarkFallbackSwipeActions(bookmark: Bookmark) {
-    Row() {
-      ReaderBookmarkMultiSelectAction({
-        accent: this.accentColor(),
-        onClickAction: (): void => {
-          this.enterBookmarkMultiSelect(bookmark.bookmarkUrl);
-        }
-      })
-      ReaderBookmarkDeleteAction({
-        onClickAction: (): void => {
-          this.deleteBookmark(bookmark);
-        }
-      })
-    }
-    .height('100%')
-  }
 
   @Builder
   readerIncomingPageSurface(renderVersion: number, text: string, controllerRole: string = 'incoming') {
