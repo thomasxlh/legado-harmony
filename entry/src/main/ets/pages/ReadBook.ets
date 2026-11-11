@@ -103,6 +103,7 @@ import {
   ReaderTypographySettingsPanel,
 } from '../components/ReaderSettingsRows';
 import { ReaderCommentPanel } from '../components/ReaderCommentPanel';
+import { ReaderTtsExpandedControlsCompat } from '../components/ReaderTtsExpandedControls';
 import { ReaderActionMenuItem, ReaderCommentPanelDragOverlay, ReaderFloatingIconMenuItem, ReaderHdsMenuItem, ReaderReplaceRulesEntryItem, ReaderActionMenuPanel } from '../components/ReaderMenuItems';
 import {
   ReaderCurrentPageBookmarkMarker,
@@ -2531,7 +2532,26 @@ export struct ReadBookPage {
               this.ttsExpandedMediaControlsBar()
             }
           } else {
-            this.ttsExpandedMediaControlsCompat()
+            ReaderTtsExpandedControlsCompat({
+              timerMinutes: this.ttsSleepTimerMinutes,
+              remainingSeconds: this.ttsSleepTimerRemainingSeconds,
+              speaking: this.isTtsSpeaking,
+              paused: this.isTtsPaused,
+              canPlayPrevious: this.canPlayPreviousTtsChapter(),
+              canPlayNext: this.canPlayNextTtsChapter(),
+              speedText: `${this.ttsSpeed.toFixed(1)}x`,
+              textColor: this.getTextColor(),
+              subTextColor: this.getSubTextColor(),
+              accentColor: this.accentColor(),
+              panelColor: this.readerGlassPanelColor(),
+              glassBorderColor: this.readerGlassBorderColor(),
+              glassShadowColor: this.readerGlassShadowColor(),
+              controlLeft: this.readerTtsExpandedControlLeft(),
+              overlayOffset: this.readerBottomMenuOverlayHeight() + 66,
+              onControl: (index: number): void => {
+                this.handleTtsExpandedControl(index);
+              }
+            })
           }
         }
       }
@@ -5530,63 +5550,6 @@ TtsGlobalCapsule({
     .translate({
       y: -(this.readerBottomMenuOverlayHeight() + 66)
     })
-  }
-
-  @Builder
-  ttsExpandedMediaControlsCompat() {
-    Row() {
-      Stack() {
-        ReaderTtsTimerControl({
-              timerMinutes: this.ttsSleepTimerMinutes,
-              remainingSeconds: this.ttsSleepTimerRemainingSeconds,
-              textColor: this.getTextColor(),
-              accentColor: this.accentColor()
-            })
-      }
-      .layoutWeight(1)
-      .onClick(() => this.handleTtsExpandedControl(0))
-
-      Stack() {
-        ReaderTtsMediaSymbolControl({ icon: $r('sys.symbol.arrow_left'), controlEnabled: this.canPlayPreviousTtsChapter(), accessibilityLabel: '上一章', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() })
-      }
-      .layoutWeight(1)
-      .onClick(() => this.handleTtsExpandedControl(1))
-
-      Stack() {
-        ReaderTtsMediaSymbolControl({ icon: this.isTtsSpeaking && !this.isTtsPaused ?
-          $r('sys.symbol.pause') : $r('sys.symbol.play'), controlEnabled: true, accessibilityLabel: this.isTtsSpeaking && !this.isTtsPaused ? '暂停朗读' : '播放朗读', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() })
-      }
-      .layoutWeight(1)
-      .onClick(() => this.handleTtsExpandedControl(2))
-
-      Stack() {
-        ReaderTtsMediaSymbolControl({ icon: $r('sys.symbol.arrow_right'), controlEnabled: this.canPlayNextTtsChapter(), accessibilityLabel: '下一章', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() })
-      }
-      .layoutWeight(1)
-      .onClick(() => this.handleTtsExpandedControl(3))
-
-      Stack() {
-        ReaderTtsMediaSpeedControl({ speedText: `${this.ttsSpeed.toFixed(1)}x`, textColor: this.getTextColor() })
-      }
-      .layoutWeight(1)
-      .onClick(() => this.handleTtsExpandedControl(4))
-
-      Stack() {
-        ReaderTtsMediaSymbolControl({ icon: $r('sys.symbol.xmark'), controlEnabled: true, accessibilityLabel: '关闭朗读控制', textColor: this.getTextColor(), subTextColor: this.getSubTextColor() })
-      }
-      .layoutWeight(1)
-      .onClick(() => this.handleTtsExpandedControl(5))
-    }
-    .width(LeafFns.readerTtsExpandedControlWidth())
-    .height(56)
-    .padding({ left: 4, right: 4 })
-    .position({ x: this.readerTtsExpandedControlLeft(), y: '100%' })
-    .translate({ y: -(this.readerBottomMenuOverlayHeight() + 66) })
-    .borderRadius(28)
-    .backgroundColor(this.readerGlassPanelColor())
-    .backdropBlur(22)
-    .border({ width: 1, color: this.readerGlassBorderColor() })
-    .shadow({ radius: 10, color: this.readerGlassShadowColor(), offsetX: 0, offsetY: 3 })
   }
 
 
