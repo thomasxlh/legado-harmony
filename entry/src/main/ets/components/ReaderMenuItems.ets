@@ -6,6 +6,7 @@
  * 组件内部不持有 page 引用。
  */
 import * as LeafFns from '../reader/ReaderLeafFns';
+import { ThemeRuntime } from '../theme/ThemeRuntime';
 
 @Component
 export struct ReaderHdsMenuItem {
@@ -183,5 +184,236 @@ export struct ReaderCommentPanelDragOverlay {
       .onTouch((event: TouchEvent) => {
         this.onDragTouch(event);
       })
+  }
+}
+
+
+/**
+ * 「更多操作」悬浮菜单面板：12 个菜单项，全部状态值化后由页面传入。
+ * 原为 ReadBook.ets 的 @Builder readerActionMenu()，抽出后按 P1 约定不持有 page 引用。
+ */
+@Component
+export struct ReaderActionMenuPanel {
+  @Prop bookmarkLabel: string = '添加书签';
+  @Prop firstDivider: boolean = true;
+  @Prop showCacheItem: boolean = false;
+  @Prop ttsIcon: Resource = $r('sys.symbol.play');
+  @Prop ttsLabel: string = '开始朗读';
+  @Prop comicMode: boolean = false;
+  @Prop sourceNeedsLogin: boolean = false;
+  @Prop canRetry: boolean = false;
+  @Prop canSelectTxtCharset: boolean = false;
+  @Prop txtCharsetLabel: string = '';
+  @Prop textColor: ResourceColor = '#18191C';
+  @Prop dividerColor: ResourceColor = '#E5E5E5';
+  @Prop panelColor: ResourceColor = '#F2FFFFFF';
+  @Prop glassBorderColor: ResourceColor = '#33FFFFFF';
+  @Prop shadowColor: ResourceColor = '#22000000';
+  @Prop topOffset: number = 0;
+  onToggleBookmark: () => void = (): void => {
+  };
+  onOpenCache: () => void = (): void => {
+  };
+  onToggleTts: () => void = (): void => {
+  };
+  onOpenLogin: () => void = (): void => {
+  };
+  onRetry: () => void = (): void => {
+  };
+  onOpenSettings: () => void = (): void => {
+  };
+  onOpenTtsSettings: () => void = (): void => {
+  };
+  onOpenTxtCharset: () => void = (): void => {
+  };
+  onToggleComic: () => void = (): void => {
+  };
+  onOpenLayoutElement: () => void = (): void => {
+  };
+  onOpenReplaceRules: () => void = (): void => {
+  };
+  onDismiss: () => void = (): void => {
+  };
+
+  build() {
+    Column() {
+      ReaderActionMenuItem({
+        icon: $r('sys.symbol.bookmark'),
+        label: this.bookmarkLabel,
+        textColor: this.textColor,
+        dividerColor: this.dividerColor,
+        menuEnabled: true,
+        showDivider: this.firstDivider,
+        onMenuClick: (): void => {
+          this.onToggleBookmark();
+        },
+        dismissMenu: (): void => {
+          this.onDismiss();
+        },
+      })
+      if (this.showCacheItem) {
+        ReaderActionMenuItem({
+          icon: $r('sys.symbol.download'),
+          label: '缓存',
+          textColor: this.textColor,
+          dividerColor: this.dividerColor,
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: (): void => {
+            this.onOpenCache();
+          },
+          dismissMenu: (): void => {
+            this.onDismiss();
+          },
+        })
+      }
+      if (!this.comicMode) {
+        ReaderActionMenuItem({
+          icon: this.ttsIcon,
+          label: this.ttsLabel,
+          textColor: this.textColor,
+          dividerColor: this.dividerColor,
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: (): void => {
+            this.onToggleTts();
+          },
+          dismissMenu: (): void => {
+            this.onDismiss();
+          },
+        })
+      }
+      if (this.sourceNeedsLogin) {
+        ReaderActionMenuItem({
+          icon: $r('sys.symbol.checkmark_shield'),
+          label: '登录',
+          textColor: this.textColor,
+          dividerColor: this.dividerColor,
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: (): void => {
+            this.onOpenLogin();
+          },
+          dismissMenu: (): void => {
+            this.onDismiss();
+          },
+        })
+      }
+      if (this.canRetry) {
+        ReaderActionMenuItem({
+          icon: $r('sys.symbol.exclamationmark_circle'),
+          label: '重试',
+          textColor: this.textColor,
+          dividerColor: this.dividerColor,
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: (): void => {
+            this.onRetry();
+          },
+          dismissMenu: (): void => {
+            this.onDismiss();
+          },
+        })
+      }
+      if (!this.comicMode) {
+        ReaderActionMenuItem({
+          icon: $r('sys.symbol.gearshape'),
+          label: '阅读设置',
+          textColor: this.textColor,
+          dividerColor: this.dividerColor,
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: (): void => {
+            this.onOpenSettings();
+          },
+          dismissMenu: (): void => {
+            this.onDismiss();
+          },
+        })
+        ReaderActionMenuItem({
+          icon: $r('sys.symbol.speaker_wave_3'),
+          label: '朗读设置',
+          textColor: this.textColor,
+          dividerColor: this.dividerColor,
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: (): void => {
+            this.onOpenTtsSettings();
+          },
+          dismissMenu: (): void => {
+            this.onDismiss();
+          },
+        })
+      }
+      if (this.canSelectTxtCharset) {
+        ReaderActionMenuItem({
+          icon: $r('sys.symbol.textformat'),
+          label: `字符编码 · ${this.txtCharsetLabel}`,
+          textColor: this.textColor,
+          dividerColor: this.dividerColor,
+          menuEnabled: true,
+          showDivider: true,
+          onMenuClick: (): void => {
+            this.onOpenTxtCharset();
+          },
+          dismissMenu: (): void => {
+            this.onDismiss();
+          },
+        })
+      }
+      ReaderActionMenuItem({
+        icon: this.comicMode ? $r('sys.symbol.book') : $r('sys.symbol.rectangle_3_group'),
+        label: this.comicMode ? '切换为普通阅读' : '切换为漫画阅读',
+        textColor: this.textColor,
+        dividerColor: this.dividerColor,
+        menuEnabled: true,
+        showDivider: true,
+        onMenuClick: (): void => {
+          this.onToggleComic();
+        },
+        dismissMenu: (): void => {
+          this.onDismiss();
+        },
+      })
+      ReaderActionMenuItem({
+        icon: $r('sys.symbol.square_grid_2x2'),
+        label: '布局元素设置',
+        textColor: this.textColor,
+        dividerColor: this.dividerColor,
+        menuEnabled: true,
+        showDivider: true,
+        onMenuClick: (): void => {
+          this.onOpenLayoutElement();
+        },
+        dismissMenu: (): void => {
+          this.onDismiss();
+        },
+      })
+      ReaderActionMenuItem({
+        icon: $r('sys.symbol.arrow_left_arrow_right'),
+        label: '替换净化配置',
+        textColor: this.textColor,
+        dividerColor: this.dividerColor,
+        menuEnabled: true,
+        showDivider: false,
+        onMenuClick: (): void => {
+          this.onOpenReplaceRules();
+        },
+        dismissMenu: (): void => {
+          this.onDismiss();
+        },
+      })
+    }
+    .width(220)
+    .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+    .backgroundColor(this.panelColor)
+    .borderRadius(ThemeRuntime.glassCornerRadius(22, 'panel'))
+    .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+    .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.glassBorderColor })
+    .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.shadowColor, offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
+    .position({ x: '100%', y: 0 })
+    .translate({ x: -232, y: this.topOffset })
+    .onClick(() => {
+    })
   }
 }

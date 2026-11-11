@@ -99,13 +99,7 @@ import {
   ReaderTxtCharsetDialogContent,
   ReaderSystemTtsVoiceOption,
 } from '../components/ReaderSettingsRows';
-import {
-  ReaderActionMenuItem,
-  ReaderCommentPanelDragOverlay,
-  ReaderFloatingIconMenuItem,
-  ReaderHdsMenuItem,
-  ReaderReplaceRulesEntryItem
-} from '../components/ReaderMenuItems';
+import { ReaderActionMenuItem, ReaderCommentPanelDragOverlay, ReaderFloatingIconMenuItem, ReaderHdsMenuItem, ReaderReplaceRulesEntryItem, ReaderActionMenuPanel } from '../components/ReaderMenuItems';
 import {
   ReaderCurrentPageBookmarkMarker,
   ReaderEyeTurnPrompt,
@@ -2366,7 +2360,60 @@ export struct ReadBookPage {
       }
 
       if (this.showMenu && this.showReaderActionMenu && !this.showToc && !this.showSettings) {
-        this.readerActionMenu()
+        ReaderActionMenuPanel({
+          bookmarkLabel: this.isCurrentPageBookmarked() ? '删除书签' : '添加书签',
+          firstDivider: this.readerSourceNeedsLogin() || this.readerCanRetry() || !this.isReaderComicModeActive(),
+          showCacheItem: this.book !== null && !LocalBookService.isLocalBook(this.book),
+          ttsIcon: this.isTtsSpeaking && !this.isTtsPaused ? $r('sys.symbol.pause') : $r('sys.symbol.play'),
+          ttsLabel: this.isTtsSpeaking ? (this.isTtsPaused ? '继续朗读' : '暂停朗读') : '开始朗读',
+          comicMode: this.isReaderComicModeActive(),
+          sourceNeedsLogin: this.readerSourceNeedsLogin(),
+          canRetry: this.readerCanRetry(),
+          canSelectTxtCharset: this.canSelectTxtCharset(),
+          txtCharsetLabel: this.txtCharsetMenuLabel(),
+          textColor: this.getTextColor(),
+          dividerColor: this.readerGlassBorderColor(),
+          panelColor: this.readerGlassPanelColor(),
+          glassBorderColor: this.readerGlassBorderColor(),
+          shadowColor: this.readerGlassShadowColor(),
+          topOffset: this.getTopControlSafePadding() + 72,
+          onToggleBookmark: (): void => {
+            this.toggleCurrentPageBookmark();
+          },
+          onOpenCache: (): void => {
+            this.openReaderCacheDialog();
+          },
+          onToggleTts: (): void => {
+            this.toggleTtsReading();
+          },
+          onOpenLogin: (): void => {
+            this.openReaderSourceLogin();
+          },
+          onRetry: (): void => {
+            this.retryReaderContent();
+          },
+          onOpenSettings: (): void => {
+            this.openSettingsPanel();
+          },
+          onOpenTtsSettings: (): void => {
+            this.openTtsSettingsPanel();
+          },
+          onOpenTxtCharset: (): void => {
+            this.openTxtCharsetDialog();
+          },
+          onToggleComic: (): void => {
+            this.toggleReaderComicReadingMode();
+          },
+          onOpenLayoutElement: (): void => {
+            this.openLayoutElementSettings();
+          },
+          onOpenReplaceRules: (): void => {
+            this.openCurrentReaderReplaceRules();
+          },
+          onDismiss: (): void => {
+            this.showReaderActionMenu = false;
+          },
+        })
       }
 
 
@@ -3628,145 +3675,6 @@ TtsGlobalCapsule({
       .scrollBar(BarState.Auto)
       .scrollBarColor(this.readerPanelScrollBarColor())
     }
-  }
-
-  @Builder
-  readerActionMenu() {
-    Column() {
-      ReaderActionMenuItem({
-        icon: $r('sys.symbol.bookmark'),
-        label: this.isCurrentPageBookmarked() ? '删除书签' : '添加书签',
-        textColor: this.getTextColor(),
-        dividerColor: this.readerGlassBorderColor(),
-        menuEnabled: true,
-        showDivider: this.readerSourceNeedsLogin() || this.readerCanRetry() || !this.isReaderComicModeActive(),
-        onMenuClick: () => this.toggleCurrentPageBookmark(),
-        dismissMenu: (): void => { this.showReaderActionMenu = false; },
-      })
-      if (this.book && !LocalBookService.isLocalBook(this.book)) {
-        ReaderActionMenuItem({
-          icon: $r('sys.symbol.download'),
-          label: '缓存',
-          textColor: this.getTextColor(),
-          dividerColor: this.readerGlassBorderColor(),
-          menuEnabled: true,
-          showDivider: true,
-          onMenuClick: () => this.openReaderCacheDialog(),
-          dismissMenu: (): void => { this.showReaderActionMenu = false; },
-        })
-      }
-      if (!this.isReaderComicModeActive()) {
-        ReaderActionMenuItem({
-          icon: this.isTtsSpeaking && !this.isTtsPaused ? $r('sys.symbol.pause') : $r('sys.symbol.play'),
-          label: this.isTtsSpeaking ? (this.isTtsPaused ? '继续朗读' : '暂停朗读') : '开始朗读',
-          textColor: this.getTextColor(),
-          dividerColor: this.readerGlassBorderColor(),
-          menuEnabled: true,
-          showDivider: true,
-          onMenuClick: () => this.toggleTtsReading(),
-          dismissMenu: (): void => { this.showReaderActionMenu = false; },
-        })
-      }
-      if (this.readerSourceNeedsLogin()) {
-        ReaderActionMenuItem({
-          icon: $r('sys.symbol.checkmark_shield'),
-          label: '登录',
-          textColor: this.getTextColor(),
-          dividerColor: this.readerGlassBorderColor(),
-          menuEnabled: true,
-          showDivider: true,
-          onMenuClick: () => this.openReaderSourceLogin(),
-          dismissMenu: (): void => { this.showReaderActionMenu = false; },
-        })
-      }
-      if (this.readerCanRetry()) {
-        ReaderActionMenuItem({
-          icon: $r('sys.symbol.exclamationmark_circle'),
-          label: '重试',
-          textColor: this.getTextColor(),
-          dividerColor: this.readerGlassBorderColor(),
-          menuEnabled: true,
-          showDivider: true,
-          onMenuClick: () => this.retryReaderContent(),
-          dismissMenu: (): void => { this.showReaderActionMenu = false; },
-        })
-      }
-      if (!this.isReaderComicModeActive()) {
-        ReaderActionMenuItem({
-          icon: $r('sys.symbol.gearshape'),
-          label: '阅读设置',
-          textColor: this.getTextColor(),
-          dividerColor: this.readerGlassBorderColor(),
-          menuEnabled: true,
-          showDivider: true,
-          onMenuClick: () => this.openSettingsPanel(),
-          dismissMenu: (): void => { this.showReaderActionMenu = false; },
-        })
-        ReaderActionMenuItem({
-          icon: $r('sys.symbol.speaker_wave_3'),
-          label: '朗读设置',
-          textColor: this.getTextColor(),
-          dividerColor: this.readerGlassBorderColor(),
-          menuEnabled: true,
-          showDivider: true,
-          onMenuClick: () => this.openTtsSettingsPanel(),
-          dismissMenu: (): void => { this.showReaderActionMenu = false; },
-        })
-      }
-      if (this.canSelectTxtCharset()) {
-        ReaderActionMenuItem({
-          icon: $r('sys.symbol.textformat'),
-          label: `字符编码 · ${this.txtCharsetMenuLabel()}`,
-          textColor: this.getTextColor(),
-          dividerColor: this.readerGlassBorderColor(),
-          menuEnabled: true,
-          showDivider: true,
-          onMenuClick: () => this.openTxtCharsetDialog(),
-          dismissMenu: (): void => { this.showReaderActionMenu = false; },
-        })
-      }
-      ReaderActionMenuItem({
-        icon: this.isReaderComicModeActive() ? $r('sys.symbol.book') : $r('sys.symbol.rectangle_3_group'),
-        label: this.isReaderComicModeActive() ? '切换为普通阅读' : '切换为漫画阅读',
-        textColor: this.getTextColor(),
-        dividerColor: this.readerGlassBorderColor(),
-        menuEnabled: true,
-        showDivider: true,
-        onMenuClick: () => this.toggleReaderComicReadingMode(),
-        dismissMenu: (): void => { this.showReaderActionMenu = false; },
-      })
-      ReaderActionMenuItem({
-        icon: $r('sys.symbol.square_grid_2x2'),
-        label: '布局元素设置',
-        textColor: this.getTextColor(),
-        dividerColor: this.readerGlassBorderColor(),
-        menuEnabled: true,
-        showDivider: true,
-        onMenuClick: () => this.openLayoutElementSettings(),
-        dismissMenu: (): void => { this.showReaderActionMenu = false; },
-      })
-      ReaderActionMenuItem({
-        icon: $r('sys.symbol.arrow_left_arrow_right'),
-        label: '替换净化配置',
-        textColor: this.getTextColor(),
-        dividerColor: this.readerGlassBorderColor(),
-        menuEnabled: true,
-        showDivider: false,
-        onMenuClick: () => this.openCurrentReaderReplaceRules(),
-        dismissMenu: (): void => { this.showReaderActionMenu = false; },
-      })
-    }
-    .width(220)
-    .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-    .backgroundColor(this.readerGlassPanelColor())
-    .borderRadius(ThemeRuntime.glassCornerRadius(22, 'panel'))
-    .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
-    .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
-    .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.readerGlassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-    .position({ x: '100%', y: 0 })
-    .translate({ x: -232, y: this.getTopControlSafePadding() + 72 })
-    .onClick(() => {
-    })
   }
 
   bookmarkSwipeActions(bookmark: Bookmark): HdsSwipeActionOptions {
