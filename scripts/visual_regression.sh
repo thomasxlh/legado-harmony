@@ -21,7 +21,14 @@ HDC="${HDC:-${HDC_HOME:-/c/sandbox/DevEco Studio/sdk/default/openharmony/toolcha
 BUNDLE="${BUNDLE:-legado.intrimple.com}"
 TARGET="${HDC_TARGET:-}"
 WORKSPACE="${WORKSPACE:-$(cd "$(dirname "$0")/.." && pwd)}"
-PYTHON="${PYTHON:-python3}"
+# 默认解释器：优先 `python3`，Windows 上通常只有 `python`（uv/py 装的 3.12）。
+if [ -z "${PYTHON:-}" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON=python3
+  else
+    PYTHON=python
+  fi
+fi
 DEVICE_DIR="/data/local/tmp"
 STATE_JSON="$WORKSPACE/scripts/_vr_state.json"
 TEXT_PY="$WORKSPACE/scripts/device_screen_text.py"

@@ -85,6 +85,14 @@ import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { SelectMenuMaterialModifier } from '../components/SelectMenuMaterialModifier';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import {
+  ReaderCurrentPageBookmarkMarker,
+  ReaderEyeTurnPrompt,
+  ReaderHeaderInfoBar,
+  ReaderSliderStepButton,
+  ReaderTtsSleepTimerChip,
+  ReaderTtsSpeedChip
+} from '../components/ReaderOverlayItems';
+import {
   ReaderTtsMediaSymbolControl,
   ReaderTtsMediaSpeedControl,
   ReaderTtsVoiceSectionTitle,
@@ -1926,7 +1934,12 @@ export struct ReadBookPage {
 
       Column() {
         if (this.readerHeaderEnabled && !!this.getReaderHeaderInfoText() && !this.isReaderComicModeActive()) {
-          this.readerHeaderInfoBar()
+          ReaderHeaderInfoBar({
+        infoText: this.getReaderHeaderInfoText(),
+        subTextColor: this.getSubTextColor(),
+        barHeight: LeafFns.getReaderHeaderInfoBarHeight() + this.getReaderHeaderOverlayTopInset(),
+        topInset: this.getReaderHeaderOverlayTopInset()
+      })
         }
         Blank()
           .layoutWeight(1)
@@ -2213,7 +2226,12 @@ export struct ReadBookPage {
             }
             Column() {
               if (this.readerHeaderEnabled && !!this.getReaderHeaderInfoText()) {
-                this.readerHeaderInfoBar()
+                ReaderHeaderInfoBar({
+        infoText: this.getReaderHeaderInfoText(),
+        subTextColor: this.getSubTextColor(),
+        barHeight: LeafFns.getReaderHeaderInfoBarHeight() + this.getReaderHeaderOverlayTopInset(),
+        topInset: this.getReaderHeaderOverlayTopInset()
+      })
               }
               Blank()
                 .layoutWeight(1)
@@ -2266,7 +2284,10 @@ export struct ReadBookPage {
       }
 
       if (this.isCurrentPageBookmarked() && !this.showMenu && !this.showToc && !this.showSettings) {
-        this.readerCurrentPageBookmarkMarker()
+        ReaderCurrentPageBookmarkMarker({
+        accentColor: this.accentColor(),
+        translateY: this.readerBookmarkMarkerTopOffset() + this.bookmarkPullOffsetY
+      })
       }
 
       if (this.autoPageTurnActive && this.readerInitialPageReady && !this.showMenu && !this.showToc &&
@@ -2401,7 +2422,10 @@ export struct ReadBookPage {
 
       if (this.readerEyeTurnEnabled && this.readerInitialPageReady && !this.showReaderEyeCalibration &&
         !this.showMenu && !this.showToc && !this.showReaderCommentPanel) {
-        this.readerEyeTurnPrompt()
+        ReaderEyeTurnPrompt({
+        visible: this.readerEyeTurnPromptVisible(),
+        promptTop: this.readerEyeTurnPromptTop()
+      })
       }
 
       if (this.showReaderEyeCalibration) {
@@ -5068,23 +5092,6 @@ export struct ReadBookPage {
     return ReaderChromeThemeOps.bookmarkPullHintColor(this);
   }
 
-  @Builder
-  readerCurrentPageBookmarkMarker() {
-    Stack({ alignContent: Alignment.Top }) {
-      SymbolGlyph($r('sys.symbol.bookmark_fill'))
-        .fontSize(32)
-        .fontColor([this.accentColor()])
-    }
-    .width(46)
-    .height(40)
-    .position({ x: '100%', y: 0 })
-    .translate({
-      x: -62,
-      y: this.readerBookmarkMarkerTopOffset() + this.bookmarkPullOffsetY
-    })
-    .hitTestBehavior(HitTestMode.None)
-  }
-
   readerBookmarkMarkerTopOffset(): number {
     return ReaderChromeThemeOps.readerBookmarkMarkerTopOffset(this);
   }
@@ -5971,24 +5978,6 @@ export struct ReadBookPage {
     })
   }
 
-  @Builder
-  readerHeaderInfoBar() {
-    Row() {
-      Text(this.getReaderHeaderInfoText())
-        .fontSize(12)
-        .fontColor(this.getSubTextColor())
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
-    }
-    .width('100%')
-    .height(LeafFns.getReaderHeaderInfoBarHeight() + this.getReaderHeaderOverlayTopInset())
-    .padding({ top: this.getReaderHeaderOverlayTopInset(), left: 28, right: 28 })
-    .alignItems(VerticalAlign.Center)
-    .backgroundColor(Color.Transparent)
-    .hitTestBehavior(HitTestMode.None)
-  }
-
   currentChapterProgressPageCount(): number {
     return ReaderGestureOps.currentChapterProgressPageCount(this);
   }
@@ -6675,9 +6664,15 @@ export struct ReadBookPage {
         })
       Blank()
         .layoutWeight(1)
-      this.readerSliderStepButton($r('sys.symbol.minus'), '减小当前排版参数',
-        this.readerTypographyValue(this.readerTypographySelection) > LeafFns.readerTypographyMin(this.readerTypographySelection),
-        () => this.stepReaderTypographyValue(this.readerTypographySelection, -1))
+      ReaderSliderStepButton({
+        icon: $r('sys.symbol.minus'),
+        accessibilityLabel: '减小当前排版参数',
+        controlEnabled: this.readerTypographyValue(this.readerTypographySelection) > LeafFns.readerTypographyMin(this.readerTypographySelection),
+        action: () => this.stepReaderTypographyValue(this.readerTypographySelection, -1),
+        iconColor: this.readerControlIconColor(),
+        disabledIconColor: this.getSubTextColor(),
+        darkMode: this.isReaderThemeDark(),
+      })
       if (this.showReaderTypographyValueInput) {
         TextInput({ text: this.readerTypographyValueDraft,
           placeholder: `${this.readerTypographyValue(this.readerTypographySelection)}` })
@@ -6712,9 +6707,15 @@ export struct ReadBookPage {
             this.openReaderTypographyValueInput();
           })
       }
-      this.readerSliderStepButton($r('sys.symbol.plus'), '增大当前排版参数',
-        this.readerTypographyValue(this.readerTypographySelection) < LeafFns.readerTypographyMax(this.readerTypographySelection),
-        () => this.stepReaderTypographyValue(this.readerTypographySelection, 1))
+      ReaderSliderStepButton({
+        icon: $r('sys.symbol.plus'),
+        accessibilityLabel: '增大当前排版参数',
+        controlEnabled: this.readerTypographyValue(this.readerTypographySelection) < LeafFns.readerTypographyMax(this.readerTypographySelection),
+        action: () => this.stepReaderTypographyValue(this.readerTypographySelection, 1),
+        iconColor: this.readerControlIconColor(),
+        disabledIconColor: this.getSubTextColor(),
+        darkMode: this.isReaderThemeDark(),
+      })
     }
     .width('100%')
     // Keep the selector on the same content baseline as the settings below.
@@ -7078,9 +7079,17 @@ export struct ReadBookPage {
       .width('100%')
 
       Row({ space: 10 }) {
-        this.readerSliderStepButton($r('sys.symbol.minus'), '降低朗读倍速', this.ttsSpeed > 0.5, () => {
+        ReaderSliderStepButton({
+        icon: $r('sys.symbol.minus'),
+        accessibilityLabel: '降低朗读倍速',
+        controlEnabled: this.ttsSpeed > 0.5,
+        action: () => {
           this.applyTtsSpeed(this.ttsSpeed - 0.1);
-        })
+        },
+        iconColor: this.readerControlIconColor(),
+        disabledIconColor: this.getSubTextColor(),
+        darkMode: this.isReaderThemeDark(),
+      })
       Slider({ value: this.ttsSpeed, min: 0.5, max: 3, step: 0.1 })
         .layoutWeight(1)
         .showTips(true)
@@ -7090,18 +7099,71 @@ export struct ReadBookPage {
           .onChange((value: number) => {
             this.applyTtsSpeed(value);
           })
-        this.readerSliderStepButton($r('sys.symbol.plus'), '提高朗读倍速', this.ttsSpeed < 3, () => {
+        ReaderSliderStepButton({
+        icon: $r('sys.symbol.plus'),
+        accessibilityLabel: '提高朗读倍速',
+        controlEnabled: this.ttsSpeed < 3,
+        action: () => {
           this.applyTtsSpeed(this.ttsSpeed + 0.1);
-        })
+        },
+        iconColor: this.readerControlIconColor(),
+        disabledIconColor: this.getSubTextColor(),
+        darkMode: this.isReaderThemeDark(),
+      })
       }
       .width('100%')
 
       Row({ space: 8 }) {
-        this.ttsSpeedChip(0.8)
-        this.ttsSpeedChip(1.0)
-        this.ttsSpeedChip(1.5)
-        this.ttsSpeedChip(2.0)
-        this.ttsSpeedChip(3.0)
+        ReaderTtsSpeedChip({
+        value: 0.8,
+        selected: Math.abs(this.ttsSpeed - 0.8) < 0.01,
+        textColor: this.getTextColor(),
+        accentColor: this.accentColor(),
+        idleColor: this.readerChipIdleColor(),
+        onSelect: (): void => {
+          this.applyTtsSpeed(0.8);
+        }
+      })
+        ReaderTtsSpeedChip({
+        value: 1.0,
+        selected: Math.abs(this.ttsSpeed - 1.0) < 0.01,
+        textColor: this.getTextColor(),
+        accentColor: this.accentColor(),
+        idleColor: this.readerChipIdleColor(),
+        onSelect: (): void => {
+          this.applyTtsSpeed(1.0);
+        }
+      })
+        ReaderTtsSpeedChip({
+        value: 1.5,
+        selected: Math.abs(this.ttsSpeed - 1.5) < 0.01,
+        textColor: this.getTextColor(),
+        accentColor: this.accentColor(),
+        idleColor: this.readerChipIdleColor(),
+        onSelect: (): void => {
+          this.applyTtsSpeed(1.5);
+        }
+      })
+        ReaderTtsSpeedChip({
+        value: 2.0,
+        selected: Math.abs(this.ttsSpeed - 2.0) < 0.01,
+        textColor: this.getTextColor(),
+        accentColor: this.accentColor(),
+        idleColor: this.readerChipIdleColor(),
+        onSelect: (): void => {
+          this.applyTtsSpeed(2.0);
+        }
+      })
+        ReaderTtsSpeedChip({
+        value: 3.0,
+        selected: Math.abs(this.ttsSpeed - 3.0) < 0.01,
+        textColor: this.getTextColor(),
+        accentColor: this.accentColor(),
+        idleColor: this.readerChipIdleColor(),
+        onSelect: (): void => {
+          this.applyTtsSpeed(3.0);
+        }
+      })
       }
       .width('100%')
 
@@ -7153,11 +7215,56 @@ export struct ReadBookPage {
       .width('100%')
 
       Row({ space: 8 }) {
-        this.ttsSleepTimerChip(15)
-        this.ttsSleepTimerChip(30)
-        this.ttsSleepTimerChip(60)
-        this.ttsSleepTimerChip(90)
-        this.ttsSleepTimerChip(120)
+        ReaderTtsSleepTimerChip({
+        minutes: 15,
+        selected: this.ttsSleepTimerMinutes === 15,
+        textColor: this.getTextColor(),
+        accentColor: this.accentColor(),
+        idleColor: this.readerChipIdleColor(),
+        onToggle: (): void => {
+          this.setTtsSleepTimer(this.ttsSleepTimerMinutes === 15 ? 0 : 15);
+        }
+      })
+        ReaderTtsSleepTimerChip({
+        minutes: 30,
+        selected: this.ttsSleepTimerMinutes === 30,
+        textColor: this.getTextColor(),
+        accentColor: this.accentColor(),
+        idleColor: this.readerChipIdleColor(),
+        onToggle: (): void => {
+          this.setTtsSleepTimer(this.ttsSleepTimerMinutes === 30 ? 0 : 30);
+        }
+      })
+        ReaderTtsSleepTimerChip({
+        minutes: 60,
+        selected: this.ttsSleepTimerMinutes === 60,
+        textColor: this.getTextColor(),
+        accentColor: this.accentColor(),
+        idleColor: this.readerChipIdleColor(),
+        onToggle: (): void => {
+          this.setTtsSleepTimer(this.ttsSleepTimerMinutes === 60 ? 0 : 60);
+        }
+      })
+        ReaderTtsSleepTimerChip({
+        minutes: 90,
+        selected: this.ttsSleepTimerMinutes === 90,
+        textColor: this.getTextColor(),
+        accentColor: this.accentColor(),
+        idleColor: this.readerChipIdleColor(),
+        onToggle: (): void => {
+          this.setTtsSleepTimer(this.ttsSleepTimerMinutes === 90 ? 0 : 90);
+        }
+      })
+        ReaderTtsSleepTimerChip({
+        minutes: 120,
+        selected: this.ttsSleepTimerMinutes === 120,
+        textColor: this.getTextColor(),
+        accentColor: this.accentColor(),
+        idleColor: this.readerChipIdleColor(),
+        onToggle: (): void => {
+          this.setTtsSleepTimer(this.ttsSleepTimerMinutes === 120 ? 0 : 120);
+        }
+      })
       }
       .width('100%')
 
@@ -7353,64 +7460,6 @@ export struct ReadBookPage {
       }
     })
     .onClick(action)
-  }
-
-  @Builder
-  ttsSpeedChip(value: number) {
-    Text(`${value.toFixed(1)}x`)
-      .fontSize(13)
-      .fontColor(Math.abs(this.ttsSpeed - value) < 0.01 ? '#FFFFFF' : this.getTextColor())
-      .textAlign(TextAlign.Center)
-      .layoutWeight(1)
-      .height(32)
-      .borderRadius(16)
-      .backgroundColor(Math.abs(this.ttsSpeed - value) < 0.01 ? this.accentColor() :
-        (this.readerChipIdleColor()))
-      .onClick(() => {
-        this.applyTtsSpeed(value);
-      })
-  }
-
-  @Builder
-  ttsSleepTimerChip(minutes: number) {
-    Text(`${minutes}分`)
-      .fontSize(13)
-      .fontColor(this.ttsSleepTimerMinutes === minutes ? '#FFFFFF' : this.getTextColor())
-      .textAlign(TextAlign.Center)
-      .layoutWeight(1)
-      .height(32)
-      .borderRadius(16)
-      .backgroundColor(this.ttsSleepTimerMinutes === minutes ? this.accentColor() :
-        (this.readerChipIdleColor()))
-      .accessibilityText(this.ttsSleepTimerMinutes === minutes ?
-        `关闭 ${minutes} 分钟朗读定时` : `设置 ${minutes} 分钟朗读定时`)
-      .onClick(() => {
-        this.setTtsSleepTimer(this.ttsSleepTimerMinutes === minutes ? 0 : minutes);
-      })
-  }
-
-  @Builder
-  readerSliderStepButton(icon: Resource, accessibilityText: string, enabled: boolean, action: () => void) {
-    // 按钮视觉保持 34，点击热区由组件自身 responseRegion 扩到 44：
-    // onClick 走按钮单一路径（onBack 直连 action），避免外层转发被子组件点击消费导致失灵。
-    ImmersiveBackButton({
-      icon: icon,
-      accessibilityLabel: accessibilityText,
-      iconColor: this.readerControlIconColor(),
-      disabledIconColor: this.getSubTextColor(),
-      darkMode: this.isReaderThemeDark(),
-      buttonEnabled: enabled,
-      buttonSize: 34,
-      containerWidth: 44,
-      containerHeight: 44,
-      hitAreaSize: 44,
-      compactLayout: true,
-      onBack: () => {
-        if (enabled) {
-          action();
-        }
-      }
-    })
   }
 
 
@@ -7629,29 +7678,6 @@ export struct ReadBookPage {
 
   readerEyeTurnPromptTop(): number {
     return ReaderSettingsOps.readerEyeTurnPromptTop(this);
-  }
-
-  @Builder
-  readerEyeTurnPrompt() {
-    if (this.readerEyeTurnPromptVisible()) {
-      Row() {
-        Text('向上看，翻下一页')
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor('#F8FFFFFF')
-          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-          .borderRadius(18)
-          .backgroundColor('#B35C7569')
-          .shadow({ radius: 12, color: '#45000000', offsetX: 0, offsetY: 4 })
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .position({ x: 0, y: this.readerEyeTurnPromptTop() })
-      // Above the reader settings panel (zIndex 90) so the prompt stays visible while the
-      // eye-turn settings status is being watched.
-      .zIndex(95)
-      .hitTestBehavior(HitTestMode.None)
-    }
   }
 
   @Builder
