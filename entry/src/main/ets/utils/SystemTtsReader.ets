@@ -510,6 +510,17 @@ export class SystemTtsReader {
     this.speakNext(generation);
   }
 
+  // Re-bind on EVERY start() (and on watchdog engine rebuild), not just when
+  // ensureEngine() creates a new engine. setListener() REPLACES the whole
+  // listener object — it does not accumulate, so there is no listener leak.
+  // Each callback captures `generation` and drops stale events with
+  // `readGeneration !== generation`; that capture is exactly what prevents a
+  // previous chapter's onStart/onComplete/onData/onStop from bleeding into the
+  // new chapter. Do NOT hoist this call into ensureEngine() (which only runs on
+  // engine creation): reusing the engine across chapters would then freeze the
+  // first chapter's generation into the callbacks, silently discarding every
+  // later chapter's audio events (整章无声). Verified by 30-round foreground
+  // continuous-reading regression — keep this contract.
   private bindEngineListener(generation: number, engine: textToSpeech.TextToSpeechEngine): void {
     engine.setListener({
       onStart: (utteranceId: string, response: textToSpeech.StartResponse) => {
@@ -886,10 +897,15 @@ export class SystemTtsReader {
     this.resetSystemPcmPipeline();
     this.clearSpeakWatchdog();
     if (keepPcmOutput) {
-      // Continuous reading restarts with the next chapter. Keep the same
-      // AudioRenderer and audio-session owner across that short handoff so the
-      // device does not reselect an audio route or recalculate stream gain at
-      // every (possibly hour-long) chapter boundary.
+      // Continuous reading restarts with the next chapter. Keep the SAME
+      // AudioRenderer across that short handoff so the device does not reselect
+      // an audio route or recalculate stream gain at every chapter boundary.
+      // The audio-session owner is deliberately NOT kept: finish() releases it
+      // below (:releaseSystemAudioSession) and each start() acquires a brand-new
+      // owner (system-tts-<serial>). This 1:1 acquire/release lets the last owner
+      // leave TtsAudioSession.owners; a 300ms deactivate debounce coalesces a
+      // fast handoff (<300ms) so no audible gap appears. Retaining the old owner
+      // here would leak it in the owners Set and suppress deactivation forever.
       if (this.pcmOutputEpochStartedAt === 0) {
         this.pcmOutputEpochStartedAt = Date.now();
       }
