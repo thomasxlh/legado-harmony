@@ -5,7 +5,7 @@ import { ImmersiveBackButton } from './ImmersiveBackButton';
 import { ReaderLayoutElementToggle, ReaderSwitchSettingItem, ReaderTtsVoiceSectionTitle } from './ReaderSettingItems';
 import { ReaderTxtCharsetOption } from '../core/reader/ReaderSettingsModels';
 import { TtsVoiceOption } from '../utils/SystemTtsReader';
-import { HttpTTS } from '../model/data/Book';
+import { HttpTTS, BookChapter } from '../model/data/Book';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
 /**
@@ -837,5 +837,146 @@ export struct ReaderTtsVoicePanel {
     }
     .width('100%')
     .height('100%')
+  }
+}
+
+
+/**
+ * 「选择章节缓存」对话框内容。
+ *
+ * 原先 107 行 @Builder，逐行 read 页面状态；提取后章节列表与范围输入框的值显式传入，
+ * 缓存动作仍回调页面（取消/开始范围缓存、单章缓存、关闭对话框）。
+ */
+@Component
+export struct ReaderChapterCacheDialogContent {
+  @Prop statusText: string = '';
+  @Prop rangeDraft: string = '';
+  @Prop fullTextCaching: boolean = false;
+  @Prop rangeCaching: boolean = false;
+  @Prop chapters: BookChapter[] = [];
+  @Prop textColor: ResourceColor = '#18191C';
+  @Prop subTextColor: ResourceColor = '#8A8A8A';
+  @Prop dangerColor: ResourceColor = '#D94841';
+  @Prop accentColor: ResourceColor = '#3B82F6';
+  @Prop cachedTextColor: ResourceColor = '#1F8F55';
+  @Prop darkMode: boolean = false;
+  @Prop dialogHeight: number = 480;
+  onClose: () => void = (): void => {
+  };
+  onRangeDraftChange: (value: string) => void = (value: string): void => {
+  };
+  onToggleRangeCache: () => void = (): void => {
+  };
+  onCacheChapter: (index: number) => void = (index: number): void => {
+  };
+
+  build() {
+    Column() {
+      Row() {
+        Text('选择章节缓存')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.textColor)
+          .layoutWeight(1)
+        Button('关闭')
+          .height(34)
+          .fontSize(13)
+          .borderRadius(17)
+          .onClick((): void => {
+            this.onClose();
+          })
+      }
+      .width('100%')
+      .height(46)
+
+      if (this.statusText.length > 0) {
+        Text(this.statusText)
+          .fontSize(13)
+          .fontColor(this.subTextColor)
+          .width('100%')
+          .margin({ bottom: 8 })
+      }
+
+      Row({ space: 8 }) {
+        TextInput({ placeholder: '章节范围，如 1-10', text: this.rangeDraft })
+          .type(InputType.Normal)
+          .fontSize(14)
+          .fontColor(this.textColor)
+          .placeholderColor(this.subTextColor)
+          .layoutWeight(1)
+          .height(42)
+          .padding({ left: 10, right: 10 })
+          .backgroundColor(this.darkMode ? '#1FFFFFFF' : '#0D000000')
+          .borderRadius(10)
+          .enabled(!this.fullTextCaching && !this.rangeCaching)
+          .onChange((value: string): void => {
+            this.onRangeDraftChange(value);
+          })
+        Button(this.rangeCaching ? '取消缓存' : '缓存范围')
+          .width(96)
+          .height(42)
+          .fontSize(13)
+          .fontColor(this.rangeCaching ? this.dangerColor : '#FFFFFF')
+          .backgroundColor(this.rangeCaching ?
+            (this.darkMode ? '#24272D' : '#F5F5F5') : this.accentColor)
+          .enabled(!this.fullTextCaching)
+          .onClick((): void => {
+            this.onToggleRangeCache();
+          })
+      }
+      .width('100%')
+
+      Text('支持 1-10、1,3,5-8 等格式')
+        .fontSize(11)
+        .fontColor(this.subTextColor)
+        .width('100%')
+        .margin({ top: 4, bottom: 6 })
+
+      if (this.chapters.length === 0) {
+        Text('暂未获取到目录')
+          .fontSize(13)
+          .fontColor(this.subTextColor)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .layoutWeight(1)
+      } else {
+        List({ space: 2 }) {
+          ForEach(this.chapters, (chapter: BookChapter, index: number) => {
+            ListItem() {
+              Row({ space: 8 }) {
+                Text(chapter.title)
+                  .fontSize(15)
+                  .fontColor(chapter.cacheDate > 0 ? this.cachedTextColor : this.textColor)
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .layoutWeight(1)
+                if (chapter.cacheDate > 0) {
+                  Text('已缓存')
+                    .fontSize(11)
+                    .fontColor(this.darkMode ? '#7CC7A0' : '#1F8F55')
+                    .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                    .backgroundColor(this.darkMode ? '#24382F' : '#E6F4EC')
+                    .borderRadius(4)
+                }
+              }
+              .width('100%')
+              .padding({ left: 2, right: 2, top: 12, bottom: 12 })
+              .onClick((): void => {
+                this.onCacheChapter(index);
+              })
+            }
+          }, (chapter: BookChapter, index: number) =>
+            `${index}_${chapter.url || chapter.title}_${chapter.cacheDate > 0 ? 1 : 0}`)
+        }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+      }
+    }
+    .width('calc(100% - 32vp)')
+    .constraintSize({ maxWidth: 560 })
+    .height(this.dialogHeight)
+    .padding({ left: 18, right: 18, top: 18, bottom: 18 })
   }
 }
