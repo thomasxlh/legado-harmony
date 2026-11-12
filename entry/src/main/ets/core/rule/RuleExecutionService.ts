@@ -411,7 +411,7 @@ this.seedSourceVariables(analyzer.getContext(), request.source, request.contextV
     if (!value) return 'empty';
     if (value.startsWith('@js:') || value.includes('<js>')) return 'js';
     if (value.startsWith('$.') || value.includes('$..')) return 'jsonpath';
-    if (value.startsWith('//') || value.startsWith('/') || value.includes('xpath')) return 'xpath';
+    if (value.startsWith('//') || value.startsWith('/') || value.toLowerCase().includes('xpath')) return 'xpath';
     if (value.startsWith(':') || value.includes('.') || value.includes('#')) return 'selector';
     return 'text';
   }

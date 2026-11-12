@@ -23,7 +23,12 @@ const search = read('entry/src/main/ets/core/book/SearchCoordinator.ts');
 const explore = read('entry/src/main/ets/core/book/ExploreCoordinator.ts');
 const webBook = read('entry/src/main/ets/core/book/WebBookService.ts');
 const index = read('entry/src/main/ets/pages/Index.ets');
-const reader = read('entry/src/main/ets/pages/ReadBook.ets');
+// Reader page implementation is split across ReadBook.ets and reader/*Ops.ets
+// (P1 refactor); assertions below target the whole reader surface.
+const reader = read('entry/src/main/ets/pages/ReadBook.ets') +
+  fs.readdirSync(path.join(root, 'entry/src/main/ets/reader'))
+    .map(fileName => read(`entry/src/main/ets/reader/${fileName}`))
+    .join('\n');
 
 assert(scheduler.includes('DEFAULT_UI_SLICE_MS: number = 6'),
   'Cooperative scheduler must keep the UI work slice below one frame');
@@ -98,11 +103,16 @@ assert(stageRuntime.includes('this.controllers.length > 1'),
 
 assert(preprocessor.includes('@Concurrent') && preprocessor.includes('taskpool.execute'),
   'Reader replacement rules must execute in TaskPool');
-assert(preprocessor.includes('pattern.length > 4096') && preprocessor.includes('Nested unbounded quantifiers'),
+// The regex abuse guards moved from inline preprocessor checks to the shared
+// RegexSafetyGuard heuristic; both must stay wired together.
+const regexSafetyGuard = read('entry/src/main/ets/core/rule/RegexSafetyGuard.ts');
+assert(regexSafetyGuard.includes('export class RegexSafetyGuard') &&
+  regexSafetyGuard.includes('static isLikelyCatastrophic(pattern: string): boolean') &&
+  preprocessor.includes('RegexSafetyGuard.isLikelyCatastrophic(pattern)'),
   'Imported replacement rules must have basic regex abuse guards');
 assert(reader.includes('ReaderContentPreprocessor.apply'),
   'Reader content must pass through the asynchronous preprocessor');
-assert(reader.includes('this.appendReaderPaginationBatch(result, chapterIndex, imageOnlyPagination ? 8 : 1)'),
+assert(reader.includes('page.appendReaderPaginationBatch(result, chapterIndex, imageOnlyPagination ? 8 : 1)'),
   'Background pagination must be bounded to one text page or a small pure-image batch');
 assert(reader.includes('breakStrategy: graphicsText.BreakStrategy.GREEDY'),
   'Native paragraph measurement must use the bounded greedy line-break strategy');

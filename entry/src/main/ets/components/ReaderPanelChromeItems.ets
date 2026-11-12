@@ -373,6 +373,7 @@ export struct ReaderAutoPageTurnIndicator {
   @Prop accentColor: ResourceColor;
   @Prop ringProgress: number = 0;
   @Prop userPaused: boolean = false;
+  @Prop suspended: boolean = false;
   @Prop textColor: ResourceColor;
   @Prop darkMode: boolean = false;
   @Prop bottomInset: number = 0;
@@ -380,46 +381,50 @@ export struct ReaderAutoPageTurnIndicator {
   onLongPress: () => void = () => {};
 
   build() {
-    Column() {
-      Blank()
-      Row() {
-        Blank()
-        Stack({ alignContent: Alignment.Center }) {
-          Progress({
-            value: Math.round(this.ringProgress * 100),
-            total: 100,
-            type: ProgressType.Ring
-          })
-            .width(30)
-            .height(30)
-            .style({ strokeWidth: 3 })
-            .color(this.accentColor)
-            .backgroundColor(this.userPaused ?
-              (this.darkMode ? '#33FFFFFF' : '#14000000') :
-              (this.darkMode ? '#33FFFFFF' : '#22000000'))
-          Text(this.userPaused ? '▶' : '❚❚')
-            .fontSize(10)
-            .fontColor(this.textColor)
-            .opacity(this.userPaused ? 0.95 : 0.7)
-        }
-        .width(38)
-        .height(38)
-        .borderRadius(19)
-        .backgroundColor(this.darkMode ? '#59000000' : '#33000000')
-        .opacity(this.userPaused ? 0.72 : 1)
-        .margin({ right: 16, bottom: 12 + this.bottomInset })
-        .onClick(() => {
-          this.onTogglePause();
-        })
-        .gesture(LongPressGesture({ repeat: false }).onAction(() => {
-          this.onLongPress();
-        }))
+    // 历史实现为全屏 Column + Blank 占位把圆环推到右下角，曾配合 hitTestBehavior(None) 放行穿透。
+    // 实测该全屏覆盖层会拦截下层 tap layer 的命中测试（阅读点击全部失效，仅圆环可点），
+    // 因此改为 38x38 定位节点，不再铺满屏幕。
+    Stack({ alignContent: Alignment.Center }) {
+      Progress({
+        value: Math.round(this.ringProgress * 100),
+        total: 100,
+        type: ProgressType.Ring
+      })
+        .width(30)
+        .height(30)
+        .style({ strokeWidth: 3 })
+        .color(this.accentColor)
+        .backgroundColor(this.userPaused ?
+          (this.darkMode ? '#33FFFFFF' : '#14000000') :
+          (this.darkMode ? '#33FFFFFF' : '#22000000'))
+      if (this.userPaused) {
+        SymbolGlyph($r('sys.symbol.play'))
+          .fontSize(14)
+          .fontColor([this.textColor])
+          .opacity(0.95)
+      } else {
+        SymbolGlyph($r('sys.symbol.pause'))
+          .fontSize(14)
+          .fontColor([this.textColor])
+          .opacity(this.suspended ? 0.5 : 0.7)
       }
-      .width('100%')
     }
-    .width('100%')
-    .height('100%')
-    .hitTestBehavior(HitTestMode.None)
+    .width(38)
+    .height(38)
+    .borderRadius(19)
+    .backgroundColor(this.darkMode ? '#59000000' : '#33000000')
+    // userPaused 优先于 TTS 挂起淡化：暂停态必须清晰可见（播放图标 + 0.72），
+    // 避免被 suspended 的 0.45 淡化到几乎不可见，用户无从得知可点击恢复。
+    .opacity(this.userPaused ? 0.72 : (this.suspended ? 0.45 : 1))
+    .markAnchor({ x: '100%', y: '100%' })
+    .position({ x: '100%', y: '100%' })
+    .translate({ x: -16, y: -(12 + this.bottomInset) })
+    .onClick(() => {
+      this.onTogglePause();
+    })
+    .gesture(LongPressGesture({ repeat: false }).onAction(() => {
+      this.onLongPress();
+    }))
   }
 }
 

@@ -11,6 +11,7 @@ export class AutoPageTurnController {
   private intervalMs: number = 0;
   private remainingMs: number = 0;
   private userPaused: boolean = false;
+  private wasBlocked: boolean = false;
   private options: AutoPageTurnOptions | null = null;
 
   configure(options: AutoPageTurnOptions): void {
@@ -25,6 +26,7 @@ export class AutoPageTurnController {
     this.intervalMs = Math.round(intervalMs);
     this.remainingMs = this.intervalMs;
     this.userPaused = false;
+    this.wasBlocked = false;
     this.tickTimerId = setInterval(() => {
       this.handleTick();
     }, AutoPageTurnController.TICK_MS);
@@ -37,6 +39,7 @@ export class AutoPageTurnController {
       this.tickTimerId = -1;
     }
     this.userPaused = false;
+    this.wasBlocked = false;
     this.remainingMs = 0;
   }
 
@@ -84,6 +87,16 @@ export class AutoPageTurnController {
       return;
     }
     if (this.options.isBlocked()) {
+      this.wasBlocked = true;
+      this.reportTick();
+      return;
+    }
+    if (this.wasBlocked) {
+      // Menus, dialogs, page-turn animations and backgrounding all suspend the countdown via
+      // isBlocked. Resuming from stale remaining time would flip the page moments after a panel
+      // closes; restart the full interval whenever a blockade lifts instead.
+      this.wasBlocked = false;
+      this.remainingMs = this.intervalMs;
       this.reportTick();
       return;
     }

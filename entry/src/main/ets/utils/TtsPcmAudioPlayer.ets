@@ -163,17 +163,22 @@ export class TtsPcmAudioPlayer {
     this.playbackMarks.push({ frame, callback });
   }
 
-  async drain(): Promise<void> {
+  // Returns true only when the playback timeline naturally reached the queued
+  // content end (every audible sample played). False means the wait was aborted
+  // (watchdog reset, stop(), generation change), so the audible tail may be cut.
+  // Callers use this to tell the chapter-tail completion guard whether a replay
+  // from the last focus chunk is actually needed.
+  async drain(): Promise<boolean> {
     const watchdogGeneration = this.playGeneration;
     this.startDrainWatchdog(watchdogGeneration);
     try {
-      await this.drainPlayback();
+      return await this.drainPlayback();
     } finally {
       this.stopDrainWatchdog();
     }
   }
 
-  private async drainPlayback(): Promise<void> {
+  private async drainPlayback(): Promise<boolean> {
     await this.writeChain;
     await this.waitUntilResumed();
     const renderer = this.renderer;
@@ -186,18 +191,18 @@ export class TtsPcmAudioPlayer {
     const targetFrame = this.queuedContentEndFrame;
     console.info(`[TTS] pcm drain waiting: contentEnd=${targetFrame},transportEnd=${this.queuedFrames}`);
     if (!renderer || generation !== this.playGeneration) {
-      return;
+      return false;
     }
     while (generation === this.playGeneration && this.renderer === renderer) {
       if (!await this.waitUntilRendererRunning(renderer, generation)) {
-        return;
+        return false;
       }
       // Wait for the playback timeline before asking AudioRenderer to drain.
       // Some devices leave drain() pending (or move the renderer out of RUNNING)
       // while writeData keeps returning INVALID after the final PCM buffer. The
       // old drain-first order therefore never completed the chapter handoff.
       if (!await this.waitUntilPlaybackFrameReached(targetFrame, renderer, generation)) {
-        return;
+        return false;
       }
       if (this.progressMode === 'CLOCK_FALLBACK') {
         // Older devices lack a rendered-frame timestamp. The final writeData
@@ -206,15 +211,16 @@ export class TtsPcmAudioPlayer {
         await this.delay(TtsPcmAudioPlayer.CLOCK_FALLBACK_DRAIN_GRACE_MS);
       }
       if (generation !== this.playGeneration || this.renderer !== renderer) {
-        return;
+        return false;
       }
       await this.settleRendererDrain(renderer, generation);
       this.lastReachedFrame = Math.max(this.lastReachedFrame, targetFrame);
       this.dispatchDuePlaybackMarks(generation);
       this.pausePlaybackTimelineAt(targetFrame);
       console.info(`[TTS] pcm content playback complete: contentEnd=${targetFrame},transportEnd=${this.queuedFrames}`);
-      return;
+      return true;
     }
+    return false;
   }
 
   // A3: continuous reading keeps one renderer across chapters and never calls

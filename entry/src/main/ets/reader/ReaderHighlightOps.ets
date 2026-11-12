@@ -146,12 +146,46 @@ import {
 } from './ReaderConstants';
 import * as LeafFns from './ReaderLeafFns';
 
+// TTS-M2：长会话锚点冻结自愈的放行判定——会话仍活着且身份四元组（token/代际/
+// 章/内容指纹）一致，仅 contentLoadSerial 被字节级相同的后台重载顶掉。此判定必须
+// 与 followTtsChunk 内部的自愈同源：onChunkStart 外层守卫只认
+// isCurrentTtsFocusSession 时，serial 重对齐是永远走不到的死代码——cue 在外层
+// 就被丢弃，ttsLastFocusChunk 冻结在旧句，章末守卫会从旧句"退回一段文字重播"。
+export function canResyncTtsFocusSession(page: ReadBookPage, token: number, generation: number, chapterIndex: number, sourceIdentity: string): boolean {
+    const sessionLive = page.isTtsSpeaking && page.ttsAutoContinue && token === page.ttsReadToken;
+    const identityIntact = generation === page.ttsFocusGeneration &&
+      chapterIndex === page.ttsFocusChapterIndex && chapterIndex === page.currentChapterIndex &&
+      !!sourceIdentity && sourceIdentity === page.ttsFocusSourceIdentity;
+    return sessionLive && identityIntact &&
+      page.ttsFocusContentLoadSerial !== page.contentLoadSerial;
+}
+
 export function followTtsChunk(page: ReadBookPage, chunk: TtsChunk, token: number, generation: number, chapterIndex: number, sourceIdentity: string): void {
     // Playback cues already arrive on the ArkTS event loop at the audible segment boundary. Deferring them through
     // another timer lets pagination/layout work overtake the focus update, so the previous sentence can remain
     // highlighted after the next sentence is already audible.
     if (!page.isCurrentTtsFocusSession(token, generation, chapterIndex, sourceIdentity)) {
-      return;
+      // 长会话锚点冻结自愈：后台重载了字节级相同的内容（identity 哈希一致）只是把
+      // contentLoadSerial 顶掉了，会话校验在此是假阴性——cue 仍映射同一份文档。
+      // 放行并重新对齐 serial；否则 ttsLastFocusChunk 冻结在旧句，章末守卫会从旧句
+      // "退回一段文字重播"（切后台偶发症状）。
+      if (canResyncTtsFocusSession(page, token, generation, chapterIndex, sourceIdentity)) {
+        console.warn(`[TTS] focus cue serial resync: serial=${page.ttsFocusContentLoadSerial}` +
+          `->${page.contentLoadSerial},chunkStart=${chunk.start}`);
+        page.ttsFocusContentLoadSerial = page.contentLoadSerial;
+      } else {
+        // 锚点冻结排查：焦点线索被会话校验丢弃后声音仍在播，ttsLastFocusChunk 停在旧句，
+        // 章末会从旧句"退回重播"。这里必须留下丢弃原因，否则偶发重播无法定位。
+        const sessionLive = page.isTtsSpeaking && page.ttsAutoContinue && token === page.ttsReadToken;
+        if (sessionLive) {
+          console.warn(`[TTS] focus cue dropped: gen=${generation}/${page.ttsFocusGeneration},` +
+            `chapter=${chapterIndex}/${page.ttsFocusChapterIndex}/cur=${page.currentChapterIndex},` +
+            `serialMatch=${page.ttsFocusContentLoadSerial === page.contentLoadSerial},` +
+            `identityMatch=${sourceIdentity === page.ttsFocusSourceIdentity},` +
+            `lastApplied=${page.ttsLastAppliedSourceOffset},chunkStart=${chunk.start}`);
+        }
+        return;
+      }
     }
     const focusStartedAt = Date.now();
     page.applyTtsChunkFocus(chunk);

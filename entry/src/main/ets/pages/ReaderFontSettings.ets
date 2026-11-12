@@ -169,6 +169,7 @@ struct ReaderFontSettingsPage {
               })
               this.bodyFontSizeStepper()
               this.bodyPreviewItem()
+              this.customFontEntryItem()
             }
             .width('calc(100% - 24vp)')
             .margin({ left: 12, right: 12 })
@@ -841,6 +842,35 @@ struct ReaderFontSettingsPage {
     .margin({ left: 16, right: 16 })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
+  }
+
+  @Builder
+  customFontEntryItem() {
+    Row() {
+      Column({ space: 4 }) {
+        Text('自定义字体')
+          .fontSize(16)
+          .fontColor(this.primaryTextColor())
+        Text('上传 / 删除字体文件')
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(18)
+        .fontColor([this.subTextColor()])
+    }
+    .width('calc(100% - 32vp)')
+    .constraintSize({ minHeight: 62 })
+    .padding({ left: 0, right: 0, top: 8, bottom: 8 })
+    .margin({ left: 16, right: 16 })
+    .backgroundColor(Color.Transparent)
+    .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      router.pushUrl({ url: 'pages/CustomFontManager' });
+    })
   }
 
   @Builder

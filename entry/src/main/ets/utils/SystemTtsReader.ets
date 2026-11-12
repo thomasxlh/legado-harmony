@@ -12,7 +12,17 @@ export interface TtsChunk {
 }
 
 export interface TtsReadOptions {
-  onFinished?: () => void;
+  /**
+   * audibleTailConfirmed is true only when the audio pipeline itself proved the
+   * requested range was played to its end (PCM timeline drained naturally, or
+   * direct mode advanced through engine-confirmed completions). False means the
+   * finish path could not prove it (aborted drain, custom-voice route, speechless
+   * fallback is still true because nothing was ever audible). The caller's
+   * chapter-tail guard uses this to avoid replaying already-heard text when only
+   * the focus cue (highlight/persist anchor) was lost — the "切后台退回一段文字
+   * 重播" symptom.
+   */
+  onFinished?: (audibleTailConfirmed: boolean) => void;
   /**
    * Fired instead of synthesis when the requested text has no audible content
    * (punctuation or whitespace only). It runs before onFinished so the caller
@@ -86,6 +96,11 @@ export class SystemTtsReader {
   private static readonly SYSTEM_TTS_START_BUFFER_SEGMENTS: number = 2;
   private static readonly SYSTEM_TTS_MAX_BUFFERED_SEGMENTS: number = 3;
   private static readonly DIRECT_PLAY_COMPLETION_GRACE_MS: number = 5000;
+  // Home 键切后台后系统对 TTS 服务回调的节流可达十几秒。前台 12s 预算在后台
+  // 误判率显著升高，watchdog 误触发会走 recoverStalledSpeak 丢弃正在播放的
+  // PCM 缓冲并重讲，是"切后台退回一段文字重播"的来源之一。
+  private static readonly SPEAK_WATCHDOG_BACKGROUND_MS: number = 30000;
+  private static readonly DIRECT_PLAY_BACKGROUND_GRACE_MS: number = 15000;
   private static readonly MAX_ESTIMATED_CHUNK_DURATION_MS: number = 45000;
   // 整天连续朗读时 AudioRenderer 经 keepPcmOutput 跨章保活数小时，是"定位卡顿、
   // 高亮延迟"这类会话级退化的最大嫌疑载体。超过该保活时长后，在下一章边界
@@ -102,7 +117,7 @@ export class SystemTtsReader {
   private chunkIndex: number = 0;
   private active: boolean = false;
   private paused: boolean = false;
-  private onFinished?: () => void;
+  private onFinished?: (audibleTailConfirmed: boolean) => void;
   private onSpeechless?: () => void;
   private onError?: (message: string) => void;
   private onChunkStart?: (chunk: TtsChunk, index: number) => void;
@@ -130,6 +145,11 @@ export class SystemTtsReader {
   // so HarmonyOS sees this app's audioPlayback task as idle and freezes it.
   private ttsPcmPlayType: number = 0;
   private speakWatchdogId: number = -1;
+  // H3：watchdog 预算在 arm 时刻采样，Home 切后台后回调被系统节流 >12s 属预期。
+  // fire 时重读后台标志，后台则按后台预算顺延而不是丢弃在飞 chunk 重讲；顺延有
+  // 上限（DEFER_CAP 次），到顶说明引擎真死而不是节流，照常走恢复/熔断。
+  private speakWatchdogDeferCount: number = 0;
+  private static readonly SPEAK_WATCHDOG_DEFER_CAP: number = 10;
   // A4: scope engine-stop suppression to one read generation. A single global
   // boolean plus untracked 500ms timers let a stale timer from a previous
   // chapter swallow the current chapter's legitimate onStop (silent lockup) or
@@ -438,7 +458,10 @@ export class SystemTtsReader {
     this.optionFocusBreakOffsets = this.normalizeFocusBreakOffsets(options?.focusBreakOffsets, cleanText.length);
     this.keepAudioOutputOnFinish = options?.keepAudioOutputOnFinish === true;
     const customVoice = this.getCurrentCustomVoice();
-    const splitChunks = customVoice ? this.splitCustomText(cleanText, 64) :
+    // 自定义音色同样要按页边界切分：段落 chunk 跨页时焦点/翻页只能等下一个 chunk 开始，
+    // 表现为翻页比朗读慢一句。系统音色路径早已按页边界切分。
+    const splitChunks = customVoice ?
+      this.splitChunksAtPageBreaks(this.splitCustomText(cleanText, 64), cleanText, this.optionFocusBreakOffsets) :
       this.splitSystemText(cleanText, this.optionFocusBreakOffsets);
     // A run of trailing punctuation (for example "......" or "……") can be split into a
     // punctuation-only chunk. Some Harmony TTS engines return no PCM/onStart for such a
@@ -463,7 +486,7 @@ export class SystemTtsReader {
       if (this.onSpeechless) {
         this.onSpeechless();
       }
-      this.finish(true);
+      this.finish(true, true);
       return;
     }
     this.chunkIndex = 0;
@@ -585,7 +608,7 @@ export class SystemTtsReader {
             this.completeCurrentChunk(generation, this.currentRequestId);
             return;
           }
-          this.recoverStalledSpeak(generation, this.currentFocusChunkIndex);
+          this.recoverInterruptedPcmChunk(generation);
         }
         // 无在飞请求（chunk 间隙或纯缓冲播放阶段）：既有 watchdog 兜底，不终结会话。
       },
@@ -800,7 +823,9 @@ export class SystemTtsReader {
         this.systemSynthesisFinished = true;
         this.pumpSystemPcmPlayback(generation);
       } else {
-        this.finish(true);
+        // Direct mode only advances a chunk after the engine confirmed its
+        // playback (onComplete type=1), so reaching the end is audible proof.
+        this.finish(true, true);
       }
       return;
     }
@@ -873,7 +898,7 @@ export class SystemTtsReader {
     }
   }
 
-  private finish(notify: boolean): void {
+  private finish(notify: boolean, audibleTailConfirmed: boolean = false): void {
     const keepPcmOutput = notify && this.keepAudioOutputOnFinish && this.ttsPcmPlayType === 0;
     this.readGeneration++;
     this.active = false;
@@ -918,7 +943,7 @@ export class SystemTtsReader {
     this.audioStarted = false;
     this.optionFocusBreakOffsets = [];
     this.keepAudioOutputOnFinish = false;
-    if (notify && this.onFinished) this.onFinished();
+    if (notify && this.onFinished) this.onFinished(audibleTailConfirmed);
   }
 
   private schedulePcmOutputRelease(): void {
@@ -1245,9 +1270,10 @@ export class SystemTtsReader {
   }
 
   private async finishSystemPcmPlayback(generation: number): Promise<void> {
+    let drainedToTail = false;
     try {
       await this.systemLastWritePromise;
-      await this.pcmPlayer.drain();
+      drainedToTail = await this.pcmPlayer.drain();
     } catch (error) {
       console.warn('[TTS] drain system pcm playback failed:', error);
       if (this.readGeneration === generation && this.active) {
@@ -1258,7 +1284,10 @@ export class SystemTtsReader {
     if (this.readGeneration !== generation || !this.active || this.ttsPcmPlayType !== 0) {
       return;
     }
-    this.finish(true);
+    // drainedToTail=false（drain 看门狗强停/打断）时 onFinished 携带 false，
+    // 章末守卫仍按锚点决定是否补播；true 时音频确实读到了章尾，即使焦点
+    // 锚点因后台丢 cue 而落后也不得重播已听过的内容。
+    this.finish(true, drainedToTail);
   }
 
   private continueSystemPcmSynthesis(generation: number): void {
@@ -1467,8 +1496,9 @@ export class SystemTtsReader {
         }
         this.clearSpeakWatchdog();
         if (this.chunkIndex >= this.chunks.length) {
+          let drainedToTail = false;
           try {
-            await this.pcmPlayer.drain();
+            drainedToTail = await this.pcmPlayer.drain();
           } catch (error) {
             console.warn('[TTS] drain pcm audio failed:', error);
             if (this.readGeneration === generation && this.active) {
@@ -1476,7 +1506,10 @@ export class SystemTtsReader {
             }
             return;
           }
-          this.finishCurrentRead(generation, 0);
+          // This branch only runs in direct mode (pcm chunks route through
+          // completeSystemPcmChunk), where the engine confirmed playback of the
+          // final chunk; the pcmPlayer drain is a no-op there.
+          this.finishCurrentRead(generation, 0, this.ttsPcmPlayType === 1 || drainedToTail);
           return;
         }
         this.currentRequestId = '';
@@ -1528,20 +1561,29 @@ export class SystemTtsReader {
 
   private armSpeakWatchdog(generation: number, chunkIndex: number): void {
     this.clearSpeakWatchdog();
+    this.speakWatchdogDeferCount = 0;
     this.speakWatchdogId = setTimeout(() => {
       this.recoverStalledSpeak(generation, chunkIndex);
     }, this.speakWatchdogTimeoutMs());
   }
 
   private speakWatchdogTimeoutMs(): number {
+    // Home 键切后台后系统对 TTS 服务回调的节流可达十几秒，前台 12s 预算在后台
+    // 误判率显著升高。watchdog 误触发走 recoverStalledSpeak 会丢弃正在播放的
+    // PCM 缓冲并重讲（"切后台退回一段文字重播"来源之一）。Ability 级后台标记
+    // （EntryAbility.onBackground/onForeground 写入）比页面 onPageHide 更准确：
+    // 页内路由离开阅读页仍在前台，不应放宽。
+    const backgrounded = AppStorage.get<boolean>('appInAbilityBackground') === true;
     if (this.ttsPcmPlayType === 1 && this.currentSpeakMinDuration > 0) {
       // Direct playback may legitimately spend more than 12 seconds on a long
       // chunk. Firing the old fixed watchdog interrupted that audible chunk and
       // replayed/reordered it.
-      return Math.max(12000,
-        Math.round(this.currentSpeakMinDuration + SystemTtsReader.DIRECT_PLAY_COMPLETION_GRACE_MS));
+      const graceMs = backgrounded ?
+        SystemTtsReader.DIRECT_PLAY_BACKGROUND_GRACE_MS :
+        SystemTtsReader.DIRECT_PLAY_COMPLETION_GRACE_MS;
+      return Math.max(12000, Math.round(this.currentSpeakMinDuration + graceMs));
     }
-    return 12000;
+    return backgrounded ? SystemTtsReader.SPEAK_WATCHDOG_BACKGROUND_MS : 12000;
   }
 
   private clearSpeakWatchdog(): void {
@@ -1578,6 +1620,21 @@ export class SystemTtsReader {
   private async recoverStalledSpeak(generation: number, chunkIndex: number): Promise<void> {
     if (this.readGeneration !== generation || !this.active || this.currentFocusAudioWritten ||
       this.completionPending || this.currentFocusChunkIndex !== chunkIndex) {
+      return;
+    }
+    // H3：预算在 arm 时刻采样，armed 时在前台、播放中切后台会让前台 12s 预算
+    // 误杀被系统节流但在飞的 chunk（"Home 切后台退回一段文字重播"）。fire 时
+    // 重读 Ability 级后台标志：后台且顺延未到上限则按后台预算重挂 watchdog 等
+    // 回调；顺延到顶仍无回调说明引擎真卡死，落到下方常规恢复/熔断。
+    if (AppStorage.get<boolean>('appInAbilityBackground') === true &&
+      this.speakWatchdogDeferCount < SystemTtsReader.SPEAK_WATCHDOG_DEFER_CAP) {
+      this.speakWatchdogDeferCount++;
+      console.warn(`[TTS] speak watchdog deferred in background (${this.speakWatchdogDeferCount}/` +
+        `${SystemTtsReader.SPEAK_WATCHDOG_DEFER_CAP}): chunk=${chunkIndex}`);
+      this.clearSpeakWatchdog();
+      this.speakWatchdogId = setTimeout(() => {
+        this.recoverStalledSpeak(generation, chunkIndex);
+      }, this.speakWatchdogTimeoutMs());
       return;
     }
     if (this.ttsPcmPlayType === 1 && this.currentFocusQueued && this.currentRequestId) {
@@ -1643,12 +1700,77 @@ export class SystemTtsReader {
     }
   }
 
-  private finishCurrentRead(generation: number, waitMs: number): void {
+  // 引擎服务在后台被系统回收/重启时，onStop 会在 PCM 请求在飞时到达。旧路径走
+  // recoverStalledSpeak → retryWithoutPcmData：pcmPlayer.stop() 把正在播放的缓冲段
+  // 拦腰切断并整体丢弃，再切直播模式重讲被中断的 chunk，听感是"句子中断后跳段/重播"。
+  // 这里只重置在飞请求状态并重建引擎：已缓冲音频继续播，被中断的 chunk 重新合成后
+  // 排队接在缓冲之后，无感衔接。若重建后合成回调仍不来，speak watchdog 照常兜底。
+  private async recoverInterruptedPcmChunk(generation: number): Promise<void> {
+    if (this.readGeneration !== generation || !this.active || this.ttsPcmPlayType !== 0) {
+      return;
+    }
+    const interruptedChunkIndex = this.currentFocusChunkIndex;
+    if (interruptedChunkIndex < 0) {
+      return;
+    }
+    // TTS-M1：引擎在后台被系统反复回收时本路径会被反复触发。不复位
+    // currentFocusRetryCount（仅在 speakNext 推进到新 chunk 时复位），同一 chunk
+    // 的恢复超过上限即熔断报错，避免"onStop→重建引擎→重合成→再 onStop"无界
+    // 循环空转耗电。
+    if (this.currentFocusRetryCount >= 3) {
+      this.currentRequestId = '';
+      this.active = false;
+      this.clearSpeakWatchdog();
+      this.pcmPlayer.stop();
+      this.releaseSystemAudioSession();
+      const message = `系统朗读引擎反复中断：${this.currentVoiceLabel()}`;
+      console.warn('[TTS] interrupted pcm recovery exhausted:', message);
+      if (this.onError) {
+        this.onError(message);
+      }
+      return;
+    }
+    this.currentFocusRetryCount++;
+    console.warn(`[TTS] engine onStop during pcm synthesis: chunk=${interruptedChunkIndex},` +
+      `buffered=${this.systemBufferedSegmentCount}; resynthesizing without dropping playback`);
+    this.clearSpeakWatchdog();
+    this.resetCurrentSystemRequestState();
+    this.chunkIndex = Math.max(0, Math.min(interruptedChunkIndex, this.chunks.length));
+    try {
+      if (this.engine) {
+        this.suppressEngineStopForCurrentRead();
+        try {
+          this.engine.shutdown();
+        } catch (_) {
+        }
+        this.engine = null;
+      }
+      const engine = await this.ensureEngine();
+      if (this.readGeneration !== generation || !this.active) {
+        return;
+      }
+      this.bindEngineListener(generation, engine);
+      this.speakNext(generation);
+    } catch (error) {
+      if (this.readGeneration !== generation || !this.active) {
+        return;
+      }
+      this.currentRequestId = '';
+      this.active = false;
+      const message = `系统朗读恢复失败：${this.currentVoiceLabel()} ${this.formatError(error)}`;
+      console.error('[TTS] engine onStop recovery failed:', message);
+      if (this.onError) {
+        this.onError(message);
+      }
+    }
+  }
+
+  private finishCurrentRead(generation: number, waitMs: number, audibleTailConfirmed: boolean = false): void {
     setTimeout(() => {
       if (this.readGeneration !== generation || !this.active) {
         return;
       }
-      this.finish(true);
+      this.finish(true, audibleTailConfirmed);
     }, waitMs);
   }
 
@@ -2461,10 +2583,10 @@ export class SystemTtsReader {
       this.appendAbsoluteTextChunk(chunks, text, start, end);
       start = end;
     }
-    return this.splitSystemChunksAtPageBreaks(chunks, text, pageBreakOffsets);
+    return this.splitChunksAtPageBreaks(chunks, text, pageBreakOffsets);
   }
 
-  private splitSystemChunksAtPageBreaks(chunks: TtsChunk[], text: string,
+  private splitChunksAtPageBreaks(chunks: TtsChunk[], text: string,
     pageBreakOffsets: number[]): TtsChunk[] {
     if (pageBreakOffsets.length === 0) {
       return chunks;

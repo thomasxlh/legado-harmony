@@ -495,7 +495,13 @@ export class SearchCoordinator {
       // 事件循环合并进同一个 uv_timer_task，形成连续 6s+ 的微任务链触发 appfreeze。只放行
       // 固定数量的解析流水线，许可交接强制跨帧，给 vsync/输入/IO 留出可观察空档。
       const parseGranted = await MainThreadParseGate.get().acquire((): boolean => this.cancelled);
-      if (!parseGranted || this.cancelled) {
+      if (!parseGranted) {
+        return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
+      }
+      // 闸门快路径在有空闲许可时不检查取消：已获许可后才取消的流程必须显式归还，
+      // 否则进程级 3 个许可被逐次泄漏，最终全 App 搜索/发现解析死锁。
+      if (this.cancelled) {
+        MainThreadParseGate.get().release();
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
       try {

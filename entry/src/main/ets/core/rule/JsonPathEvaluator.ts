@@ -1,3 +1,5 @@
+import { RegexSafetyGuard } from './RegexSafetyGuard';
+
 interface JsonPathToken {
   kind: string;
   name: string;
@@ -313,6 +315,8 @@ export class JsonPathEvaluator {
     if (match[2] === '=~') {
       const regex = rightText.match(/^\/([\s\S]*)\/([gimsuy]*)$/);
       if (!regex) return false;
+      // 过滤器正则在主线程同步执行：高危回溯模式直接判不匹配，避免 appfreeze。
+      if (RegexSafetyGuard.isLikelyCatastrophic(regex[1])) return false;
       try { return new RegExp(regex[1], regex[2].replace('g', '')).test(String(left === undefined ? '' : left)); } catch (_) { return false; }
     }
     const right = this.parseLiteral(rightText);

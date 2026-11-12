@@ -3613,25 +3613,41 @@ export class AppDatabase {
    * bookmarks 加入端云同步前的主键迁移：自增 id → bookmarkUrl（文本主键）。
    * 旧表从未注册为分布式表，重命名/重建不涉及云端元数据；bookmarkUrl 由
    * (bookUrl, chapterIndex, pageIndex) 拼接，旧表的 UNIQUE 约束保证无冲突。
+   * 书签是不可再生的用户数据：迁移全程包进 SQL 级显式事务（RDB 的 Transaction
+   * 对象不支持 DDL，故用 BEGIN/COMMIT），进程中途被杀由 SQLite 日志回滚到旧表；
+   * 任一步失败回滚后抛错，阻止 setSchemaVersion 写入新版本号，下次启动原样重试。
+   * 兼容旧版无事务迁移被中断残留的中间态（bookmarks_legacy 已建、新表缺失/为空）。
    */
   private async rekeyBookmarksForCloudSync(): Promise<void> {
     if (!this.store) return;
+    // 全新安装：createTables 已直接建出新结构，无需迁移。
+    const columns = await this.store.querySql('PRAGMA table_info(bookmarks)');
+    let hasBookmarkUrl = false;
     try {
-      // 全新安装：createTables 已直接建出新结构，无需迁移。
-      const columns = await this.store.querySql('PRAGMA table_info(bookmarks)');
-      let hasBookmarkUrl = false;
-      try {
-        while (columns.goToNextRow()) {
-          if (columns.getString(columns.getColumnIndex('name')) === 'bookmarkUrl') {
-            hasBookmarkUrl = true;
-            break;
-          }
+      while (columns.goToNextRow()) {
+        if (columns.getString(columns.getColumnIndex('name')) === 'bookmarkUrl') {
+          hasBookmarkUrl = true;
+          break;
         }
-      } finally {
-        columns.close();
       }
-      if (hasBookmarkUrl) return;
-      await this.store.executeSql('ALTER TABLE bookmarks RENAME TO bookmarks_legacy');
+    } finally {
+      columns.close();
+    }
+    const legacy = await this.store.querySql(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='bookmarks_legacy'`);
+    let hasLegacy = false;
+    try {
+      hasLegacy = legacy.goToFirstRow();
+    } finally {
+      legacy.close();
+    }
+    // 新结构已就位且无残留：迁移（含历史中断重试）已完成。
+    if (hasBookmarkUrl && !hasLegacy) return;
+    await this.store.executeSql('BEGIN IMMEDIATE TRANSACTION');
+    try {
+      if (!hasBookmarkUrl && !hasLegacy) {
+        await this.store.executeSql('ALTER TABLE bookmarks RENAME TO bookmarks_legacy');
+      }
       await this.store.executeSql(`
         CREATE TABLE IF NOT EXISTS bookmarks (
           bookmarkUrl TEXT PRIMARY KEY,
@@ -3657,8 +3673,14 @@ export class AppDatabase {
         FROM bookmarks_legacy
       `);
       await this.store.executeSql('DROP TABLE bookmarks_legacy');
+      await this.store.executeSql('COMMIT');
     } catch (e) {
-      console.warn('迁移书签主键失败:', e);
+      try {
+        await this.store.executeSql('ROLLBACK');
+      } catch (_) {
+        // 回滚失败时由 SQLite 日志在下次打开数据库时恢复。
+      }
+      throw e;
     }
   }
 

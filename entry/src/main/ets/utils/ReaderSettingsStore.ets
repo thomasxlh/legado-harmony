@@ -44,8 +44,8 @@ export class ReaderSettings {
   preloadEnabled: boolean = true;
   preloadChapterCount: number = 1;
   useTtsQuickAction: boolean = true;
-  // 听书快捷播放按钮的左右停靠侧：-1 靠左下，1 靠右下（默认，与历史行为一致）。
-  ttsQuickActionSide: number = 1;
+  // 听书快捷播放按钮的左右停靠侧：-1 靠左下（默认），1 靠右下。
+  ttsQuickActionSide: number = -1;
   useChapterQuickJump: boolean = true;
   quickBookmarkEnabled: boolean = true;
   // 阅读页眉页脚配置。默认页眉关闭、页脚保持现有章节/页码信息。
@@ -385,7 +385,7 @@ export class ReaderSettingsStore {
       await ReaderSettingsStore.getNumber(
         store,
         ReaderSettingsStore.KEY_TTS_QUICK_ACTION_SIDE,
-        AppStorage.get<number>(ReaderSettingsStore.KEY_TTS_QUICK_ACTION_SIDE) ?? 1,
+        AppStorage.get<number>(ReaderSettingsStore.KEY_TTS_QUICK_ACTION_SIDE) ?? -1,
         'ttsQuickActionSide'
       )
     );
@@ -1482,7 +1482,7 @@ export class ReaderSettingsStore {
     settings.ttsQuickActionSide = typeof source.ttsQuickActionSide === 'number' ?
       ReaderSettingsStore.normalizeTtsQuickActionSide(source.ttsQuickActionSide) :
       ReaderSettingsStore.normalizeTtsQuickActionSide(
-        AppStorage.get<number>(ReaderSettingsStore.KEY_TTS_QUICK_ACTION_SIDE) ?? 1);
+        AppStorage.get<number>(ReaderSettingsStore.KEY_TTS_QUICK_ACTION_SIDE) ?? -1);
     settings.useChapterQuickJump = typeof source.useChapterQuickJump === 'boolean' ? source.useChapterQuickJump :
       (AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_CHAPTER_QUICK_JUMP) ?? true);
     settings.quickBookmarkEnabled = typeof source.quickBookmarkEnabled === 'boolean' ? source.quickBookmarkEnabled :
@@ -1620,7 +1620,7 @@ export class ReaderSettingsStore {
     );
     settings.useTtsQuickAction = AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_TTS_QUICK_ACTION) ?? true;
     settings.ttsQuickActionSide = ReaderSettingsStore.normalizeTtsQuickActionSide(
-      AppStorage.get<number>(ReaderSettingsStore.KEY_TTS_QUICK_ACTION_SIDE) ?? 1);
+      AppStorage.get<number>(ReaderSettingsStore.KEY_TTS_QUICK_ACTION_SIDE) ?? -1);
     settings.useChapterQuickJump = AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_CHAPTER_QUICK_JUMP) ?? true;
     settings.quickBookmarkEnabled = AppStorage.get<boolean>(ReaderSettingsStore.KEY_QUICK_BOOKMARK_ENABLED) ?? true;
     settings.readerHeaderEnabled = AppStorage.get<boolean>(ReaderSettingsStore.KEY_HEADER_ENABLED) ?? false;

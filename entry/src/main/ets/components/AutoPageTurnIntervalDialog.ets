@@ -15,6 +15,8 @@ export struct AutoPageTurnIntervalDialogContent {
   @State customIntervalDraft: string = '';
   onDone: () => void = (): void => {
   };
+  onDisable: () => void = (): void => {
+  };
 
   isPresetSelected(sec: number): boolean {
     return this.autoPageTurnIntervalSec === sec;
@@ -138,6 +140,16 @@ export struct AutoPageTurnIntervalDialogContent {
         .fontColor(this.primaryTextColor())
         .onClick(() => {
           this.onDone();
+        })
+
+      Button('关闭自动翻页')
+        .width('100%')
+        .height(38)
+        .fontSize(14)
+        .backgroundColor(Color.Transparent)
+        .fontColor(this.subTextColor())
+        .onClick(() => {
+          this.onDisable();
         })
     }
     .width('100%')

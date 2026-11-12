@@ -226,7 +226,13 @@ export class ExploreCoordinator {
       // 与搜索同一进程级主线程解析闸门：发现页解析与后台搜索同时进行时，规则解析并发仍有界，
       // 避免响应突发到达时让步 timer 被合并成连续微任务链触发 appfreeze。
       const parseGranted = await MainThreadParseGate.get().acquire((): boolean => this.cancelled);
-      if (!parseGranted || this.cancelled) return [];
+      if (!parseGranted) return [];
+      // 闸门快路径在有空闲许可时不检查取消：已获许可后才取消的流程必须显式归还，
+      // 否则进程级 3 个许可被逐次泄漏，最终全 App 搜索/发现解析死锁。
+      if (this.cancelled) {
+        MainThreadParseGate.get().release();
+        return [];
+      }
       try {
       const baseUrl = BookUrlResolver.effectiveBase(resp, reqUrl, source.bookSourceUrl);
       const rule = new AnalyzeRule(resp.body, baseUrl);

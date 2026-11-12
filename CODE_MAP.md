@@ -5,8 +5,8 @@
 
 ## 现状（为什么需要这张表）
 
-- `entry/src/main/ets/pages/ReadBook.ets`：**6922 行 / 约 0.4 MB**；单文件内仅 1 个 `@Entry @Component struct ReadBookPage` + 1 个 `ReadBookTtsBackgroundHost` 适配器类。
-- 响应式字段（`@State` / `@StorageLink` / `@StorageProp`）见下方「响应式状态域地图」，由脚本实时扫描生成；`@Builder` 33 个仍留在 struct 内（ArkUI DSL 不能外移），业务方法 941 个已抽到 `reader/*Ops.ets`，struct 内只保留 1 行委托；整个 `ets/` 目录 **0 个** `@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。
+- `entry/src/main/ets/pages/ReadBook.ets`：**7004 行 / 约 0.4 MB**；单文件内仅 1 个 `@Entry @Component struct ReadBookPage` + 1 个 `ReadBookTtsBackgroundHost` 适配器类。
+- 响应式字段（`@State` / `@StorageLink` / `@StorageProp`）见下方「响应式状态域地图」，由脚本实时扫描生成；`@Builder` 38 个仍留在 struct 内（ArkUI DSL 不能外移），业务方法 942 个已抽到 `reader/*Ops.ets`，struct 内只保留 1 行委托；整个 `ets/` 目录 **0 个** `@Observed/@Track/@Provide/@Consume/@ObjectLink`（ArkUI V1 全内联状态）。
 - 文件内唯一分区手段是本工具写入的 `//region` / `//endregion`（VS Code 与 IntelliJ/DevEco Studio 都能折叠）；每个区块头还带一行 `// [map] 契约:` 说明本区允许读写哪些状态。
 - 已存在的可复用范式：`reader/ReaderPureUtils.ets`（纯函数）、`reader/ReaderTtsBackgroundController.ets` + Host 接口、`components/TtsGlobalCapsule.ets`、`components/ReaderTtsPlayerPanel.ets`、`components/TtsCatalogSheet.ets`（已抽出的 @Component）。
 
@@ -15,19 +15,19 @@
 | # | 区域 | 起始行 | 结束行 | 边界契约（允许读写哪些状态 / 注意事项） |
 |---|------|-------:|-------:|------------------------------------------|
 | 1 | 头部: 导入 / 顶层常量 / 纯函数 / 后台TTS Host适配器 | 1 | 403 | 无 @State 依赖; 顶层常量已抽到 reader/ReaderConstants.ets; ReadBookTtsBackgroundHost 仅逐方法委托 page |
-| 2 | struct 声明与状态字段 (@State / @StorageLink / 私有字段) | 404 | 1052 | 仅声明状态, 不含逻辑; ArkUI V1 下 @State 必须留在本 @Component 内, 逻辑外移须走 Controller+Host |
-| 3 | 生命周期 / 全局监听 / @Watch 回调 | 1053 | 1343 | 读写 会话/进度/可见性/焦点 状态; 装配后台控制器、注册(并应注销)全局监听与 @Watch |
-| 4 | 书籍加载 / 全文缓存 / 后台长时任务 / 屏幕超时 / 加载遮罩 | 1344 | 1862 | 读写 book/chapters/content/缓存/遮罩 状态; 持有后台长时任务与多个成对 timer |
-| 5 | build / 主内容层 / 悬浮菜单 / 目录·书签·换源·缓存面板 | 1863 | 3295 | 读 主题/排版/章节; 纯渲染 + 面板显隐; 交互只转发到方法, 不写业务状态 |
-| 6 | 排版·字符集·替换规则设置 / TTS快捷入口·mini播放器·目录 / 书签 / 正文预处理 | 3296 | 3406 | 读写 设置/目录/书签/TTS浮标显示态; 含 ttsMiniPlayer 等大量 @Builder |
-| 7 | 页眉页脚 / 漫画·连续滚动 / 页面度量 / 主题·字体 / 书签 / TTS音色·语速 / 目录搜索 | 3407 | 3716 | 读 排版/主题/字体/章节; 写 字体注册、书签、音色语速、目录滚动条 |
-| 8 | 尺寸计算 / 排版变更监听 / 媒体控制条·睡眠定时器 / 触摸·翻页手势 | 3717 | 3987 | 读写 面板尺寸/排版代际/媒体控制/触摸 状态; 定时器成对清理 |
-| 9 | 点击区域 / 设置面板 / 音色下拉 / 主题自定义 / 交互·眼动·预载设置 | 3988 | 4564 | 写 各类设置项持久化; 修改后触发重排 / 重载 / 重新分页 |
-| 10 | TTS 浮标会话 / 朗读编排(起播·续播·换章·看门狗) / 后台委托 / 封面 / 高亮清理 | 4565 | 4656 | 核心长链路: ttsReadToken / ttsFocusGeneration / ttsChapterSwitching; 与浮标会话、AVSession 双向同步 |
-| 11 | 焦点会话 / 正文规范化纯函数群 / 分页测量引擎 | 4657 | 4805 | 含大量可纯化的正文处理(findMeasuredPageEnd 等); 分页测量读排版状态 |
-| 12 | 逐句焦点·高亮·进度持久化 / 镜像会话 / TTS翻页 / 动画表面 | 4806 | 5375 | 每句触发 followTtsChunk→高亮重绘→persistTtsReadPosition→浮标 revision++; 镜像会话接管线 |
-| 13 | 样式化正文 / 段评·源动作·文本选择 / 正则高亮 / V2布局·分页·选区·高亮 | 5376 | 6650 | 读 高亮偏移/正则规则/主题; V2 分页与选区是独立大子系统, 建议优先外移 |
-| 14 | 分页缓存 / 翻页·预载·自动翻页 / 翻页动画·卷曲 / 换章 | 6651 | 6922 | 写 currentPageIndex / 翻页动画状态 / 预载; 与 TTS 翻页、镜像手动翻页交织 |
+| 2 | struct 声明与状态字段 (@State / @StorageLink / 私有字段) | 404 | 1056 | 仅声明状态, 不含逻辑; ArkUI V1 下 @State 必须留在本 @Component 内, 逻辑外移须走 Controller+Host |
+| 3 | 生命周期 / 全局监听 / @Watch 回调 | 1057 | 1354 | 读写 会话/进度/可见性/焦点 状态; 装配后台控制器、注册(并应注销)全局监听与 @Watch |
+| 4 | 书籍加载 / 全文缓存 / 后台长时任务 / 屏幕超时 / 加载遮罩 | 1355 | 1873 | 读写 book/chapters/content/缓存/遮罩 状态; 持有后台长时任务与多个成对 timer |
+| 5 | build / 主内容层 / 悬浮菜单 / 目录·书签·换源·缓存面板 | 1874 | 3314 | 读 主题/排版/章节; 纯渲染 + 面板显隐; 交互只转发到方法, 不写业务状态 |
+| 6 | 排版·字符集·替换规则设置 / TTS快捷入口·mini播放器·目录 / 书签 / 正文预处理 | 3315 | 3430 | 读写 设置/目录/书签/TTS浮标显示态; 含 ttsMiniPlayer 等大量 @Builder |
+| 7 | 页眉页脚 / 漫画·连续滚动 / 页面度量 / 主题·字体 / 书签 / TTS音色·语速 / 目录搜索 | 3431 | 3740 | 读 排版/主题/字体/章节; 写 字体注册、书签、音色语速、目录滚动条 |
+| 8 | 尺寸计算 / 排版变更监听 / 媒体控制条·睡眠定时器 / 触摸·翻页手势 | 3741 | 4011 | 读写 面板尺寸/排版代际/媒体控制/触摸 状态; 定时器成对清理 |
+| 9 | 点击区域 / 设置面板 / 音色下拉 / 主题自定义 / 交互·眼动·预载设置 | 4012 | 4610 | 写 各类设置项持久化; 修改后触发重排 / 重载 / 重新分页 |
+| 10 | TTS 浮标会话 / 朗读编排(起播·续播·换章·看门狗) / 后台委托 / 封面 / 高亮清理 | 4611 | 4702 | 核心长链路: ttsReadToken / ttsFocusGeneration / ttsChapterSwitching; 与浮标会话、AVSession 双向同步 |
+| 11 | 焦点会话 / 正文规范化纯函数群 / 分页测量引擎 | 4703 | 4851 | 含大量可纯化的正文处理(findMeasuredPageEnd 等); 分页测量读排版状态 |
+| 12 | 逐句焦点·高亮·进度持久化 / 镜像会话 / TTS翻页 / 动画表面 | 4852 | 5426 | 每句触发 followTtsChunk→高亮重绘→persistTtsReadPosition→浮标 revision++; 镜像会话接管线 |
+| 13 | 样式化正文 / 段评·源动作·文本选择 / 正则高亮 / V2布局·分页·选区·高亮 | 5427 | 6701 | 读 高亮偏移/正则规则/主题; V2 分页与选区是独立大子系统, 建议优先外移 |
+| 14 | 分页缓存 / 翻页·预载·自动翻页 / 翻页动画·卷曲 / 换章 | 6702 | 7004 | 写 currentPageIndex / 翻页动画状态 / 预载; 与 TTS 翻页、镜像手动翻页交织 |
 
 ## 已抽离的业务域（`reader/*Ops.ets`）
 
@@ -37,8 +37,8 @@
 | 模块 | 方法数 | 行数 |
 |------|------:|-----:|
 | `reader/ReaderChromeThemeOps.ets` | 224 | 2725 |
-| `reader/ReaderGestureOps.ets` | 92 | 1561 |
-| `reader/ReaderHighlightOps.ets` | 45 | 1023 |
+| `reader/ReaderGestureOps.ets` | 92 | 1563 |
+| `reader/ReaderHighlightOps.ets` | 46 | 1057 |
 | `reader/ReaderLifecycleOps.ets` | 3 | 198 |
 | `reader/ReaderLoadCacheOps.ets` | 50 | 1207 |
 | `reader/ReaderMenuBuildOps.ets` | 9 | 265 |
@@ -47,8 +47,8 @@
 | `reader/ReaderSettingsOps.ets` | 98 | 1421 |
 | `reader/ReaderStyledTextOps.ets` | 135 | 2471 |
 | `reader/ReaderTextPrepOps.ets` | 50 | 653 |
-| `reader/ReaderTtsOrchestrationOps.ets` | 65 | 1261 |
-| **合计** | **941** | |
+| `reader/ReaderTtsOrchestrationOps.ets` | 65 | 1294 |
+| **合计** | **942** | |
 
 ## 关键入口方法索引
 
@@ -56,80 +56,80 @@
 
 | 方法 | 行 |
 |------|----|
-| `aboutToAppear` | 1056 |
-| `onPageShow` | 1122 |
-| `onBackPress` | 1207 |
-| `aboutToDisappear` | 1257 |
-| `onPageHide` | 1325 |
-| `build` | 1866 |
-| `loadBook` | 1358 |
-| `loadContent` | 389 / 1533 |
-| `saveReadingProgress` | 394 / 3907 |
-| `enterReaderImmersive` | 1348 |
-| `readerQuickSettingsPanel` | 4206 |
-| `settingsPanel` | 4018 |
-| `publishTtsFloatingSession` | 4568 |
-| `publishTtsFloatingVoices` | 4569 |
-| `updateTtsFloatingSession` | 4570 |
-| `stopTtsFloatingSession` | 4571 |
-| `toggleTtsReading` | 354 / 4572 |
-| `startTtsReadingFromCurrentPosition` | 358 / 4575 |
-| `stopTtsReading` | 365 / 4583 |
-| `continueTtsReading` | 4593 |
-| `isTtsReadingAtExpectedEnd` | 4594 |
-| `armTtsContinuationWatchdog` | 4600 |
-| `clearTtsContinuationWatchdog` | 385 / 4601 |
-| `advanceTtsReadingToNextChapter` | 4602 |
-| `finishTtsReading` | 4603 |
-| `prepareTtsForManualPageTurn` | 377 / 4589 |
-| `scheduleTtsResumeAfterManualPageTurn` | 381 / 4590 |
-| `playPositionFromFloatingSession` | 4645 |
-| `startTtsBackgroundRunning` | 4608 |
-| `stopTtsBackgroundRunning` | 4609 |
-| `updateTtsAvSessionPlaybackState` | 4611 |
-| `clearTtsHighlight` | 4660 |
-| `publishTtsHighlightRenderChange` | 4661 |
-| `currentTtsSourceIdentity` | 4662 |
-| `invalidateTtsFocusSession` | 4663 |
-| `isCurrentTtsFocusSession` | 4665 |
-| `getTtsReadingText` | 4670 |
-| `getTtsFocusBreakOffsets` | 4671 |
+| `aboutToAppear` | 1060 |
+| `onPageShow` | 1126 |
+| `onBackPress` | 1218 |
+| `aboutToDisappear` | 1268 |
+| `onPageHide` | 1336 |
+| `build` | 1877 |
+| `loadBook` | 1369 |
+| `loadContent` | 389 / 1544 |
+| `saveReadingProgress` | 394 / 3931 |
+| `enterReaderImmersive` | 1359 |
+| `readerQuickSettingsPanel` | 4230 |
+| `settingsPanel` | 4042 |
+| `publishTtsFloatingSession` | 4614 |
+| `publishTtsFloatingVoices` | 4615 |
+| `updateTtsFloatingSession` | 4616 |
+| `stopTtsFloatingSession` | 4617 |
+| `toggleTtsReading` | 354 / 4618 |
+| `startTtsReadingFromCurrentPosition` | 358 / 4621 |
+| `stopTtsReading` | 365 / 4629 |
+| `continueTtsReading` | 4639 |
+| `isTtsReadingAtExpectedEnd` | 4640 |
+| `armTtsContinuationWatchdog` | 4646 |
+| `clearTtsContinuationWatchdog` | 385 / 4647 |
+| `advanceTtsReadingToNextChapter` | 4648 |
+| `finishTtsReading` | 4649 |
+| `prepareTtsForManualPageTurn` | 377 / 4635 |
+| `scheduleTtsResumeAfterManualPageTurn` | 381 / 4636 |
+| `playPositionFromFloatingSession` | 4691 |
+| `startTtsBackgroundRunning` | 4654 |
+| `stopTtsBackgroundRunning` | 4655 |
+| `updateTtsAvSessionPlaybackState` | 4657 |
+| `clearTtsHighlight` | 4706 |
+| `publishTtsHighlightRenderChange` | 4707 |
+| `currentTtsSourceIdentity` | 4708 |
+| `invalidateTtsFocusSession` | 4709 |
+| `isCurrentTtsFocusSession` | 4711 |
+| `getTtsReadingText` | 4716 |
+| `getTtsFocusBreakOffsets` | 4717 |
 | `normalizeReaderText` | → `reader/ReaderLeafFns.ets`（已抽离为纯函数） |
-| `getPagedSourceText` | 4672 |
-| `buildPagedSourceText` | 4673 |
-| `findMeasuredPageEnd` | 4697 |
-| `refineMeasuredPageEnd` | 4712 |
-| `followTtsChunk` | 4812 |
-| `noteTtsFocusLatency` | 4817 |
-| `applyTtsChunkFocus` | 4818 |
-| `syncTtsFocusAfterResume` | 4825 |
-| `updateTtsChunkHighlight` | 4827 |
-| `republishTtsFocusAfterPageTurn` | 4837 |
-| `scheduleTtsFocusSyncAfterPagination` | 4842 |
-| `persistTtsReadPosition` | 4844 |
-| `restorePersistedTtsFocus` | 4847 |
-| `syncMirroredTtsFocus` | 4850 |
-| `clearMirroredTtsFocus` | 4851 |
-| `takeOverMirroredTtsSession` | 4856 |
-| `animateTtsToPage` | 4858 |
-| `applyTtsPageTarget` | 4861 |
-| `applyTtsPageTurn` | 4865 |
-| `styledReaderText` | 5380 |
-| `splitSlicesByTtsHighlight` | 5945 |
-| `hasActiveTtsHighlight` | 5987 |
-| `shouldUseReaderLayoutV2` | 5992 |
-| `buildReaderV2Snapshot` | 5993 |
-| `refreshReaderV2TtsOverlay` | 6648 |
-| `paginateReaderSourceText` | 6654 |
-| `turnNext` | 6720 |
-| `turnPrev` | 6729 |
-| `applyPageTurn` | 6797 |
-| `runPageTurnAnimation` | 6808 |
-| `prepareMirroredTtsManualPageTurn` | 6813 |
-| `cancelMirroredTtsManualPageTurn` | 6815 |
-| `drawReaderPageCurl` | 6885 |
-| `loadNextChapter` | 6915 |
-| `loadPrevChapter` | 6917 |
+| `getPagedSourceText` | 4718 |
+| `buildPagedSourceText` | 4719 |
+| `findMeasuredPageEnd` | 4743 |
+| `refineMeasuredPageEnd` | 4758 |
+| `followTtsChunk` | 4858 |
+| `noteTtsFocusLatency` | 4868 |
+| `applyTtsChunkFocus` | 4869 |
+| `syncTtsFocusAfterResume` | 4876 |
+| `updateTtsChunkHighlight` | 4878 |
+| `republishTtsFocusAfterPageTurn` | 4888 |
+| `scheduleTtsFocusSyncAfterPagination` | 4893 |
+| `persistTtsReadPosition` | 4895 |
+| `restorePersistedTtsFocus` | 4898 |
+| `syncMirroredTtsFocus` | 4901 |
+| `clearMirroredTtsFocus` | 4902 |
+| `takeOverMirroredTtsSession` | 4907 |
+| `animateTtsToPage` | 4909 |
+| `applyTtsPageTarget` | 4912 |
+| `applyTtsPageTurn` | 4916 |
+| `styledReaderText` | 5431 |
+| `splitSlicesByTtsHighlight` | 5996 |
+| `hasActiveTtsHighlight` | 6038 |
+| `shouldUseReaderLayoutV2` | 6043 |
+| `buildReaderV2Snapshot` | 6044 |
+| `refreshReaderV2TtsOverlay` | 6699 |
+| `paginateReaderSourceText` | 6705 |
+| `turnNext` | 6771 |
+| `turnPrev` | 6780 |
+| `applyPageTurn` | 6879 |
+| `runPageTurnAnimation` | 6890 |
+| `prepareMirroredTtsManualPageTurn` | 6895 |
+| `cancelMirroredTtsManualPageTurn` | 6897 |
+| `drawReaderPageCurl` | 6967 |
+| `loadNextChapter` | 6997 |
+| `loadPrevChapter` | 6999 |
 
 （共索引 74 个关键方法；未列出的多为 `@Builder` 或仅在表达式中出现。）
 
@@ -273,7 +273,7 @@
 
 ## 响应式状态域地图（@State / @StorageLink / @StorageProp）
 
-> 由脚本实时扫描 `ReadBook.ets`（行号已含 `//region` 标记）生成；共 282 个响应式字段（`@State` 178 / `@StorageLink` 102 / `@StorageProp` 2）。「域」由生成器内的 `DOMAIN_RULES` 关键字规则首匹配启发式判定，可按需调整；抽取任何逻辑前先按域定位其读写邻居，并用 `ops_grep` 复核触达的 @State 集合。
+> 由脚本实时扫描 `ReadBook.ets`（行号已含 `//region` 标记）生成；共 283 个响应式字段（`@State` 179 / `@StorageLink` 102 / `@StorageProp` 2）。「域」由生成器内的 `DOMAIN_RULES` 关键字规则首匹配启发式判定，可按需调整；抽取任何逻辑前先按域定位其读写邻居，并用 `ops_grep` 复核触达的 @State 集合。
 
 | 域 | 字段数 |
 |----|-------:|
@@ -288,7 +288,7 @@
 | 菜单 / 显隐 / 设置弹窗 | 17 |
 | 主题 / 夜间模式 | 16 |
 | TTS 音色 / 语速设置 | 15 |
-| 自动翻页 / 屏幕 / 快捷设置 | 14 |
+| 自动翻页 / 屏幕 / 快捷设置 | 15 |
 | 漫画模式 | 12 |
 | 封面 / 书架 | 8 |
 | 书签 | 7 |
@@ -481,103 +481,104 @@
 | 874 | 自动翻页 / 屏幕 / 快捷设置 | `@StorageLink` | `readerAutoPageTurnIntervalSec` | `onAutoPageTurnIntervalChanged` | `autoPageTurnIntervalSec` | `number` | — |
 | 876 | 自动翻页 / 屏幕 / 快捷设置 | `@State` | — | — | `autoPageTurnRingProgress` | `number` | — |
 | 877 | 自动翻页 / 屏幕 / 快捷设置 | `@State` | — | — | `autoPageTurnUserPaused` | `boolean` | — |
-| 880 | 自动翻页 / 屏幕 / 快捷设置 | `@State` | — | `onSystemDialogFlagChanged` | `showAutoPageTurnIntervalDialog` | `boolean` | — |
-| 881 | 自动翻页 / 屏幕 / 快捷设置 | `@StorageLink` | `readerScreenTimeoutMinutes` | — | `readerScreenTimeoutMinutes` | `number` | — |
-| 883 | 自动翻页 / 屏幕 / 快捷设置 | `@StorageLink` | `readerExtendToStatusBar` | `onReaderExtendToStatusBarChanged` | `readerExtendToStatusBar` | `boolean` | — |
-| 884 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerPreloadEnabled` | `onReaderPreloadChanged` | `readerPreloadEnabled` | `boolean` | — |
-| 885 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerPreloadChapterCount` | `onReaderPreloadChanged` | `readerPreloadChapterCount` | `number` | — |
-| 886 | 自动翻页 / 屏幕 / 快捷设置 | `@StorageLink` | `readerUseTtsQuickAction` | — | `readerUseTtsQuickAction` | `boolean` | — |
-| 887 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerTtsQuickActionSide` | — | `readerTtsQuickActionSide` | `number` | — |
-| 888 | 自动翻页 / 屏幕 / 快捷设置 | `@StorageLink` | `readerUseChapterQuickJump` | — | `readerUseChapterQuickJump` | `boolean` | — |
-| 889 | 自动翻页 / 屏幕 / 快捷设置 | `@StorageLink` | `readerQuickBookmarkEnabled` | — | `readerQuickBookmarkEnabled` | `boolean` | — |
-| 890 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerHeaderEnabled` | `onReaderChromeChanged` | `readerHeaderEnabled` | `boolean` | — |
-| 891 | 书籍 / 章节 / 缓存 / 换源 | `@StorageLink` | `readerHeaderContentMode` | `onReaderChromeChanged` | `readerHeaderContentMode` | `string` | — |
-| 892 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerFooterEnabled` | `onReaderChromeChanged` | `readerFooterEnabled` | `boolean` | — |
-| 893 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerFooterLeftMode` | `onReaderChromeChanged` | `readerFooterLeftMode` | `string` | — |
-| 894 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerFooterProgressMode` | `onReaderChromeChanged` | `readerFooterProgressMode` | `string` | — |
-| 895 | 菜单 / 显隐 / 设置弹窗 | `@StorageLink` | `readerFooterShowProgressBar` | `onReaderChromeChanged` | `readerFooterShowProgressBar` | `boolean` | — |
-| 896 | 书籍 / 章节 / 缓存 / 换源 | `@StorageLink` | `readerReplaceRulesUpdateTime` | `onReaderReplaceRulesChanged` | `readerReplaceRulesUpdateTime` | `number` | — |
-| 897 | 字体 / 正则字体 | `@StorageLink` | `readerFontFamily` | `onReaderFontChanged` | `readerFontFamily` | `string` | — |
-| 898 | 字体 / 正则字体 | `@StorageLink` | `readerFontFilePath` | `onReaderFontChanged` | `readerFontFilePath` | `string` | — |
-| 899 | 字体 / 正则字体 | `@StorageLink` | `readerSystemFontFamily` | `onReaderActiveFontChanged` | `readerSystemFontFamily` | `string` | — |
-| 900 | 字体 / 正则字体 | `@StorageLink` | `readerActiveFontFamily` | `onReaderActiveFontChanged` | `readerActiveFontFamily` | `string` | — |
-| 901 | 字体 / 正则字体 | `@StorageLink` | `readerFontRegistered` | `onReaderActiveFontChanged` | `readerStoredFontRegistered` | `boolean` | — |
-| 902 | 字体 / 正则字体 | `@StorageLink` | `readerBodyFontMode` | `onReaderFontStyleChanged` | `readerBodyFontMode` | `string` | — |
-| 903 | 字体 / 正则字体 | `@StorageLink` | `readerBodyFontFamily` | `onReaderFontStyleChanged` | `readerBodyFontFamily` | `string` | — |
-| 904 | 字体 / 正则字体 | `@StorageLink` | `readerTitleFontMode` | `onReaderFontStyleChanged` | `readerTitleFontMode` | `string` | — |
-| 905 | 字体 / 正则字体 | `@StorageLink` | `readerTitleFontFamily` | `onReaderFontStyleChanged` | `readerTitleFontFamily` | `string` | — |
-| 906 | 字体 / 正则字体 | `@StorageLink` | `readerTitleFontSize` | `onReaderFontStyleChanged` | `readerTitleFontSize` | `number` | — |
-| 907 | 字体 / 正则字体 | `@StorageLink` | `readerRegexFontEnabled` | `onReaderFontStyleChanged` | `readerRegexFontEnabled` | `boolean` | — |
-| 908 | 字体 / 正则字体 | `@StorageLink` | `readerRegexFontPattern` | `onReaderFontStyleChanged` | `readerRegexFontPattern` | `string` | — |
-| 909 | 字体 / 正则字体 | `@StorageLink` | `readerRegexFontMode` | `onReaderFontStyleChanged` | `readerRegexFontMode` | `string` | — |
-| 910 | 字体 / 正则字体 | `@StorageLink` | `readerRegexFontFamily` | `onReaderFontStyleChanged` | `readerRegexFontFamily` | `string` | — |
-| 911 | 字体 / 正则字体 | `@StorageLink` | `readerRegexFontSize` | `onReaderFontStyleChanged` | `readerRegexFontSize` | `number` | — |
-| 912 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerRegexShadowColor` | `onReaderFontStyleChanged` | `readerRegexShadowColor` | `string` | — |
-| 913 | 字体 / 正则字体 | `@StorageLink` | `readerRegexFontRulesRaw` | `onReaderFontStyleChanged` | `readerRegexFontRulesRaw` | `string` | — |
-| 914 | 字体 / 正则字体 | `@State` | — | — | `activeReaderFontFamily` | `string` | — |
-| 915 | 字体 / 正则字体 | `@State` | — | — | `readerFontRegistered` | `boolean` | — |
-| 916 | 字体 / 正则字体 | `@State` | — | — | `readerFontRenderReady` | `boolean` | — |
-| 917 | 主题 / 夜间模式 | `@StorageLink` | `appDarkMode` | `onReaderColorModeChanged` | `appDarkMode` | `boolean` | — |
-| 918 | 主题 / 夜间模式 | `@StorageLink` | `appThemeMode` | — | `appThemeMode` | `string` | — |
-| 919 | 主题 / 夜间模式 | `@StorageLink` | `themeRevision` | `onReaderThemeChanged` | `themeRevision` | `number` | — |
-| 920 | 主题 / 夜间模式 | `@StorageLink` | `appLightAccentColor` | — | `appLightAccentColor` | `string` | — |
-| 921 | 主题 / 夜间模式 | `@StorageLink` | `appDarkAccentColor` | — | `appDarkAccentColor` | `string` | — |
-| 922 | 主题 / 夜间模式 | `@StorageLink` | `appLightButtonColor` | — | `appLightButtonColor` | `string` | — |
-| 923 | 主题 / 夜间模式 | `@StorageLink` | `appDarkButtonColor` | — | `appDarkButtonColor` | `string` | — |
-| 924 | 封面 / 书架 | `@StorageLink` | `bookshelfCoverAlbums` | `onTtsCoverSettingsChanged` | `bookshelfCoverAlbums` | `string` | — |
-| 925 | 封面 / 书架 | `@StorageLink` | `bookshelfLightCoverAlbumId` | `onTtsCoverSettingsChanged` | `bookshelfLightCoverAlbumId` | `string` | — |
-| 926 | 封面 / 书架 | `@StorageLink` | `bookshelfDarkCoverAlbumId` | `onTtsCoverSettingsChanged` | `bookshelfDarkCoverAlbumId` | `string` | — |
-| 927 | 封面 / 书架 | `@StorageLink` | `bookshelfCoverApplyScope` | `onTtsCoverSettingsChanged` | `bookshelfCoverApplyScope` | `string` | — |
-| 928 | 封面 / 书架 | `@StorageLink` | `bookshelfCoverTargetBooks` | `onTtsCoverSettingsChanged` | `bookshelfCoverTargetBooks` | `string` | — |
-| 929 | 封面 / 书架 | `@StorageLink` | `bookshelfIgnoreSourceCover` | `onTtsCoverSettingsChanged` | `bookshelfIgnoreSourceCover` | `boolean` | — |
-| 930 | 封面 / 书架 | `@StorageLink` | `bookshelfCoverMode` | `onTtsCoverSettingsChanged` | `bookshelfCoverMode` | `string` | — |
-| 931 | 封面 / 书架 | `@StorageLink` | `coverGalleryUpdateTime` | `onTtsCoverSettingsChanged` | `coverGalleryUpdateTime` | `number` | — |
-| 932 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsPerson` | — | `ttsPerson` | `number` | — |
-| 933 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsOnline` | — | `ttsOnline` | `number` | — |
-| 934 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsStyle` | — | `ttsStyle` | `string` | — |
-| 935 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsLanguage` | — | `ttsLanguage` | `string` | — |
-| 936 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsSpeed` | — | `ttsSpeed` | `number` | — |
-| 937 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsInstalledVoiceKeys` | — | `ttsInstalledVoiceKeys` | `string` | — |
-| 938 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsCustomVoiceId` | — | `ttsCustomVoiceId` | `string` | — |
-| 939 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsCustomVoices` | `onTtsCustomVoicesChanged` | `ttsCustomVoices` | `string` | — |
-| 940 | 书籍 / 章节 / 缓存 / 换源 | `@StorageLink` | `launchShortcutNonce` | `onLaunchShortcutChanged` | `launchShortcutNonce` | `number` | — |
-| 941 | 书籍 / 章节 / 缓存 / 换源 | `@StorageLink` | `fullTextCacheCancelNonce` | `onFullTextCacheCancelNonceChanged` | `fullTextCacheCancelNonce` | `number` | — |
-| 942 | TTS 音色 / 语速设置 | `@State` | — | — | `ttsVoices` | `TtsVoiceOption[]` | — |
-| 943 | TTS 音色 / 语速设置 | `@State` | — | — | `ttsCustomVoiceOptions` | `HttpTTS[]` | — |
-| 944 | TTS 音色 / 语速设置 | `@State` | — | — | `ttsSelectedVoiceKey` | `string` | — |
-| 945 | TTS 音色 / 语速设置 | `@State` | — | — | `ttsVoicesLoading` | `boolean` | — |
-| 946 | TTS 音色 / 语速设置 | `@State` | — | — | `ttsDownloadingVoiceKey` | `string` | — |
-| 947 | TTS 音色 / 语速设置 | `@State` | — | — | `showTtsVoiceDropdown` | `boolean` | — |
-| 948 | TTS 音色 / 语速设置 | `@State` | — | — | `ttsVoiceRowPressedKey` | `string` | — |
-| 949 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `fullTextCaching` | `boolean` | — |
-| 950 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `fullTextCacheDone` | `number` | — |
-| 951 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `fullTextCacheTotal` | `number` | — |
-| 952 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `fullTextCacheStatus` | `string` | — |
-| 953 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | `onSystemDialogFlagChanged` | `showReaderCacheDialog` | `boolean` | — |
-| 954 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | `onSystemDialogFlagChanged` | `showReaderChapterCacheDialog` | `boolean` | — |
-| 955 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `readerCacheChapters` | `BookChapter[]` | — |
-| 956 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `readerCacheStatus` | `string` | — |
-| 957 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `readerCacheRangeDraft` | `string` | — |
-| 958 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `readerCacheRangeCaching` | `boolean` | — |
-| 991 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyValueRevision` | `number` | — |
-| 992 | 字体 / 正则字体 | `@State` | — | — | `readerTypographyFontSize` | `number` | — |
-| 993 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyLetterSpacing` | `number` | — |
-| 994 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyLineHeight` | `number` | — |
-| 995 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyParagraphSpacing` | `number` | — |
-| 996 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyMarginLeft` | `number` | — |
-| 997 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyMarginRight` | `number` | — |
-| 998 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyMarginTop` | `number` | — |
-| 999 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyMarginBottom` | `number` | — |
-| 1031 | 眼动翻页 | `@State` | — | — | `arEyeTurnHostMounted` | `boolean` | — |
-| 1036 | 眼动翻页 | `@State` | — | — | `readerEyeTurnStatus` | `string` | — |
-| 1037 | 眼动翻页 | `@State` | — | — | `showReaderEyeCalibration` | `boolean` | — |
-| 1038 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationStep` | `number` | — |
-| 1039 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationCapturing` | `boolean` | — |
-| 1040 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationProgress` | `number` | — |
-| 1041 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationTargetY` | `number` | — |
-| 1042 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationOverlayWidth` | `number` | — |
-| 1043 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationOverlayHeight` | `number` | — |
-| 1048 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationSessionActive` | `boolean` | — |
+| 881 | 自动翻页 / 屏幕 / 快捷设置 | `@State` | — | — | `autoPageTurnSwitchEpoch` | `number` | — |
+| 884 | 自动翻页 / 屏幕 / 快捷设置 | `@State` | — | `onSystemDialogFlagChanged` | `showAutoPageTurnIntervalDialog` | `boolean` | — |
+| 885 | 自动翻页 / 屏幕 / 快捷设置 | `@StorageLink` | `readerScreenTimeoutMinutes` | — | `readerScreenTimeoutMinutes` | `number` | — |
+| 887 | 自动翻页 / 屏幕 / 快捷设置 | `@StorageLink` | `readerExtendToStatusBar` | `onReaderExtendToStatusBarChanged` | `readerExtendToStatusBar` | `boolean` | — |
+| 888 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerPreloadEnabled` | `onReaderPreloadChanged` | `readerPreloadEnabled` | `boolean` | — |
+| 889 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerPreloadChapterCount` | `onReaderPreloadChanged` | `readerPreloadChapterCount` | `number` | — |
+| 890 | 自动翻页 / 屏幕 / 快捷设置 | `@StorageLink` | `readerUseTtsQuickAction` | — | `readerUseTtsQuickAction` | `boolean` | — |
+| 891 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerTtsQuickActionSide` | — | `readerTtsQuickActionSide` | `number` | — |
+| 892 | 自动翻页 / 屏幕 / 快捷设置 | `@StorageLink` | `readerUseChapterQuickJump` | — | `readerUseChapterQuickJump` | `boolean` | — |
+| 893 | 自动翻页 / 屏幕 / 快捷设置 | `@StorageLink` | `readerQuickBookmarkEnabled` | — | `readerQuickBookmarkEnabled` | `boolean` | — |
+| 894 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerHeaderEnabled` | `onReaderChromeChanged` | `readerHeaderEnabled` | `boolean` | — |
+| 895 | 书籍 / 章节 / 缓存 / 换源 | `@StorageLink` | `readerHeaderContentMode` | `onReaderChromeChanged` | `readerHeaderContentMode` | `string` | — |
+| 896 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerFooterEnabled` | `onReaderChromeChanged` | `readerFooterEnabled` | `boolean` | — |
+| 897 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerFooterLeftMode` | `onReaderChromeChanged` | `readerFooterLeftMode` | `string` | — |
+| 898 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerFooterProgressMode` | `onReaderChromeChanged` | `readerFooterProgressMode` | `string` | — |
+| 899 | 菜单 / 显隐 / 设置弹窗 | `@StorageLink` | `readerFooterShowProgressBar` | `onReaderChromeChanged` | `readerFooterShowProgressBar` | `boolean` | — |
+| 900 | 书籍 / 章节 / 缓存 / 换源 | `@StorageLink` | `readerReplaceRulesUpdateTime` | `onReaderReplaceRulesChanged` | `readerReplaceRulesUpdateTime` | `number` | — |
+| 901 | 字体 / 正则字体 | `@StorageLink` | `readerFontFamily` | `onReaderFontChanged` | `readerFontFamily` | `string` | — |
+| 902 | 字体 / 正则字体 | `@StorageLink` | `readerFontFilePath` | `onReaderFontChanged` | `readerFontFilePath` | `string` | — |
+| 903 | 字体 / 正则字体 | `@StorageLink` | `readerSystemFontFamily` | `onReaderActiveFontChanged` | `readerSystemFontFamily` | `string` | — |
+| 904 | 字体 / 正则字体 | `@StorageLink` | `readerActiveFontFamily` | `onReaderActiveFontChanged` | `readerActiveFontFamily` | `string` | — |
+| 905 | 字体 / 正则字体 | `@StorageLink` | `readerFontRegistered` | `onReaderActiveFontChanged` | `readerStoredFontRegistered` | `boolean` | — |
+| 906 | 字体 / 正则字体 | `@StorageLink` | `readerBodyFontMode` | `onReaderFontStyleChanged` | `readerBodyFontMode` | `string` | — |
+| 907 | 字体 / 正则字体 | `@StorageLink` | `readerBodyFontFamily` | `onReaderFontStyleChanged` | `readerBodyFontFamily` | `string` | — |
+| 908 | 字体 / 正则字体 | `@StorageLink` | `readerTitleFontMode` | `onReaderFontStyleChanged` | `readerTitleFontMode` | `string` | — |
+| 909 | 字体 / 正则字体 | `@StorageLink` | `readerTitleFontFamily` | `onReaderFontStyleChanged` | `readerTitleFontFamily` | `string` | — |
+| 910 | 字体 / 正则字体 | `@StorageLink` | `readerTitleFontSize` | `onReaderFontStyleChanged` | `readerTitleFontSize` | `number` | — |
+| 911 | 字体 / 正则字体 | `@StorageLink` | `readerRegexFontEnabled` | `onReaderFontStyleChanged` | `readerRegexFontEnabled` | `boolean` | — |
+| 912 | 字体 / 正则字体 | `@StorageLink` | `readerRegexFontPattern` | `onReaderFontStyleChanged` | `readerRegexFontPattern` | `string` | — |
+| 913 | 字体 / 正则字体 | `@StorageLink` | `readerRegexFontMode` | `onReaderFontStyleChanged` | `readerRegexFontMode` | `string` | — |
+| 914 | 字体 / 正则字体 | `@StorageLink` | `readerRegexFontFamily` | `onReaderFontStyleChanged` | `readerRegexFontFamily` | `string` | — |
+| 915 | 字体 / 正则字体 | `@StorageLink` | `readerRegexFontSize` | `onReaderFontStyleChanged` | `readerRegexFontSize` | `number` | — |
+| 916 | 阅读排版与交互设置 (通用) | `@StorageLink` | `readerRegexShadowColor` | `onReaderFontStyleChanged` | `readerRegexShadowColor` | `string` | — |
+| 917 | 字体 / 正则字体 | `@StorageLink` | `readerRegexFontRulesRaw` | `onReaderFontStyleChanged` | `readerRegexFontRulesRaw` | `string` | — |
+| 918 | 字体 / 正则字体 | `@State` | — | — | `activeReaderFontFamily` | `string` | — |
+| 919 | 字体 / 正则字体 | `@State` | — | — | `readerFontRegistered` | `boolean` | — |
+| 920 | 字体 / 正则字体 | `@State` | — | — | `readerFontRenderReady` | `boolean` | — |
+| 921 | 主题 / 夜间模式 | `@StorageLink` | `appDarkMode` | `onReaderColorModeChanged` | `appDarkMode` | `boolean` | — |
+| 922 | 主题 / 夜间模式 | `@StorageLink` | `appThemeMode` | — | `appThemeMode` | `string` | — |
+| 923 | 主题 / 夜间模式 | `@StorageLink` | `themeRevision` | `onReaderThemeChanged` | `themeRevision` | `number` | — |
+| 924 | 主题 / 夜间模式 | `@StorageLink` | `appLightAccentColor` | — | `appLightAccentColor` | `string` | — |
+| 925 | 主题 / 夜间模式 | `@StorageLink` | `appDarkAccentColor` | — | `appDarkAccentColor` | `string` | — |
+| 926 | 主题 / 夜间模式 | `@StorageLink` | `appLightButtonColor` | — | `appLightButtonColor` | `string` | — |
+| 927 | 主题 / 夜间模式 | `@StorageLink` | `appDarkButtonColor` | — | `appDarkButtonColor` | `string` | — |
+| 928 | 封面 / 书架 | `@StorageLink` | `bookshelfCoverAlbums` | `onTtsCoverSettingsChanged` | `bookshelfCoverAlbums` | `string` | — |
+| 929 | 封面 / 书架 | `@StorageLink` | `bookshelfLightCoverAlbumId` | `onTtsCoverSettingsChanged` | `bookshelfLightCoverAlbumId` | `string` | — |
+| 930 | 封面 / 书架 | `@StorageLink` | `bookshelfDarkCoverAlbumId` | `onTtsCoverSettingsChanged` | `bookshelfDarkCoverAlbumId` | `string` | — |
+| 931 | 封面 / 书架 | `@StorageLink` | `bookshelfCoverApplyScope` | `onTtsCoverSettingsChanged` | `bookshelfCoverApplyScope` | `string` | — |
+| 932 | 封面 / 书架 | `@StorageLink` | `bookshelfCoverTargetBooks` | `onTtsCoverSettingsChanged` | `bookshelfCoverTargetBooks` | `string` | — |
+| 933 | 封面 / 书架 | `@StorageLink` | `bookshelfIgnoreSourceCover` | `onTtsCoverSettingsChanged` | `bookshelfIgnoreSourceCover` | `boolean` | — |
+| 934 | 封面 / 书架 | `@StorageLink` | `bookshelfCoverMode` | `onTtsCoverSettingsChanged` | `bookshelfCoverMode` | `string` | — |
+| 935 | 封面 / 书架 | `@StorageLink` | `coverGalleryUpdateTime` | `onTtsCoverSettingsChanged` | `coverGalleryUpdateTime` | `number` | — |
+| 936 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsPerson` | — | `ttsPerson` | `number` | — |
+| 937 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsOnline` | — | `ttsOnline` | `number` | — |
+| 938 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsStyle` | — | `ttsStyle` | `string` | — |
+| 939 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsLanguage` | — | `ttsLanguage` | `string` | — |
+| 940 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsSpeed` | — | `ttsSpeed` | `number` | — |
+| 941 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsInstalledVoiceKeys` | — | `ttsInstalledVoiceKeys` | `string` | — |
+| 942 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsCustomVoiceId` | — | `ttsCustomVoiceId` | `string` | — |
+| 943 | TTS 音色 / 语速设置 | `@StorageLink` | `ttsCustomVoices` | `onTtsCustomVoicesChanged` | `ttsCustomVoices` | `string` | — |
+| 944 | 书籍 / 章节 / 缓存 / 换源 | `@StorageLink` | `launchShortcutNonce` | `onLaunchShortcutChanged` | `launchShortcutNonce` | `number` | — |
+| 945 | 书籍 / 章节 / 缓存 / 换源 | `@StorageLink` | `fullTextCacheCancelNonce` | `onFullTextCacheCancelNonceChanged` | `fullTextCacheCancelNonce` | `number` | — |
+| 946 | TTS 音色 / 语速设置 | `@State` | — | — | `ttsVoices` | `TtsVoiceOption[]` | — |
+| 947 | TTS 音色 / 语速设置 | `@State` | — | — | `ttsCustomVoiceOptions` | `HttpTTS[]` | — |
+| 948 | TTS 音色 / 语速设置 | `@State` | — | — | `ttsSelectedVoiceKey` | `string` | — |
+| 949 | TTS 音色 / 语速设置 | `@State` | — | — | `ttsVoicesLoading` | `boolean` | — |
+| 950 | TTS 音色 / 语速设置 | `@State` | — | — | `ttsDownloadingVoiceKey` | `string` | — |
+| 951 | TTS 音色 / 语速设置 | `@State` | — | — | `showTtsVoiceDropdown` | `boolean` | — |
+| 952 | TTS 音色 / 语速设置 | `@State` | — | — | `ttsVoiceRowPressedKey` | `string` | — |
+| 953 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `fullTextCaching` | `boolean` | — |
+| 954 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `fullTextCacheDone` | `number` | — |
+| 955 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `fullTextCacheTotal` | `number` | — |
+| 956 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `fullTextCacheStatus` | `string` | — |
+| 957 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | `onSystemDialogFlagChanged` | `showReaderCacheDialog` | `boolean` | — |
+| 958 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | `onSystemDialogFlagChanged` | `showReaderChapterCacheDialog` | `boolean` | — |
+| 959 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `readerCacheChapters` | `BookChapter[]` | — |
+| 960 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `readerCacheStatus` | `string` | — |
+| 961 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `readerCacheRangeDraft` | `string` | — |
+| 962 | 书籍 / 章节 / 缓存 / 换源 | `@State` | — | — | `readerCacheRangeCaching` | `boolean` | — |
+| 995 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyValueRevision` | `number` | — |
+| 996 | 字体 / 正则字体 | `@State` | — | — | `readerTypographyFontSize` | `number` | — |
+| 997 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyLetterSpacing` | `number` | — |
+| 998 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyLineHeight` | `number` | — |
+| 999 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyParagraphSpacing` | `number` | — |
+| 1000 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyMarginLeft` | `number` | — |
+| 1001 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyMarginRight` | `number` | — |
+| 1002 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyMarginTop` | `number` | — |
+| 1003 | 阅读排版与交互设置 (通用) | `@State` | — | — | `readerTypographyMarginBottom` | `number` | — |
+| 1035 | 眼动翻页 | `@State` | — | — | `arEyeTurnHostMounted` | `boolean` | — |
+| 1040 | 眼动翻页 | `@State` | — | — | `readerEyeTurnStatus` | `string` | — |
+| 1041 | 眼动翻页 | `@State` | — | — | `showReaderEyeCalibration` | `boolean` | — |
+| 1042 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationStep` | `number` | — |
+| 1043 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationCapturing` | `boolean` | — |
+| 1044 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationProgress` | `number` | — |
+| 1045 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationTargetY` | `number` | — |
+| 1046 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationOverlayWidth` | `number` | — |
+| 1047 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationOverlayHeight` | `number` | — |
+| 1052 | 眼动翻页 | `@State` | — | — | `readerEyeCalibrationSessionActive` | `boolean` | — |
 
 ## 共享状态警告（改代码前必读）
 
@@ -590,7 +591,7 @@
 ## 拆分蓝图（P0 → P3，每步小提交 + 真机回归，禁止大爆炸重写）
 
 - **P0（已完成）**：顶层常量 → `reader/ReaderConstants.ets`（25 常量 + 1 缓存函数）；**131 个叶子纯函数** → `reader/ReaderLeafFns.ets`，调用方用 `import * as LeafFns` 命名空间引用；自底向上 5 批抽取后重扫 `pure=8` 全为结构性排除，纯函数抽离已收敛到不动点。
-- **P0.5（已完成）**：941 个业务方法按 //region 抽到 12 个 `reader/*Ops.ets`，struct 内只留 1 行委托；`private` 字段与 `private` 方法改为可见（运行时擦除、零行为影响），`export struct ReadBookPage` 供 ops 模块做纯类型导入。ReadBook.ets 从 24417 → 6922 行（-17495）。核验：真 ArkTS 编译通过 + 941/941 方法体逐字回环一致 + 6 轮真机前后台回归 0 错误。
+- **P0.5（已完成）**：942 个业务方法按 //region 抽到 12 个 `reader/*Ops.ets`，struct 内只留 1 行委托；`private` 字段与 `private` 方法改为可见（运行时擦除、零行为影响），`export struct ReadBookPage` 供 ops 模块做纯类型导入。ReadBook.ets 从 24417 → 7004 行（-17413）。核验：真 ArkTS 编译通过 + 941/941 方法体逐字回环一致 + 6 轮真机前后台回归 0 错误。
 - **P1（进行中）**：127 个 `@Builder` 按面板提独立 `@Component`（`readerTtsQuickActionButton`、`ttsExpandedMediaControlsBar`、`ttsQuickSettingsPanel` 等）。这会切断 ArkUI V1 的隐式联动，须用 `@Link/@Prop` 或 `@StorageLink` 重建数据通路，且只能靠真机视觉回归验证。
 - **P2（未做）**：分页测量引擎 / TTS 编排 / 焦点·镜像 各自提 Controller+Host 类；本步已把它们的**代码**挪出巨型文件，剩下的工作是切状态边界。
 - 目标：每单元 ≤ 1500–2000 行 / ≤ 100 KB，边界靠**显式接口**而非共享 `@State`。

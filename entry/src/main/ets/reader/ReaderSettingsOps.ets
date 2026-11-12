@@ -254,7 +254,7 @@ export function consumeSuppressedReaderTapClick(page: ReadBookPage): boolean {
     }
     page.suppressReaderTapClick = false;
     return true;
-}
+  }
 
 export function getReaderPageTurnGestureOffset(page: ReadBookPage, offsetX: number, offsetY: number): number {
     return page.isVerticalPageTurnAnimation() ? offsetY : offsetX;

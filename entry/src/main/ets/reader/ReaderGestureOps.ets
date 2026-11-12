@@ -763,9 +763,11 @@ export function unregisterVolumeKeyTurn(page: ReadBookPage): void {
 }
 
 export function handleVolumeKeyTurn(page: ReadBookPage, direction: number): void {
+    // 菜单/目录/设置打开时仍允许音量键翻页（与 legado 安卓一致），
+    // 避免停止朗读后菜单未关时按键被订阅消耗却无任何响应。
     if (!page.readerVolumeTurnPage || !page.readerPageVisible || page.isTtsSpeaking ||
-      page.ttsReader.isSpeaking() || ReaderTtsFloatingSession.isActive() || page.showMenu || page.showToc ||
-      page.showSettings || page.isLoading || page.chapters.length === 0) {
+      page.ttsReader.isSpeaking() || ReaderTtsFloatingSession.isActive() ||
+      page.isLoading || page.chapters.length === 0) {
       return;
     }
     if (page.isReaderContinuousScrollSurfaceActive()) {

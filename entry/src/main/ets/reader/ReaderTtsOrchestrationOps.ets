@@ -326,6 +326,14 @@ export async function startTtsReadingFromCurrentPosition(page: ReadBookPage, sho
     if (readingStartOffset < 0) {
       page.ttsChapterCompletionRetryCount = 0;
     }
+    // 自动翻页进行中开始朗读：直接关闭自动翻页。stopAutoPageTurn 会复位
+    // autoPageTurnActive（@StorageLink 同步设置面板开关）与圆环状态，指示器随开关消失。
+    if (page.autoPageTurnController.isRunning()) {
+      page.stopAutoPageTurn(false);
+      if (showToast) {
+        HdsFeedback.showToast('已关闭自动翻页');
+      }
+    }
     // A source may end in whitespace, decorative separators, image/script signatures or other
     // tails that the TTS text pipeline blanks out before synthesis, so using text.length here
     // can point past the final audible chunk. That made the completion guard replay the last
@@ -406,8 +414,8 @@ export async function startTtsReadingFromCurrentPosition(page: ReadBookPage, sho
         return;
       }
       await page.ttsReader.start(text, {
-        onFinished: () => {
-          page.continueTtsReading(token).catch((e: Error) => {
+        onFinished: (audibleTailConfirmed: boolean) => {
+          page.continueTtsReading(token, audibleTailConfirmed).catch((e: Error) => {
             console.warn('连续朗读续播失败:', e);
             if (token === page.ttsReadToken) {
               page.finishTtsReading();
@@ -434,8 +442,14 @@ export async function startTtsReadingFromCurrentPosition(page: ReadBookPage, sho
           HdsFeedback.showToast(message || '系统朗读失败');
         },
         onChunkStart: (chunk: TtsChunk) => {
+          // TTS-M2：仅 serial 被字节级相同重载顶掉时（canResyncTtsFocusSession），
+          // followTtsChunk 内部会重新对齐 serial 自愈；这里若只认
+          // isCurrentTtsFocusSession，自愈永远走不到，cue 被外层丢弃导致
+          // ttsLastFocusChunk 冻结在旧句、章末从旧句退回重播。
           if (!page.isCurrentTtsFocusSession(token, focusGeneration,
-            focusChapterIndex, focusSourceIdentity)) {
+            focusChapterIndex, focusSourceIdentity) &&
+            !page.canResyncTtsFocusSession(token, focusGeneration,
+              focusChapterIndex, focusSourceIdentity)) {
             return;
           }
           page.followTtsChunk(chunk, token, focusGeneration, focusChapterIndex, focusSourceIdentity);
@@ -671,7 +685,8 @@ export function syncTtsStateToVisiblePage(page: ReadBookPage): void {
     page.updateTtsFloatingSession();
 }
 
-export async function continueTtsReading(page: ReadBookPage, token: number): Promise<void> {
+export async function continueTtsReading(page: ReadBookPage, token: number,
+  audibleTailConfirmed: boolean = false): Promise<void> {
     if (token !== page.ttsReadToken || !page.ttsAutoContinue) {
       return;
     }
@@ -683,24 +698,39 @@ export async function continueTtsReading(page: ReadBookPage, token: number): Pro
     // can arrive while the final synthesized chunks are still absent from the audible queue. Replay from the last
     // confirmed chunk instead of discarding the unspoken tail and entering the next chapter.
     if (!page.isTtsReadingAtExpectedEnd()) {
-      if (page.ttsChapterCompletionRetryCount < 2) {
-        page.ttsChapterCompletionRetryCount++;
-        const resumeOffset = page.ttsLastFocusChunk ?
-          page.readerV2TtsSourceOffset(page.ttsLastFocusChunk.start) : page.ttsTextStartOffset;
-        console.warn(`[TTS] completion before chapter tail: chapter=${page.currentChapterIndex},` +
-          `resume=${resumeOffset},expected=${page.ttsReadingExpectedSourceEnd},` +
-          `retry=${page.ttsChapterCompletionRetryCount}`);
-        await page.startTtsReadingFromCurrentPosition(false, false, -1, resumeOffset, false);
+      if (audibleTailConfirmed) {
+        // 音频层证据（PCM 时间线自然排空到章尾 / 直播模式引擎逐 chunk 确认播完）：
+        // 声音确实读到了章尾，只是焦点锚点（高亮/持久化线索）因后台丢 cue 落后。
+        // 此时从冻结锚点重播会"退回一段文字"重读用户已听过的内容（切后台偶发
+        // 症状），必须信任音频证据直接换章。
+        console.warn(`[TTS] chapter tail audible but focus anchor behind: chapter=${page.currentChapterIndex},` +
+          `anchor=${page.ttsLastFocusChunk ? page.readerV2TtsSourceOffset(page.ttsLastFocusChunk.start) : -1},` +
+          `expected=${page.ttsReadingExpectedSourceEnd}; advancing without replay`);
+      } else {
+        if (page.ttsChapterCompletionRetryCount < 2) {
+          page.ttsChapterCompletionRetryCount++;
+          const resumeOffset = page.ttsLastFocusChunk ?
+            page.readerV2TtsSourceOffset(page.ttsLastFocusChunk.start) : page.ttsTextStartOffset;
+          // gap = 距章末确认点的回退幅度。正常补播只差一两句（gap 小）；
+          // gap 大（数百字符以上）说明焦点锚点在会话中被冻结过，重播会"退回一段文字"，
+          // 配合 [TTS] focus cue dropped 日志定位冻结原因。
+          const replayGap = Math.max(0, page.ttsReadingExpectedSourceEnd - resumeOffset);
+          console.warn(`[TTS] completion before chapter tail: chapter=${page.currentChapterIndex},` +
+            `resume=${resumeOffset},expected=${page.ttsReadingExpectedSourceEnd},` +
+            `gap=${replayGap},focusChunkNull=${!page.ttsLastFocusChunk},` +
+            `retry=${page.ttsChapterCompletionRetryCount}`);
+          await page.startTtsReadingFromCurrentPosition(false, false, -1, resumeOffset, false);
+          return;
+        }
+        console.warn(`[TTS] chapter tail still not confirmed after retries: chapter=${page.currentChapterIndex},` +
+          `expected=${page.ttsReadingExpectedSourceEnd}`);
+        // Do not silently consume a chapter when the last focus cue never reached its tail. Stopping here
+        // leaves the reader on the current chapter so the user can retry/resume from the last confirmed chunk.
+        page.ttsChapterAdvanceError = '当前章节末尾朗读未确认，朗读已暂停';
+        page.finishTtsReading();
+        HdsFeedback.showToast(page.ttsChapterAdvanceError);
         return;
       }
-      console.warn(`[TTS] chapter tail still not confirmed after retries: chapter=${page.currentChapterIndex},` +
-        `expected=${page.ttsReadingExpectedSourceEnd}`);
-      // Do not silently consume a chapter when the last focus cue never reached its tail. Stopping here
-      // leaves the reader on the current chapter so the user can retry/resume from the last confirmed chunk.
-      page.ttsChapterAdvanceError = '当前章节末尾朗读未确认，朗读已暂停';
-      page.finishTtsReading();
-      HdsFeedback.showToast(page.ttsChapterAdvanceError);
-      return;
     }
     const advanced = await page.advanceTtsReadingToNextChapter();
     if (token !== page.ttsReadToken || !page.ttsAutoContinue) {
@@ -899,9 +929,12 @@ export function finishTtsReading(page: ReadBookPage): void {
     page.isTtsPaused = false;
     page.ttsFocusLatencyMonitor.reset();
     ReaderTtsFloatingSession.clear(page.ttsFloatingSessionOwnerId);
-    page.updateVolumeKeySubscription();
     page.ttsMediaControlsExpanded = false;
+    // 必须先 stop() 再 updateVolumeKeySubscription()：订阅 guard 会检查
+    // ttsReader.isSpeaking()，stop() 同步清掉 active 标志后才判定为可注册，
+    // 否则听完/结束朗读后音量键翻页订阅永远无法恢复。
     page.ttsReader.stop();
+    page.updateVolumeKeySubscription();
     page.invalidateTtsFocusSession();
     page.stopTtsBackgroundRunning();
     page.ttsPageTurnSerial++;

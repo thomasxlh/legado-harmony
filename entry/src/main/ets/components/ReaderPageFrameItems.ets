@@ -207,6 +207,12 @@ export struct ReaderTapLayer {
   onLongPress: (event: GestureEvent) => void = (_event: GestureEvent): void => {
   };
 
+  aboutToAppear(): void {
+  }
+
+  aboutToDisappear(): void {
+  }
+
   private tapIgnored(): boolean {
     return this.shouldIgnoreTap();
   }

@@ -4,6 +4,7 @@ import { VerificationSupport } from '../http/VerificationSupport';
 import { EncodedJsonMap, EncodedSourceUrl } from '../book/EncodedSourceUrl';
 import { JsonPathEvaluator } from './JsonPathEvaluator';
 import { JavaRegexCompat } from './JavaRegexCompat';
+import { RegexSafetyGuard } from './RegexSafetyGuard';
 import { ScriptEngine, ScriptEngineContext } from './ScriptEngine';
 import { BookUrlResolver } from '../book/BookUrlResolver';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
@@ -276,6 +277,13 @@ export class AnalyzeRule {
       return value ? [value] : [];
     }
 
+    // H2：legado 的 @XPath:/@xpath: 前缀（大小写不敏感）。此前带前缀的规则被
+    // 当作 CSS/文本规则求值，XPath 书源所有字段静默解析为空。
+    const xPathPrefix = effective.match(/^@xpath:\s*([\s\S]*)$/i);
+    if (xPathPrefix) {
+      return this.evalXPathBasic(xPathPrefix[1]);
+    }
+
     const orParts = this.splitCombinedRule(effective, '||');
     if (orParts.length > 1) {
       const parts = orParts;
@@ -350,7 +358,13 @@ export class AnalyzeRule {
     // Regex
     if (effective.startsWith('%')) {
       try {
-        const m = this.content.match(new RegExp(effective.substring(1)));
+        const pattern = effective.substring(1);
+        // 主线程同步执行的用户正则，高危回溯模式直接跳过（守卫与 ## 路径一致）。
+        if (RegexSafetyGuard.isLikelyCatastrophic(pattern)) {
+          console.warn(`[AnalyzeRule] % 正则规则存在灾难性回溯风险，已跳过: ${pattern}`);
+          return [];
+        }
+        const m = this.content.match(new RegExp(pattern));
         return m ? Array.from(m).map(value => value || '') : [];
       } catch (_) {
         return [];
@@ -723,7 +737,9 @@ export class AnalyzeRule {
     const tpl = body.match(/^`([\s\S]*)`$/);
     if (tpl) {
       const marker = new RegExp('\\$\\{\\s*' + this.escapeRegex(name) + '\\s*\\}', 'g');
-      return tpl[1].replace(marker, value);
+      // 函数形式：值按字面插入（与 JS 模板字面量语义一致），防止值里的 $&/$` 等
+      // 被当作替换模式展开。
+      return tpl[1].replace(marker, () => value);
     }
     return this.evalSimpleJsExpression(body, { [name]: value }) || value;
   }
@@ -1333,7 +1349,7 @@ export class AnalyzeRule {
       const v = data ? data[key] : undefined;
       return this.jsonValueToString(v);
     });
-    text = text.replace(/\bresult\b/g, this.ctx.get('result'));
+    text = text.replace(/\bresult\b/g, () => this.ctx.get('result'));
     text = this.replaceSourceCalls(text);
     text = this.js.evalTemplate(`{{${text}}}`);
     return this.stripQuotes(text);
@@ -2005,6 +2021,11 @@ export class AnalyzeRule {
 
   private matchRegexLikeAttribute(value: string, expect: string): boolean {
     if (!value) return false;
+    // CSS 属性选择器里的正则在主线程同步执行：高危回溯模式不走正则，
+    // 降级为字面词匹配（保守但不会冻结 UI）。
+    if (RegexSafetyGuard.isLikelyCatastrophic(expect)) {
+      return new RegExp(`(^|\\s)${this.escapeRegex(expect)}(\\s|$)`).test(value);
+    }
     try {
       return new RegExp(expect, 'i').test(value);
     } catch (_) {
@@ -2095,6 +2116,11 @@ export class AnalyzeRule {
   private evalRegexRule(rule: string): string[] {
     if (!rule || rule.length > 300 || !/[()\\[\].*+?]/.test(rule)) return [];
     try {
+      // 主线程同步执行的用户正则，高危回溯模式直接跳过（守卫与 ## 路径一致）。
+      if (RegexSafetyGuard.isLikelyCatastrophic(rule)) {
+        console.warn(`[AnalyzeRule] 正则规则存在灾难性回溯风险，已跳过: ${rule}`);
+        return [];
+      }
       const re = JavaRegexCompat.compile(rule, 'g');
       const values: string[] = [];
       let m: RegExpExecArray | null;
@@ -2237,7 +2263,7 @@ export class AnalyzeRule {
         return literal
           .replace(/\s*\+\s*/g, '')
           .replace(/['"]/g, '')
-          .replace(/result/g, value)
+          .replace(/result/g, () => value)
           .trim();
       }
     }
@@ -2457,7 +2483,7 @@ export class AnalyzeRule {
   private evalReplaceArgument(raw: string, vars: Record<string, string>): string {
     let text = raw.trim();
     if (text.includes('java.timeFormat') && vars['__timeFormatMatch'] !== undefined) {
-      text = text.replace(/java\.timeFormat\([\s\S]*?\)/, vars['__timeFormatMatch']);
+      text = text.replace(/java\.timeFormat\([\s\S]*?\)/, () => vars['__timeFormatMatch']);
     }
     const parts = this.splitJsConcat(text);
     if (parts.length > 1) {
@@ -2757,6 +2783,12 @@ export class AnalyzeRule {
     if (parts.length < 2) return value;
 
     try {
+      // `##` 规则来自用户书源，主线程同步执行：高危回溯模式必须在编译前拦截，
+      // 否则一次嵌套量词即可前台 appfreeze（与 WebBookService.applyContentReplaceRule 同一守卫）。
+      if (RegexSafetyGuard.isLikelyCatastrophic(parts[1])) {
+        console.warn(`[AnalyzeRule] ## 替换规则存在灾难性回溯风险，已跳过: ${parts[1]}`);
+        return value;
+      }
       if (parts.length >= 3) {
         const regex = JavaRegexCompat.compile(parts[1], parts.length > 3 ? '' : 'g');
         const replacement = JavaRegexCompat.convertReplacement(parts[2]);
@@ -2894,15 +2926,18 @@ export class AnalyzeRule {
   }
 
   private decodeHtmlEntities(text: string): string {
+    // 解码顺序（Rule-M1）：数字/十六进制实体 → 命名实体 → &amp; 最后。若 &amp;
+    // 先解，"&amp;lt;" 会被二次解码成 "<"（源文本本意是字面 "&lt;"），双重解码
+    // 污染正文与标题。&amp; 放最后保证 "&amp;xx;" 解码后停留在 "&xx;" 字面。
     return text
       .replace(/&nbsp;/gi, ' ')
-      .replace(/&amp;/gi, '&')
+      .replace(/&#(\d+);/g, (_: string, value: string) => String.fromCharCode(parseInt(value)))
+      .replace(/&#x([0-9a-f]+);/gi, (_: string, value: string) => String.fromCharCode(parseInt(value, 16)))
       .replace(/&lt;/gi, '<')
       .replace(/&gt;/gi, '>')
       .replace(/&quot;/gi, '"')
       .replace(/&#39;|&apos;/gi, "'")
-      .replace(/&#(\d+);/g, (_: string, value: string) => String.fromCharCode(parseInt(value)))
-      .replace(/&#x([0-9a-f]+);/gi, (_: string, value: string) => String.fromCharCode(parseInt(value, 16)));
+      .replace(/&amp;/gi, '&');
   }
 
   private resolveUrl(url: string): string {

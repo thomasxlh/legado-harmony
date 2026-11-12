@@ -740,8 +740,12 @@ export class LanReaderServer {
         stale.chapterTime = current.durChapterTime;
         return this.jsonResponse(stale);
       }
+      // 忽略 body 里的 variable（网页客户端硬编码 '{}'）：若原样透传会整体覆写
+      // books.variable 与 book_local_meta，本地书 localFilePath 等键全部丢失，
+      // 且清空结果随云同步扩散到所有设备。进度回传只允许更新进度字段，
+      // variable 一律使用服务端现值（getBook 已 hydrate 云+本机两段）。
       await appDb.updateBookReadingProgress(bookUrl, String(value['chapterTitle'] || ''), chapterIndex,
-        chapterPos, updatedAt, String(value['variable'] || '{}'), true);
+        chapterPos, updatedAt, current.variable || '{}', true);
       const accepted = new LanProgressResult();
       accepted.accepted = true;
       accepted.chapterTime = updatedAt;

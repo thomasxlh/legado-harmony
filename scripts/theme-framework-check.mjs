@@ -23,7 +23,13 @@ const assets = read('entry/src/main/ets/theme/ThemeAssetRegistry.ets');
 const readerThemes = read('entry/src/main/ets/utils/ReaderThemeHelper.ets');
 const regexModel = read('entry/src/main/ets/model/reader/ReaderRegexFontRule.ets');
 const regexSettings = read('entry/src/main/ets/pages/ReaderFontSettings.ets');
-const reader = read('entry/src/main/ets/pages/ReadBook.ets');
+// The reader page implementation is split across ReadBook.ets and the
+// extracted reader/*Ops.ets modules (P1 refactor); assertions below target
+// the whole reader surface, so concatenate them.
+const reader = read('entry/src/main/ets/pages/ReadBook.ets') +
+  fs.readdirSync(path.join(etsRoot, 'reader'))
+    .map(fileName => read(`entry/src/main/ets/reader/${fileName}`))
+    .join('\n');
 const readerBackgroundComponent = read('entry/src/main/ets/components/ReaderThemeBackground.ets');
 const indexPage = read('entry/src/main/ets/pages/Index.ets');
 const bookModel = read('entry/src/main/ets/model/data/Book.ts');
@@ -38,6 +44,7 @@ const recentReadCardData = read('entry/src/main/ets/utils/RecentReadCardData.ets
 const themeColorPage = read('entry/src/main/ets/pages/ThemeColorSettings.ets');
 const customSchemeStore = read('entry/src/main/ets/utils/CustomThemeSchemeStore.ets');
 const otherSettingsPage = read('entry/src/main/ets/pages/OtherSettings.ets');
+const readerSettingsRows = read('entry/src/main/ets/components/ReaderSettingsRows.ets');
 const bookSourcePage = read('entry/src/main/ets/pages/BookSource.ets');
 const searchCoordinator = read('entry/src/main/ets/core/book/SearchCoordinator.ts');
 const fontBootstrap = read('entry/src/main/ets/utils/ReaderFontBootstrap.ets');
@@ -258,31 +265,39 @@ assert(readerSettingsPage.includes('this.typographyStepper()') &&
   readerSettingsPage.includes("{ value: '下边距' }") &&
   readerSettingsPage.includes('adjustCurrentTypographySetting'),
   'Reader typography dropdown/stepper does not expose all four margins');
-assert(reader.includes('this.getEffectiveReaderMarginLeft() + this.getEffectiveReaderMarginRight()') &&
-  reader.includes('this.getEffectiveReaderMarginTop() + this.getReaderContentBottomPadding()') &&
-  reader.includes('this.getEffectiveReaderMarginBottom() + this.getReaderContentBottomReserve()'),
+// P1 refactor: margin accounting moved into reader/*Ops.ets with `page.`
+// receivers; getReaderContentBottomPadding() folds margin-bottom + reserve.
+assert(reader.includes('page.getEffectiveReaderMarginLeft() + page.getEffectiveReaderMarginRight()') &&
+  reader.includes('page.getEffectiveReaderMarginTop() + page.getReaderContentBottomPadding()') &&
+  reader.includes('page.getEffectiveReaderMarginBottom() + page.getReaderContentBottomReserve()'),
   'Reader pagination does not account for configured margins');
 // Body rendering and pagination must resolve alignment from the same reader
 // setting.  The reader intentionally supports start/end/justify now, so do
 // not require the old hard-coded JUSTIFY literals here.
-assert(reader.includes('readerTextAlignValue(): TextAlign') &&
-  reader.includes("if (this.readerTextAlign === 'start') return TextAlign.Start") &&
-  reader.includes("if (this.readerTextAlign === 'end') return TextAlign.End") &&
+// P1 refactor: alignment resolvers live in ReaderGestureOps.ets with `page.`
+// receivers; rendering/pagination still call them through the page delegates.
+assert(reader.includes('readerTextAlignValue(page: ReadBookPage): TextAlign') &&
+  reader.includes("if (page.readerTextAlign === 'start') return TextAlign.Start") &&
+  reader.includes("if (page.readerTextAlign === 'end') return TextAlign.End") &&
   reader.includes('.textAlign(this.readerTextAlignValue())') &&
-  reader.includes('readerGraphicsTextAlignValue(): graphicsText.TextAlign') &&
-  reader.includes("if (this.readerTextAlign === 'start') return graphicsText.TextAlign.LEFT") &&
-  reader.includes("if (this.readerTextAlign === 'end') return graphicsText.TextAlign.RIGHT") &&
-  reader.includes('align: this.readerGraphicsTextAlignValue()') &&
-  reader.includes('input.textAlign = this.readerTextAlign'),
+  reader.includes('readerGraphicsTextAlignValue(page: ReadBookPage): graphicsText.TextAlign') &&
+  reader.includes("if (page.readerTextAlign === 'start') return graphicsText.TextAlign.LEFT") &&
+  reader.includes("if (page.readerTextAlign === 'end') return graphicsText.TextAlign.RIGHT") &&
+  reader.includes('align: page.readerGraphicsTextAlignValue()') &&
+  reader.includes('input.textAlign = page.readerTextAlign'),
   'Reader body rendering and pagination measurement must use the shared text alignment setting');
 assert(reader.includes('const safeBest = Math.max(start + 1, Math.min(best, source.length))') &&
   !reader.includes('Math.floor((best - start) * 0.96)'),
   'Reader pagination must not roll back a full line merely to prefer sentence boundaries');
-assert(reader.includes('buildReaderMeasureTextStyle(this.readerFontSize, this.getBodyReaderFontFamily())') &&
-  reader.includes('fontFamily: this.getBodyReaderFontFamily()'),
+assert(reader.includes('page.buildReaderMeasureTextStyle(page.readerFontSize, page.getBodyReaderFontFamily())') &&
+  reader.includes('fontFamily: page.getBodyReaderFontFamily()'),
   'Reader pagination measurement must use the same body font as rendering');
-assert(reader.includes('this.readerTypographySettingsPanel()') &&
-  reader.includes('readerTypographyCombinedSettings()') &&
+// P1 refactor: the in-reader typography panel became the shared
+// ReaderTypographySettingsPanel component (components/ReaderSettingsRows.ets);
+// the option literals live in ReaderLeafFns.readerTypographyOptions().
+assert(reader.includes('ReaderTypographySettingsPanel({') &&
+  readerSettingsRows.includes('struct ReaderTypographySettingsPanel') &&
+  readerSettingsRows.includes('LeafFns.readerTypographyOptions()') &&
   reader.includes("{ value: '左边距' }") &&
   reader.includes("{ value: '右边距' }") &&
   reader.includes("{ value: '上边距' }") &&
@@ -293,16 +308,19 @@ assert(reader.includes('this.readerTypographySettingsPanel()') &&
 assert(bookModel.includes('static hasStartedReading(book: Book | null)') &&
   bookModel.includes("book.getVariable('readStarted')"),
   'Book model must provide a shared started-reading check');
-assert(reader.includes("this.book.putVariable('readStarted', '1')") &&
-  reader.includes('!Book.hasStartedReading(this.book) && chapterIndex <= 0 && pageIndex <= 0') &&
+assert(reader.includes("page.book.putVariable('readStarted', '1')") &&
+  reader.includes('!Book.hasStartedReading(page.book) && chapterIndex <= 0 && pageIndex <= 0') &&
   reader.includes('if (Book.hasStartedReading(this.book))'),
   'Reader must not persist first-open progress before the reader turns forward');
 assert(indexPage.includes('Book.hasStartedReading(book)') &&
   bookshelfSortHelper.includes('!Book.hasStartedReading(book)') &&
   recentReadCardData.includes('!Book.hasStartedReading(book)'),
   'Bookshelf and recent-read surfaces must treat unopened first pages as unread');
+// P1 refactor: the in-reader selector became the ReaderSelectSettingItem
+// component (title-based, dropdown-backed).
 assert(readerSettingsPage.includes("this.selectItem('翻页方式'") &&
-  reader.includes("this.readerSelectSettingItem('翻页方式'") &&
+  reader.includes("title: '翻页方式'") &&
+  reader.includes('LeafFns.pageTurnModeOptions()') &&
   !readerSettingsPage.includes('this.pageTurnOptions()') &&
   !reader.includes('pageTurnModeButton('),
   'Page-turn mode must use dropdown selectors in both settings entries');

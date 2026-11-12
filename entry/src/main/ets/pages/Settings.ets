@@ -174,6 +174,7 @@ struct SettingsPage {
               }, 'settings_reader_text_align_select')
             this.readerHeaderFooterSettingsPanel()
             this.readerFontEntryItem()
+            this.customFontEntryItem()
             this.readerReplaceRulesEntryItem()
             this.switchItem('正文扩展至状态栏', '开启后正文阅读区域会延伸到顶部状态栏安全区', this.readerExtendToStatusBar, (value: boolean) => {
               this.setReaderExtendToStatusBar(value);
@@ -1947,21 +1948,25 @@ struct SettingsPage {
   @Builder
   customFontEntryItem() {
     Row() {
-      Text('自定义字体')
-        .fontColor(this.primaryTextColor())
-        .fontSize(16)
-        .layoutWeight(1)
-      Text('上传 / 删除')
-        .fontSize(13)
-        .fontColor(this.subTextColor())
-        .margin({ right: 8 })
+      Column({ space: 4 }) {
+        Text('自定义字体')
+          .fontColor(this.primaryTextColor())
+          .fontSize(16)
+        Text('上传 / 删除字体文件')
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
       SymbolGlyph($r('sys.symbol.chevron_right'))
         .fontSize(18)
         .fontColor([this.subTextColor()])
     }
-    .width('100%')
-    .height(56)
-    .padding({ left: 16, right: 16 })
+    .width('calc(100% - 32vp)')
+    .constraintSize({ minHeight: 62 })
+    .padding({ left: 0, right: 0, top: 8, bottom: 8 })
+    .margin({ left: 16, right: 16 })
+    .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
     .onClick(() => {

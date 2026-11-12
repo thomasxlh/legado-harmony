@@ -1,5 +1,6 @@
 import { audio } from '@kit.AudioKit';
 import { media } from '@kit.MediaKit';
+import deviceInfo from '@ohos.deviceInfo';
 
 export interface RemoteAudioPlaybackListener {
   onStateChanged(state: string): void;
@@ -17,6 +18,8 @@ export class RemoteAudioPlayback {
   private interruptPaused: boolean = false;
   private sleepTimerId: number = -1;
   private sleepEndAt: number = 0;
+  private sessionManager: audio.AudioSessionManager | null = null;
+  private outputDeviceChangeListener: ((event: audio.CurrentOutputDeviceChangedEvent) => void) | null = null;
 
   bookUrl: string = '';
   chapterIndex: number = -1;
@@ -49,6 +52,7 @@ export class RemoteAudioPlayback {
     startPositionMs: number, speed: number): Promise<void> {
     const generation = ++this.generation;
     this.interruptPaused = false;
+    this.ensureOutputDeviceChangeListener();
     await this.releasePlayer();
     this.bookUrl = bookUrl;
     this.chapterIndex = chapterIndex;
@@ -258,6 +262,53 @@ export class RemoteAudioPlayback {
         this.interruptPaused = false;
       }
     }
+  }
+
+  /**
+   * Pause when the active output device disappears (Bluetooth disconnect, both
+   * earbuds removed, wired headset unplugged). AVPlayer exposes no stream-bound
+   * device-change event, so the app audio session's 'currentOutputDeviceChanged'
+   * (API 20+) is used instead; audioRoutingManager.on('deviceChange') is global
+   * and not stream-bound, which the official FAQ explicitly discourages as an
+   * auto-pause basis. Reconnecting does not auto-resume; the user resumes from
+   * the page, same as a focus interruption.
+   */
+  private ensureOutputDeviceChangeListener(): void {
+    if (this.outputDeviceChangeListener) {
+      return;
+    }
+    if (deviceInfo.sdkApiVersion < 20) {
+      return;
+    }
+    try {
+      if (!this.sessionManager) {
+        this.sessionManager = audio.getAudioManager().getSessionManager();
+      }
+      const listener = (event: audio.CurrentOutputDeviceChangedEvent): void => {
+        this.handleOutputDeviceChange(event);
+      };
+      this.sessionManager.on('currentOutputDeviceChanged', listener);
+      this.outputDeviceChangeListener = listener;
+    } catch (error) {
+      this.sessionManager = null;
+      this.outputDeviceChangeListener = null;
+      console.warn('[AudioBook] register output device change listener failed:', error);
+    }
+  }
+
+  private handleOutputDeviceChange(event: audio.CurrentOutputDeviceChangedEvent): void {
+    const player = this.player;
+    if (!player || player.state !== 'playing') {
+      return;
+    }
+    if (this.interruptPaused) {
+      return;
+    }
+    if (event.changeReason !== audio.AudioStreamDeviceChangeReason.REASON_OLD_DEVICE_UNAVAILABLE) {
+      return;
+    }
+    console.info(`[AudioBook] output device unavailable: action=${event.recommendedAction}, pausing playback`);
+    player.pause().catch(() => {});
   }
 
   private async releasePlayer(): Promise<void> {

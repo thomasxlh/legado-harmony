@@ -308,6 +308,7 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onForeground');
+    AppStorage.setOrCreate<boolean>('appInAbilityBackground', false);
     AppStorage.setOrCreate<number>('appLifecycleForegroundRevision', Date.now());
     if (AppStorage.get<boolean>('lanReaderEnabled') && !lanReaderServer.isRunning()) {
       lanReaderServer.start(this.context).catch((e: Error) => {
@@ -352,6 +353,8 @@ export default class EntryAbility extends UIAbility {
 
   onBackground(): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onBackground');
+    // TTS speak watchdog 后台放宽预算用（前台/后台系统对 TTS 回调节流程度不同）。
+    AppStorage.setOrCreate<boolean>('appInAbilityBackground', true);
     // Page.onPageShow is shared by real route returns and a simple Home/lock-screen resume. Publish a
     // background revision so retained pages do not treat the foreground transition as a settings change.
     AppStorage.setOrCreate<number>('appLifecycleBackgroundRevision', Date.now());

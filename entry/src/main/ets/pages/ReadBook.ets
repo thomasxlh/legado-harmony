@@ -875,6 +875,10 @@ export struct ReadBookPage {
   autoPageTurnIntervalSec: number = 15;
   @State autoPageTurnRingProgress: number = 1;
   @State autoPageTurnUserPaused: boolean = false;
+  // 设置面板自动翻页开关的重建纪元。开启请求被拒绝（朗读中/书籍未加载）时 Toggle 内部状态已翻转，
+  // 而 autoPageTurnActive 保持 false（@Prop 不会重推同值），开关会卡在打开态；
+  // 递增该值使设置行的 if/else 分支互换、强制重建该行，让开关回到关闭。
+  @State autoPageTurnSwitchEpoch: number = 0;
   autoPageTurnController: AutoPageTurnController = new AutoPageTurnController();
   autoPageTurnIntervalDialogSession: SystemDialogSession = new SystemDialogSession();
   @State @Watch('onSystemDialogFlagChanged') showAutoPageTurnIntervalDialog: boolean = false;
@@ -884,7 +888,7 @@ export struct ReadBookPage {
   @StorageLink('readerPreloadEnabled') @Watch('onReaderPreloadChanged') readerPreloadEnabled: boolean = true;
   @StorageLink('readerPreloadChapterCount') @Watch('onReaderPreloadChanged') readerPreloadChapterCount: number = 1;
   @StorageLink('readerUseTtsQuickAction') readerUseTtsQuickAction: boolean = true;
-  @StorageLink('readerTtsQuickActionSide') readerTtsQuickActionSide: number = 1;
+  @StorageLink('readerTtsQuickActionSide') readerTtsQuickActionSide: number = -1;
   @StorageLink('readerUseChapterQuickJump') readerUseChapterQuickJump: boolean = true;
   @StorageLink('readerQuickBookmarkEnabled') readerQuickBookmarkEnabled: boolean = true;
   @StorageLink('readerHeaderEnabled') @Watch('onReaderChromeChanged') readerHeaderEnabled: boolean = false;
@@ -1125,6 +1129,9 @@ export struct ReadBookPage {
     const returningFromBackground = backgroundRevision > this.readerObservedBackgroundRevision;
     this.readerObservedBackgroundRevision = backgroundRevision;
     this.resumeReaderPaginationWorkAfterPageShow();
+    // 后台/跨页期间听书会话可能已被外部（通知栏、胶囊、隐藏宿主页）停止，
+    // 当时因页面不可见跳过了音量键订阅重注册；回前台后补一次判定。
+    this.updateVolumeKeySubscription();
     if (this.pagedContentText && this.shouldUseReaderLayoutV2(this.pagedContentText) &&
       !this.readerV2PageSet(this.currentChapterIndex, this.pagedContentText)) {
       this.readerInitialPageReady = false;
@@ -1181,6 +1188,10 @@ export struct ReadBookPage {
   onGlobalTtsActiveChanged(): void {
     if (!this.globalTtsActive) {
       this.clearMirroredTtsFocus();
+      // 悬浮会话可能由别的页面实例收尾（隐藏宿主页/听书页/通知栏停止），
+      // 本页当时的音量键订阅因 isActive() 守卫被跳过；会话清除后这里补一次
+      // 注册判定，否则音量键翻页在听书启停后永远无法恢复。
+      this.updateVolumeKeySubscription();
     }
   }
 
@@ -2208,6 +2219,7 @@ export struct ReadBookPage {
           accentColor: this.accentColor(),
           ringProgress: this.autoPageTurnRingProgress,
           userPaused: this.autoPageTurnUserPaused,
+          suspended: this.isTtsSpeaking || this.globalTtsActive,
           textColor: this.getTextColor(),
           darkMode: this.isReaderThemeDark(),
           bottomInset: this.navBarHeight,
@@ -3210,17 +3222,24 @@ TtsGlobalCapsule({
   presentTapZoneSettings(): void {
     this.showTapZoneSettings = true;
     this.tapZoneDialogSession.open(this.getUIContext(), (): void => {
-      TapZoneSettingsDialogContent({
-        onDone: (): void => {
-          this.showTapZoneSettings = false;
-          this.tapZoneDialogSession.close(this.getUIContext());
-        }
-      })
+      this.tapZoneSettingsDialogContent();
     }, {
       autoCancel: false,
       maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
       warnTag: '显示点击区域设置弹窗失败:'
     });
+  }
+
+  // 自定义组件只能在 @Builder 上下文中构造；直接在普通 lambda 里 new 会抛
+  // "class constructor cannot called without 'new'" 导致闪退（弹窗内容一律走 @Builder）。
+  @Builder
+  tapZoneSettingsDialogContent() {
+    TapZoneSettingsDialogContent({
+      onDone: (): void => {
+        this.showTapZoneSettings = false;
+        this.tapZoneDialogSession.close(this.getUIContext());
+      }
+    })
   }
 
   async openChangeSourceDialog(): Promise<void> { return ReaderMenuBuildOps.openChangeSourceDialog(this); }
@@ -3307,33 +3326,38 @@ TtsGlobalCapsule({
     this.txtCharsetDraft = LocalBookService.getTxtCharsetOverride(this.book);
     this.showTxtCharsetDialog = true;
     this.txtCharsetDialogSession.open(this.getUIContext(), (): void => {
-      ReaderTxtCharsetDialogContent({
-        textColor: this.getTextColor(),
-        subTextColor: this.getSubTextColor(),
-        accentColor: this.accentColor(),
-        controlIconColor: this.readerControlIconColor(),
-        darkMode: this.isReaderThemeDark(),
-        currentCharsetLabel: LeafFns.txtCharsetLabel(this.book?.charset || ''),
-        draftCharset: this.txtCharsetDraft,
-        applying: this.txtCharsetApplying,
-        listHeight: Math.min(440, Math.max(160, this.pageViewHeight - 190)),
-        onClose: (): void => {
-          if (!this.txtCharsetApplying) this.showTxtCharsetDialog = false;
-        },
-        onPick: (value: string): void => {
-          this.txtCharsetDraft = value;
-        },
-        onCancel: (): void => {
-          this.showTxtCharsetDialog = false;
-        },
-        onApply: (): void => {
-          this.applyTxtCharsetSelection();
-        }
-      });
+      this.txtCharsetDialogContent();
     }, {
       autoCancel: false,
       maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
       warnTag: '显示字符编码弹窗失败:'
+    });
+  }
+
+  @Builder
+  txtCharsetDialogContent() {
+    ReaderTxtCharsetDialogContent({
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      accentColor: this.accentColor(),
+      controlIconColor: this.readerControlIconColor(),
+      darkMode: this.isReaderThemeDark(),
+      currentCharsetLabel: LeafFns.txtCharsetLabel(this.book?.charset || ''),
+      draftCharset: this.txtCharsetDraft,
+      applying: this.txtCharsetApplying,
+      listHeight: Math.min(440, Math.max(160, this.pageViewHeight - 190)),
+      onClose: (): void => {
+        if (!this.txtCharsetApplying) this.showTxtCharsetDialog = false;
+      },
+      onPick: (value: string): void => {
+        this.txtCharsetDraft = value;
+      },
+      onCancel: (): void => {
+        this.showTxtCharsetDialog = false;
+      },
+      onApply: (): void => {
+        this.applyTxtCharsetSelection();
+      }
     });
   }
 
@@ -4300,9 +4324,12 @@ TtsGlobalCapsule({
           this.setReaderVolumeTurnPage(checked);
         }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
 
-      ReaderSwitchSettingItem({ title: '自动翻页', description: '开启后按设定间隔自动翻到下一页，点击屏幕右下角圆环可暂停或恢复', isOn: this.autoPageTurnActive, onChange: (checked: boolean) => {
-          this.setAutoPageTurnActive(checked);
-        }, textColor: this.getTextColor(), subTextColor: this.getSubTextColor(), switchColor: this.buttonColor() })
+      // 分支随 autoPageTurnSwitchEpoch 互换以重建本行，避免被拒绝的开启让 Toggle 卡在打开态。
+      if (this.autoPageTurnSwitchEpoch % 2 === 0) {
+        this.autoPageTurnSwitchRow()
+      } else {
+        this.autoPageTurnSwitchRow()
+      }
 
       ReaderAutoPageTurnIntervalSettingItem({
         intervalSec: this.autoPageTurnIntervalSec,
@@ -4351,10 +4378,22 @@ TtsGlobalCapsule({
         }
       })
 
-      Row({ space: 10 }) {
-        ForEach(this.currentReaderThemes(), (theme: ReaderThemeItem, index: number) => {
-          Text(index === ReaderThemeHelper.CUSTOM_THEME_INDEX ? '自' :
-            (index === ReaderThemeHelper.APP_THEME_INDEX ? '主' : ''))
+      Column({ space: 8 }) {
+        Column({ space: 4 }) {
+          Text('阅读背景')
+            .fontSize(15)
+            .fontColor(this.getTextColor())
+          Text('点选切换正文阅读的背景主题，选「自」可自定义配色与背景图')
+            .fontSize(12)
+            .fontColor(this.getSubTextColor())
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+
+        Row({ space: 10 }) {
+          ForEach(this.currentReaderThemes(), (theme: ReaderThemeItem, index: number) => {
+            Text(index === ReaderThemeHelper.CUSTOM_THEME_INDEX ? '自' :
+              (index === ReaderThemeHelper.APP_THEME_INDEX ? '主' : ''))
             .width(42)
             .height(42)
             .borderRadius(21)
@@ -4371,7 +4410,9 @@ TtsGlobalCapsule({
             .onClick(() => {
               this.applyReaderThemeIndex(index);
             })
-        })
+          })
+        }
+        .width('100%')
       }
       .width('100%')
 
@@ -4481,22 +4522,27 @@ TtsGlobalCapsule({
   openReaderCustomThemeDeleteConfirm(): void {
     this.showReaderCustomThemeDeleteConfirm = true;
     this.readerCustomThemeDeleteDialogSession.open(this.getUIContext(), (): void => {
-      ReaderCustomThemeDeleteConfirm({
-          textColor: this.getTextColor(),
-          subTextColor: this.getSubTextColor(),
-          dangerColor: this.dangerColor(),
-          chipIdleColor: this.readerChipIdleColor(),
-          themeName: this.currentCustomThemeScheme().name,
-          onCancel: (): void => this.closeReaderCustomThemeDeleteConfirm(),
-          onDelete: (): void => {
-            this.closeReaderCustomThemeDeleteConfirm();
-            this.deleteCurrentCustomTheme();
-          }
-        });
+      this.readerCustomThemeDeleteConfirmContent();
     }, {
       autoCancel: false,
       maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
       warnTag: '显示删除自定义主题确认弹窗失败:'
+    });
+  }
+
+  @Builder
+  readerCustomThemeDeleteConfirmContent() {
+    ReaderCustomThemeDeleteConfirm({
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      dangerColor: this.dangerColor(),
+      chipIdleColor: this.readerChipIdleColor(),
+      themeName: this.currentCustomThemeScheme().name,
+      onCancel: (): void => this.closeReaderCustomThemeDeleteConfirm(),
+      onDelete: (): void => {
+        this.closeReaderCustomThemeDeleteConfirm();
+        this.deleteCurrentCustomTheme();
+      }
     });
   }
 
@@ -4590,7 +4636,7 @@ TtsGlobalCapsule({
   scheduleTtsResumeAfterManualPageTurn(attempt: number = 0): void { ReaderTtsOrchestrationOps.scheduleTtsResumeAfterManualPageTurn(this, attempt); }
   isReaderPageTurnPositionReadyForTts(): boolean { return ReaderTtsOrchestrationOps.isReaderPageTurnPositionReadyForTts(this); }
   syncTtsStateToVisiblePage(): void { ReaderTtsOrchestrationOps.syncTtsStateToVisiblePage(this); }
-  async continueTtsReading(token: number): Promise<void> { return ReaderTtsOrchestrationOps.continueTtsReading(this, token); }
+  async continueTtsReading(token: number, audibleTailConfirmed: boolean = false): Promise<void> { return ReaderTtsOrchestrationOps.continueTtsReading(this, token, audibleTailConfirmed); }
   isTtsReadingAtExpectedEnd(): boolean { return ReaderTtsOrchestrationOps.isTtsReadingAtExpectedEnd(this); }
 
   // 章末等待主要来自下一章第一段音频的首次合成（自定义音色是一次网络往返）。
@@ -4812,6 +4858,11 @@ TtsGlobalCapsule({
   followTtsChunk(chunk: TtsChunk, token: number, generation: number,
     chapterIndex: number, sourceIdentity: string): void {
     ReaderHighlightOps.followTtsChunk(this, chunk, token, generation, chapterIndex, sourceIdentity);
+  }
+
+  canResyncTtsFocusSession(token: number, generation: number,
+    chapterIndex: number, sourceIdentity: string): boolean {
+    return ReaderHighlightOps.canResyncTtsFocusSession(this, token, generation, chapterIndex, sourceIdentity);
   }
 
   noteTtsFocusLatency(elapsedMs: number): void { ReaderHighlightOps.noteTtsFocusLatency(this, elapsedMs); }
@@ -6735,7 +6786,13 @@ TtsGlobalCapsule({
     await this.runPageTurnAnimation(-1, this.readerEffectivePageTurnMode() === 1 ? 'slide' : 'tap');
   }
 
-  setAutoPageTurnActive(enabled: boolean): void { ReaderPageTurnOps.setAutoPageTurnActive(this, enabled); }
+  setAutoPageTurnActive(enabled: boolean): void {
+    ReaderPageTurnOps.setAutoPageTurnActive(this, enabled);
+    // 开启请求被拒绝（朗读中/书籍未加载）时开关视觉已翻转，重建设置行让它回到关闭。
+    if (enabled && !this.autoPageTurnActive) {
+      this.autoPageTurnSwitchEpoch += 1;
+    }
+  }
 
   onAutoPageTurnActiveChanged(): void {
     if (this.autoPageTurnActive) {
@@ -6762,17 +6819,42 @@ TtsGlobalCapsule({
   presentAutoPageTurnIntervalDialog(): void {
     this.showAutoPageTurnIntervalDialog = true;
     this.autoPageTurnIntervalDialogSession.open(this.getUIContext(), (): void => {
-      AutoPageTurnIntervalDialogContent({
-        onDone: (): void => {
-          this.showAutoPageTurnIntervalDialog = false;
-          this.autoPageTurnIntervalDialogSession.close(this.getUIContext());
-        }
-      })
+      this.autoPageTurnIntervalDialogContent();
     }, {
       autoCancel: true,
       maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
       warnTag: '显示自动翻页间隔设置弹窗失败:'
     });
+  }
+
+  @Builder
+  autoPageTurnIntervalDialogContent() {
+    AutoPageTurnIntervalDialogContent({
+      onDone: (): void => {
+        this.showAutoPageTurnIntervalDialog = false;
+        this.autoPageTurnIntervalDialogSession.close(this.getUIContext());
+      },
+      onDisable: (): void => {
+        this.showAutoPageTurnIntervalDialog = false;
+        this.autoPageTurnIntervalDialogSession.close(this.getUIContext());
+        this.setAutoPageTurnActive(false);
+      }
+    })
+  }
+
+  @Builder
+  autoPageTurnSwitchRow() {
+    ReaderSwitchSettingItem({
+      title: '自动翻页',
+      description: '开启后按设定间隔自动翻到下一页，点击屏幕右下角圆环可暂停或恢复',
+      isOn: this.autoPageTurnActive,
+      onChange: (checked: boolean) => {
+        this.setAutoPageTurnActive(checked);
+      },
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      switchColor: this.buttonColor()
+    })
   }
 
   scrollReaderComicByPage(direction: number): void { ReaderPageTurnOps.scrollReaderComicByPage(this, direction); }
