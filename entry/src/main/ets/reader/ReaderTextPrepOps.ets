@@ -456,6 +456,11 @@ export async function jumpToGlobalTtsPosition(page: ReadBookPage): Promise<void>
     }
     const anchor = Math.max(0, Math.round(page.globalTtsOffsetStart));
     if (chapterIndex !== page.currentChapterIndex) {
+      // 跨章换文先归零页位：loadContent 换章不重置 currentPageIndex，旧章页码会被
+      // applyReaderPaginationResult 挂成 pendingRestorePageIndex 并在增量分页完成时
+      // 应用回新章（新章落旧页码）。落位只由下方锚点映射决定。
+      page.currentPageIndex = 0;
+      page.pendingRestorePageIndex = -1;
       const loaded = await page.loadContent(true, chapterIndex);
       if (!loaded || page.currentChapterIndex !== chapterIndex) {
         return;

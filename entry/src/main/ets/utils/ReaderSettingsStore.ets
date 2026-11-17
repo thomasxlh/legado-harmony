@@ -432,8 +432,13 @@ export class ReaderSettingsStore {
     ReaderSettingsStore.mergeStorageFontSettings(settings);
     ReaderSettingsStore.cachedSettings = ReaderSettingsStore.clone(settings);
     ReaderSettingsStore.cachedThemeId = activeThemeId;
-    await ReaderSettingsStore.persistThemeProfile(store, activeThemeId, settings);
-    await store.flush();
+    // 空库（重装/首启全默认值）不回写主题 profile：默认值被播种成 profile 后会经
+    // 偏好云同步上传漂移到云端，还可能在 appThemeId 尚未恢复时写错 profile 名。
+    // 全局排版键已存在说明库非空（真实数据或云端已恢复），保留原迁移回写路径。
+    if (await store.has(ReaderSettingsStore.KEY_FONT_SIZE)) {
+      await ReaderSettingsStore.persistThemeProfile(store, activeThemeId, settings);
+      await store.flush();
+    }
     return settings;
   }
 

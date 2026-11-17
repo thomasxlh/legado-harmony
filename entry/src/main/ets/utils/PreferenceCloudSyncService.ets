@@ -53,12 +53,20 @@ export class PreferenceCloudSyncService {
   private static readonly SESSION_SETTLE_DELAY_MS: number = 500;
   /** 启动对账的延迟：错开冷启动高峰。 */
   private static readonly STARTUP_DELAY_MS: number = 2000;
+  /** 恢复行未下行且云链路未确认时的兜底轮询间隔（引擎静默下载不产生会话终态触发）。 */
+  private static readonly RESTORE_POLL_INTERVAL_MS: number = 30000;
+  /** 兜底轮询上限：30 次 × 30s ≈ 15 分钟，超过后放弃，等下一次常规触发点。 */
+  private static readonly RESTORE_POLL_MAX: number = 30;
   private static readonly TAG: string = 'PrefCloudSync';
 
   private static attached: boolean = false;
   private static context: Context | null = null;
   private static prefStores: Map<string, preferences.Preferences> = new Map();
   private static checkTimer: number = -1;
+  /** 已排定对账定时器的延迟，用于多次触发合并时保留更早的一次。 */
+  private static checkTimerDelayMs: number = -1;
+  /** 恢复兜底轮询已排定次数。 */
+  private static restorePollCount: number = 0;
   private static running: boolean = false;
   private static rerunNeeded: boolean = false;
   /**
@@ -69,14 +77,16 @@ export class PreferenceCloudSyncService {
    */
   private static seedAllowed: boolean = false;
   /**
-   * 云端偏好整体应用完成（applyRemote 落盘+失效缓存）后的回调，参数为 store 名。
-   * 由应用层注册：把有 AppStorage 镜像的 store 重新装载并应用到运行中的界面，
-   * 否则重装/换机后云端恢复的当前主题、深色模式等要等下次启动才生效。
+   * 云端偏好整体应用完成（applyRemote 落盘+失效缓存）后的回调，参数为 store 名，
+   * 返回镜像装载完成的 Promise。由应用层注册：把有 AppStorage 镜像的 store 重新
+   * 装载并应用到运行中的界面，否则重装/换机后云端恢复的当前主题、深色模式等要等
+   * 下次启动才生效。返回 Promise 使 applyRemote 能等镜像装载完再处理下一个 store：
+   * reader_settings 的主题 profile 依赖 app_theme_settings 先落位的 appThemeId。
    */
-  private static storeRestoredListener: ((storeName: string) => void) | null = null;
+  private static storeRestoredListener: ((storeName: string) => Promise<void>) | null = null;
 
   /** 注册云端偏好下行应用完成的回调；传 null 清除。 */
-  static setStoreRestoredListener(listener: ((storeName: string) => void) | null): void {
+  static setStoreRestoredListener(listener: ((storeName: string) => Promise<void>) | null): void {
     PreferenceCloudSyncService.storeRestoredListener = listener;
   }
 
@@ -113,10 +123,17 @@ export class PreferenceCloudSyncService {
       return;
     }
     if (PreferenceCloudSyncService.checkTimer >= 0) {
-      return;
+      // 已排定的对账不晚于本次请求则保留，避免短延迟触发（观察者/会话终态）
+      // 被长延迟兜底轮询顶掉；仅当新请求更早时才重排。
+      if (PreferenceCloudSyncService.checkTimerDelayMs <= delayMs) {
+        return;
+      }
+      clearTimeout(PreferenceCloudSyncService.checkTimer);
     }
+    PreferenceCloudSyncService.checkTimerDelayMs = delayMs;
     PreferenceCloudSyncService.checkTimer = setTimeout((): void => {
       PreferenceCloudSyncService.checkTimer = -1;
+      PreferenceCloudSyncService.checkTimerDelayMs = -1;
       PreferenceCloudSyncService.runSyncCheck().catch((error: Error): void => {
         hilog.warn(0x0000, PreferenceCloudSyncService.TAG,
           'sync check failed: %{public}s', error.message);
@@ -142,9 +159,23 @@ export class PreferenceCloudSyncService {
       const db = AppDatabase.getInstance();
       await db.initWithContext(context);
       const rows = await db.getAppPreferenceRows();
+      let unresolvedStores = 0;
       for (const storeName of PreferenceCloudSyncService.SYNC_STORES) {
         const rowValue = rows.get(storeName);
-        await PreferenceCloudSyncService.reconcileStore(context, db, storeName, rowValue);
+        const resolved = await PreferenceCloudSyncService.reconcileStore(context, db, storeName, rowValue);
+        if (!resolved) {
+          unresolvedStores++;
+        }
+      }
+      if (unresolvedStores === 0) {
+        PreferenceCloudSyncService.restorePollCount = 0;
+      } else if (!PreferenceCloudSyncService.seedAllowed &&
+        PreferenceCloudSyncService.restorePollCount < PreferenceCloudSyncService.RESTORE_POLL_MAX) {
+        // 兜底轮询：恢复行由引擎静默下载时不产生会话终态，用户停留在应用内时
+        // 常规触发点可能一直不来。只要还有 store 未对账完成且云链路未确认
+        // （seedAllowed 未放开），就持续轮询直到行到达或确认云端确实没有数据。
+        PreferenceCloudSyncService.restorePollCount++;
+        PreferenceCloudSyncService.scheduleCheck(PreferenceCloudSyncService.RESTORE_POLL_INTERVAL_MS);
       }
     } catch (error) {
       hilog.warn(0x0000, PreferenceCloudSyncService.TAG,
@@ -159,30 +190,34 @@ export class PreferenceCloudSyncService {
   }
 
   /**
-   * 单个 store 的对账分支：
-   * 1. 行缺失 → 已确认过云链路（seedAllowed）才播种本地内容；
+   * 单个 store 的对账分支，返回是否已达终态（true）或仍需等待（false）：
+   * 1. 行缺失 → 已确认过云链路（seedAllowed）才播种本地内容，播种与否均为终态；
+   *    云链路未确认时行可能仍在静默下载，返回 false 交给兜底轮询；
    * 2. 行内容 == 本机内容 → 只补写 lastSynced 标记；
    * 3. 本机内容 != lastSynced → 本机在最后一次同步点之后变过，本机新 → 上传；
    * 4. 其余 → 行内容在 lastSynced 之后变过（云端下行），应用回 Preferences。
    */
   private static async reconcileStore(context: Context, db: AppDatabase, storeName: string,
-    rowValue: string | undefined): Promise<void> {
+    rowValue: string | undefined): Promise<boolean> {
     const prefStore = await PreferenceCloudSyncService.prefStore(context, storeName);
     const all = await prefStore.getAll() as Record<string, preferences.ValueType>;
     const localDump = PreferenceCloudSyncService.canonicalDump(all);
     const lastSyncedKey = PreferenceCloudSyncService.lastSyncedKey(storeName);
     const lastSynced = await db.getDeviceMetaValue(lastSyncedKey);
     if (rowValue === undefined) {
-      if (PreferenceCloudSyncService.seedAllowed && localDump !== '{}') {
-        await PreferenceCloudSyncService.uploadStore(db, storeName, localDump);
+      if (PreferenceCloudSyncService.seedAllowed) {
+        if (localDump !== '{}') {
+          await PreferenceCloudSyncService.uploadStore(db, storeName, localDump);
+        }
+        return true;
       }
-      return;
+      return false;
     }
     if (rowValue === localDump) {
       if (lastSynced !== localDump) {
         await db.setDeviceMetaValue(lastSyncedKey, localDump);
       }
-      return;
+      return true;
     }
     if (!lastSynced) {
       // 首次接触云端行：本机没有任何该 store 的同步标记（重装/新设备/首次开启同步）。
@@ -190,14 +225,13 @@ export class PreferenceCloudSyncService {
       // 同步后变过”上传，重装后会把全新的空/默认偏好反向覆盖云端，用户的全部设置
       // （字体间距、主题、背景、开机图、朗读速度等）永久丢失。云端行是用户跨设备
       // 积累的状态，首次接触时必须云端优先；缺失的键由各 store 的 load() 默认值兜底。
-      await PreferenceCloudSyncService.applyRemote(db, storeName, prefStore, rowValue);
-      return;
+      return await PreferenceCloudSyncService.applyRemote(db, storeName, prefStore, rowValue);
     }
     if (localDump !== lastSynced) {
       await PreferenceCloudSyncService.uploadStore(db, storeName, localDump);
-      return;
+      return true;
     }
-    await PreferenceCloudSyncService.applyRemote(db, storeName, prefStore, rowValue);
+    return await PreferenceCloudSyncService.applyRemote(db, storeName, prefStore, rowValue);
   }
 
   private static async uploadStore(db: AppDatabase, storeName: string, dump: string): Promise<void> {
@@ -210,9 +244,12 @@ export class PreferenceCloudSyncService {
     await db.setDeviceMetaValue(PreferenceCloudSyncService.lastSyncedKey(storeName), dump);
   }
 
-  /** 把云端下行的 store 快照整体写回 Preferences，并失效相关内存缓存。 */
+  /**
+   * 把云端下行的 store 快照整体写回 Preferences，失效相关内存缓存，并等待应用层
+   * 镜像装载完成（storeRestoredListener）。返回本次应用是否成功。
+   */
   private static async applyRemote(db: AppDatabase, storeName: string,
-    prefStore: preferences.Preferences, remoteDump: string): Promise<void> {
+    prefStore: preferences.Preferences, remoteDump: string): Promise<boolean> {
     let values: Record<string, preferences.ValueType> = {};
     try {
       const parsed = JSON.parse(remoteDump) as Record<string, preferences.ValueType>;
@@ -222,7 +259,7 @@ export class PreferenceCloudSyncService {
     } catch (error) {
       hilog.warn(0x0000, PreferenceCloudSyncService.TAG,
         'invalid remote preference row: %{public}s', storeName);
-      return;
+      return false;
     }
     try {
       await prefStore.clear();
@@ -234,16 +271,25 @@ export class PreferenceCloudSyncService {
       // 不更新 lastSynced：下次对账会重试本次应用。
       hilog.warn(0x0000, PreferenceCloudSyncService.TAG,
         'apply remote preferences failed: %{public}s %{public}s', storeName, `${error}`);
-      return;
+      return false;
     }
     await db.setDeviceMetaValue(PreferenceCloudSyncService.lastSyncedKey(storeName), remoteDump);
     PreferenceCloudSyncService.invalidateCaches(storeName);
     const restoredListener = PreferenceCloudSyncService.storeRestoredListener;
     if (restoredListener) {
-      restoredListener(storeName);
+      // 串行等待镜像装载：reader_settings 的主题 profile 按 appThemeId 取名，
+      // 必须等 app_theme_settings 的镜像（appThemeId）先落位再装载 reader_settings，
+      // 否则重装恢复时排版会按默认主题 profile 装载（Gap B/C）。
+      try {
+        await restoredListener(storeName);
+      } catch (error) {
+        hilog.warn(0x0000, PreferenceCloudSyncService.TAG,
+          'store restored listener failed: %{public}s %{public}s', storeName, `${error}`);
+      }
     }
     hilog.info(0x0000, PreferenceCloudSyncService.TAG,
       'applied remote preferences: %{public}s', storeName);
+    return true;
   }
 
   /** 让“同数据不同序列化”的两端得到相同字符串，内容比较才可靠。 */

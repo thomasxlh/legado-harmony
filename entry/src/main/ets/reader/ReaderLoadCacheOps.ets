@@ -408,6 +408,14 @@ export async function loadContent(page: ReadBookPage, silent: boolean = false, t
         // restoreReaderTypographyOffsetIfAvailable 会把旧章偏移映射到新章分页（先跳深页再弹回），
         // 覆盖 pendingRestorePageIndex 的落页意图（朗读自动切章跳“下一章末页再回第一页”即此路径）。
         page.setReaderTypographyRestoreOffset(-1);
+        // TTS 高亮/焦点偏移同为章内坐标系：换章不清会让 getReaderStableReflowOffset 的 TTS
+        // 分支在换文窗口内把旧章偏移映射进新章分页（新章落旧页码）。镜像跟随/接管路径在
+        // 换文完成后会按全局锚点重建这些字段。
+        page.ttsHighlightStart = -1;
+        page.ttsHighlightEnd = -1;
+        page.readerV2TtsSourceStart = -1;
+        page.readerV2TtsSourceEnd = -1;
+        page.publishTtsHighlightRenderChange();
       }
       page.closeReaderCommentPanel();
       page.readerComicImageRatios = [];

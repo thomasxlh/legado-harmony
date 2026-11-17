@@ -622,6 +622,11 @@ export async function syncMirroredTtsFocus(page: ReadBookPage): Promise<void> {
       return;
     }
     if (chapterIndex !== page.currentChapterIndex) {
+      // loadContent 换章不重置 currentPageIndex：旧章页码会被 applyReaderPaginationResult
+      // 挂成 pendingRestorePageIndex，增量分页完成时又应用回新章（新章落旧页码）。
+      // 跨章换文先归零，落位只由下方全局锚点映射决定。
+      page.currentPageIndex = 0;
+      page.pendingRestorePageIndex = -1;
       const loaded = await page.loadContent(true, chapterIndex);
       if (serial !== page.mirroredTtsFocusSyncSerial) return;
       if (!loaded || page.currentChapterIndex !== chapterIndex) {
@@ -732,6 +737,10 @@ export async function takeOverMirroredTtsSession(page: ReadBookPage): Promise<vo
       console.info(`[TTS] taking over background tts session on reader open: ` +
         `chapter=${anchorChapterIndex}, offset=${anchorOffsetStart}`);
       if (anchorChapterIndex >= 0 && anchorChapterIndex !== page.currentChapterIndex) {
+        // 同 syncMirroredTtsFocus：跨章换文先归零页位，防止旧章页码经
+        // pendingRestorePageIndex 在增量分页完成时被应用回新章。
+        page.currentPageIndex = 0;
+        page.pendingRestorePageIndex = -1;
         const loaded = await page.loadContent(true, anchorChapterIndex);
         if (!loaded || page.currentChapterIndex !== anchorChapterIndex) {
           console.warn('[TTS] takeover aborted: anchor chapter unavailable');

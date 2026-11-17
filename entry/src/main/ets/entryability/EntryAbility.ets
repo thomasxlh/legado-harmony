@@ -216,8 +216,10 @@ export default class EntryAbility extends UIAbility {
     });
     // 云端偏好下行应用后重放到运行中的界面：applyRemote 只写回 Preferences，
     // 当前主题/深色模式等 AppStorage 镜像要靠这里重新装载，否则恢复要等下次启动。
-    PreferenceCloudSyncService.setStoreRestoredListener((storeName: string) => {
-      this.applyRestoredPreferenceStore(storeName);
+    // 返回 Promise 供 applyRemote 串行等待：reader_settings 的主题 profile 依赖
+    // app_theme_settings 先落位的 appThemeId。
+    PreferenceCloudSyncService.setStoreRestoredListener((storeName: string): Promise<void> => {
+      return this.applyRestoredPreferenceStore(storeName);
     });
     // 阅读偏好/主题设置的端云同步桥：注册各偏好 store 的变更监听与云同步
     // 会话回调。attach 幂等，失败只影响偏好上云，不影响主流程。
@@ -430,20 +432,21 @@ export default class EntryAbility extends UIAbility {
    * applyRemote 仅在云端行与本机内容确实不同时触发，不会无差别重发主题、
    * 重置正在编辑的表单。无镜像的 store（自定义方案库、净化规则等）缓存已
    * 在 applyRemote 失效，页面下次读取自动取到云端值，无需重放。
+   * 返回 Promise：各分支内部消化错误（catch 后不再抛出），保证调用方
+   * （applyRemote 的串行链）不会因单个 store 装载失败而中断后续 store。
    */
-  private applyRestoredPreferenceStore(storeName: string): void {
+  private applyRestoredPreferenceStore(storeName: string): Promise<void> {
     const context = this.context;
     if (storeName === 'app_theme_mode') {
-      AppThemeModeStore.load(context).then((mode: string) => {
+      return AppThemeModeStore.load(context).then((mode: string) => {
         AppThemeModeStore.applyToStorage(mode);
         this.syncSystemColorMode(context.config);
       }).catch((e: Error) => {
         hilog.warn(0x0000, 'testTag', 'Apply restored theme mode failed: %{public}s', e.message);
       });
-      return;
     }
     if (storeName === 'app_theme_settings') {
-      AppThemeSettingsStore.load(context).then((settings) => {
+      return AppThemeSettingsStore.load(context).then((settings) => {
         AppThemeSettingsStore.applyToStorage(settings);
         // 同步 modeDependentThemeKey，避免下次前台刷新把刚恢复的主题再重发一遍。
         const darkMode = AppStorage.get<boolean>('appDarkMode') || false;
@@ -453,72 +456,70 @@ export default class EntryAbility extends UIAbility {
         } catch (e) {
           hilog.warn(0x0000, 'testTag', 'Apply restored theme font failed: %{public}s', JSON.stringify(e));
         }
+        // appThemeId 刚落位：阅读排版的主题 profile 按它取名，必须重放一次
+        // reader_settings，否则已按默认主题装载的排版要等下次启动才恢复。
+        return ReaderSettingsStore.load(context).then((readerSettings) => {
+          ReaderSettingsStore.applyToStorage(readerSettings);
+        });
       }).catch((e: Error) => {
         hilog.warn(0x0000, 'testTag', 'Apply restored theme settings failed: %{public}s', e.message);
       });
-      return;
     }
     if (storeName === 'reader_settings') {
-      ReaderSettingsStore.load(context).then((settings) => {
+      return ReaderSettingsStore.load(context).then((settings) => {
         ReaderSettingsStore.applyToStorage(settings);
       }).catch((e: Error) => {
         hilog.warn(0x0000, 'testTag', 'Apply restored reader settings failed: %{public}s', e.message);
       });
-      return;
     }
     if (storeName === 'glass_settings') {
-      GlassSettingsStore.load(context).then((settings) => {
+      return GlassSettingsStore.load(context).then((settings) => {
         GlassSettingsStore.applyToStorage(settings);
       }).catch((e: Error) => {
         hilog.warn(0x0000, 'testTag', 'Apply restored glass settings failed: %{public}s', e.message);
       });
-      return;
     }
     if (storeName === 'bookshelf_display_settings') {
-      BookshelfDisplaySettingsStore.load(context).then((settings) => {
+      return BookshelfDisplaySettingsStore.load(context).then((settings) => {
         BookshelfDisplaySettingsStore.applyToStorage(settings);
       }).catch((e: Error) => {
         hilog.warn(0x0000, 'testTag', 'Apply restored bookshelf display failed: %{public}s', e.message);
       });
-      return;
     }
     if (storeName === 'cover_gallery_settings') {
-      CoverGalleryStore.load(context).then((snapshot) => {
+      return CoverGalleryStore.load(context).then((snapshot) => {
         CoverGalleryStore.applyToStorage(snapshot);
       }).catch((e: Error) => {
         hilog.warn(0x0000, 'testTag', 'Apply restored cover gallery failed: %{public}s', e.message);
       });
-      return;
     }
     if (storeName === 'search_explore_settings') {
-      SearchExploreSettingsStore.load(context).then((settings) => {
+      return SearchExploreSettingsStore.load(context).then((settings) => {
         SearchExploreSettingsStore.applyToStorage(settings);
       }).catch((e: Error) => {
         hilog.warn(0x0000, 'testTag', 'Apply restored search explore settings failed: %{public}s', e.message);
       });
-      return;
     }
     if (storeName === 'tts_settings') {
-      TtsSettingsStore.load(context).then((settings) => {
+      return TtsSettingsStore.load(context).then((settings) => {
         TtsSettingsStore.applyToStorage(settings);
       }).catch((e: Error) => {
         hilog.warn(0x0000, 'testTag', 'Apply restored tts settings failed: %{public}s', e.message);
       });
-      return;
     }
     if (storeName === 'custom_theme_schemes') {
       // 自定义主题方案（含浅色/深色各自的启动封面与主界面背景）是独立同步 store，
       // 单独编辑方案只改它、不碰 app_theme_settings。云端下行后必须把当前启用方案
       // 的图片路径重新写回 AppStorage，否则即使图片资产已同步，封面/背景也不会显示。
-      this.applyActiveCustomSchemeToStorage();
-      return;
+      return this.applyActiveCustomSchemeToStorage();
     }
+    return Promise.resolve();
   }
 
   /** 把当前启用的自定义方案重新应用到运行中的界面（含开机图/主界面背景路径）。 */
-  private applyActiveCustomSchemeToStorage(): void {
+  private applyActiveCustomSchemeToStorage(): Promise<void> {
     const context = this.context;
-    AppThemeSettingsStore.load(context).then(async (settings) => {
+    return AppThemeSettingsStore.load(context).then(async (settings) => {
       const schemes = await CustomThemeSchemeStore.load(context, settings);
       const activeId = AppStorage.get<string>(CustomThemeSchemeStore.STORAGE_ACTIVE_SCHEME_ID) || '';
       const scheme = CustomThemeSchemeStore.find(schemes, activeId);

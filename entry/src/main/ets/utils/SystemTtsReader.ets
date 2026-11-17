@@ -1673,8 +1673,11 @@ export class SystemTtsReader {
       this.currentAudioWritePromise = Promise.resolve();
       this.chunkIndex = Math.max(0, Math.min(chunkIndex, this.chunks.length));
       this.resetSystemPcmPipeline();
-      this.pcmOutputEpochStartedAt = 0;
-      this.pcmPlayer.stop();
+      // 与 recoverInterruptedPcmChunk 同源：合成卡死重讲被中断的 chunk 时不得
+      // pcmPlayer.stop()——后台合成被节流、缓冲耗尽时播放位==合成位，stop 会把
+      // 正在播放的这句拦腰切断并丢弃后续已入队音频，重讲又从该 chunk 开头开始，
+      // 听感是"一句读到一半停住，这句话从头重复"。已入队音频继续播，重讲的
+      // chunk 排队接在其后，无感衔接。渲染器纪元继续追踪，4 小时回收检查不受影响。
       if (this.engine) {
         this.suppressEngineStopForCurrentRead();
         try {
